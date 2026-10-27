@@ -1,6 +1,6 @@
 # ft\_transcendence — Overview & Plan
 
-Oct 27, 2026 · @boss
+Oct 27, 2026 · @byulbyul
 
 ## TL;DR
 

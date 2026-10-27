@@ -1,6 +1,6 @@
 # ft\_transcendence — Backend Reference (WOZU)
 
-Oct 27, 2026 · @boss
+Oct 27, 2026 · @byulbyul
 
 ## TL;DR
 
