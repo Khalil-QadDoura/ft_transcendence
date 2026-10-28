@@ -1,6 +1,6 @@
 # ft\_transcendence — Overview & Plan
 
-Oct 27, 2026 · @byulbyul
+Oct 27, 2026 · @byul-byul
 
 ## TL;DR
 
@@ -63,13 +63,13 @@ Proposal: spread the three lead roles across the three tracks, so each sub-team 
 
 | Person | Track | Role(s) | Main responsibilities |
 | --- | --- | --- | --- |
-| byulbyul | Infrastructure | Product Owner + Developer (DevOps) | Product vision (knows WOZU best), backlog priorities, accepts finished cards, README and legal pages content; Docker, Caddy/TLS, monitoring, security modules |
+| byul-byul | Infrastructure | Product Owner + Developer (DevOps) | Product vision (knows WOZU best), backlog priorities, accepts finished cards, README and legal pages content; Docker, Caddy/TLS, monitoring, security modules |
 | Backend dev A | Backend | Tech Lead / Architect + Developer | Backend architecture and API contract, stack decisions, reviews critical PRs, code quality rules |
 | Backend dev B | Backend | Developer | Ports and owns backend modules (see Work split) |
 | Frontend dev A | Frontend | PM / Scrum Master + Developer | Runs the Trello board, weekly sync, tracks deadlines and blockers, keeps the risk list |
 | Frontend dev B | Frontend | Developer | Owns frontend modules (see Work split) |
 
-**Alternative:** byulbyul as Tech Lead + DevOps, a frontend dev as PO. Choose it if the team wants one person to hold the full technical picture. Its cost: three hats on one person and less leadership visible from the backend pair.
+**Alternative:** byul-byul as Tech Lead + DevOps, a frontend dev as PO. Choose it if the team wants one person to hold the full technical picture. Its cost: three hats on one person and less leadership visible from the backend pair.
 
 Whatever the split, each member must be able to explain the whole project and make a small code change during the defense.
 
@@ -117,7 +117,7 @@ Each person owns whole modules end to end inside their track, so the README can 
 | Backend dev B | Jobs + search (6), applications, video upload + moderation (9), friends and chat REST (3), game backend: rooms, phases, results (7, 8) | Fixes from the issue list |
 | Frontend dev A (PM) | App shell, routing, auth screens, design tokens, i18n + RTL (10, 11), profile + friends UI, legal pages | Browser testing (16) |
 | Frontend dev B | Jobs search + job detail + apply flow, video recording and upload UI, chat UI, game UI (7, 8) | WebSocket client with A |
-| byulbyul (PO + Infra) | Compose + Caddy + TLS for every route, MinIO over HTTPS, local mail catcher, Prometheus + Grafana (12), WAF + Vault (13), backups + status page (14), CI checks | README, Privacy Policy and ToS content, backlog |
+| byul-byul (PO + Infra) | Compose + Caddy + TLS for every route, MinIO over HTTPS, local mail catcher, Prometheus + Grafana (12), WAF + Vault (13), backups + status page (14), CI checks | README, Privacy Policy and ToS content, backlog |
 
 The frontend is the critical path: both frontend devs start on day one against the API contract and the reference backend running locally (it works today), not waiting for the new backend.
 
@@ -182,7 +182,7 @@ Depends on: #<card number>
 
 | Decision | Proposed by | Status |
 | --- | --- | --- |
-| Roles: byulbyul PO + infra, backend dev A Tech Lead, frontend dev A PM | Overview doc | Proposed |
+| Roles: byul-byul PO + infra, backend dev A Tech Lead, frontend dev A PM | Overview doc | Proposed |
 | Core module set (19 points) + tier B buffer (5 points) | Overview doc | Proposed |
 | Frontend: React + TypeScript + Vite + Tailwind | Overview doc | Proposed |
 | Keep the Turing Duel game | Overview doc | Proposed |

@@ -1,6 +1,6 @@
 # ft\_transcendence — Infrastructure
 
-Oct 27, 2026 · @byulbyul
+Oct 27, 2026 · @byul-byul
 
 ## TL;DR
 

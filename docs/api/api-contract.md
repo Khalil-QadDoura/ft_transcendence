@@ -1,6 +1,6 @@
 # ft\_transcendence — API Contract
 
-Oct 27, 2026 · @byulbyul
+Oct 27, 2026 · @byul-byul
 
 The single source of truth between frontend and backend. It describes the reference API as it runs today (76 HTTP operations, 2 WebSockets) plus the changes the new backend will make; legacy `/chat/*` and draft-video routes are left out because we drop them.
 
