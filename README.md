@@ -1,118 +1,29 @@
-<div align="center">
+# WOZU — ft_transcendence
 
-![Four folders dancing in the group project lobby while actual progress stays at zero.](assets/group-project-lobby.gif)
+WOZU connects candidates and employers through profiles, video introductions, job applications, conversations, and Turing Duel.
 
-# This repository is a group project.
+This branch adds a working web prototype connected to a separate, pinned copy of the existing WOZU backend. The frontend does not replace the team's planned backend.
 
-**Everyone has accepted the invite. Nobody has accepted the responsibility.**
+## Start here
 
-`BUILD: emotional` · `TESTS: eventually` · `DEADLINE: getting closer`
+- [Run the frontend and reference backend](frontend/README.md)
+- [Project plan](docs/plan/overview.md)
+- [API contract](docs/api/api-contract.md)
+- [Reference backend](docs/reference/wozu-backend.md)
+- [Trello board](https://trello.com/b/E3788fBx/fttranscendence)
 
-</div>
-
----
-
-## Welcome to the lobby
-
-The team is assembled. The group chat is created. Someone has already said “this should be easy.”
-
-We are now waiting for the mysterious fifth teammate known as **Actual Progress**.
-
-### Current features
-
-- **Multiplayer support** — several people can stare at the same empty repository.
-- **Zero dependencies** — the project currently depends on hope.
-- **Blazingly fast** — does nothing in under 0 milliseconds.¹
-- **Cloud ready** — our ideas are already up there somewhere.
-- **AI integration** — “Anyone Interested in starting?”
-- **Dark mode** — the future is unclear.
-
-<sub>¹ Benchmark performed by the person who said “this should take five minutes.”</sub>
-
-### Meet the team
-
-| Player | Special ability | Current quest |
-| :--- | :--- | :--- |
-| The Planner | Creates a group chat for the group chat | Schedule a meeting about scheduling |
-| The Speedrunner | Says “easy” before reading the requirements | Discover the requirements |
-| The Ghost | Appears when someone types “submitted” | Reconnect to this dimension |
-| You | Actually opened the repository | Carry the README |
-
-### Roadmap
-
-- [x] Accept the invitation
-- [x] Open the repository
-- [x] Give the repository a better social life than its contributors
-- [ ] Agree on what we are building
-- [ ] Say “we still have time” one last time
-- [ ] Write the code
-- [ ] Rename `final_FINAL_v2` to `actually_final`
-- [ ] Discover the assignment was a PDF
-
-### Quick start
-
-```text
-$ git clone our-collective-potential
-Cloning into 'optimism'...
-
-$ npm install motivation
-404: motivation not found
-
-$ git blame
-Please form an orderly queue.
-```
-
-<sub>These commands are jokes. Please do not open an issue because motivation failed to install.</sub>
-
-### Patch notes · v0.0.0
-
-**Added:** four collaborators, one README, and the illusion of momentum.
-
-**Fixed:** the repository being empty. You're welcome.
-
-**Known issue:** the deadline continues to approach even when nobody has the tab open.
-
-<details>
-<summary><strong>Emergency procedure: the teacher is looking at the repository</strong></summary>
-
-<br>
-
-Welcome to our **collaborative pre-implementation environment**.
-
-The animated folders represent parallel workstreams. Their lack of forward movement represents our commitment to careful planning.
-
-We are currently in the research phase.
-
-Please do not ask which phase comes next. We are researching that too.
-
-</details>
-
-<details>
-<summary><strong>Okay, how does the dancing thing actually work?</strong></summary>
-
-<br>
-
-It's a local GIF embedded in this README. GitHub can display it directly; there is no server, JavaScript, or setup to run.
-
-Keep `README.md` and the `assets` folder together when you add them to the repository.
-
-The animation is drawn from scratch with Python and Pillow. To change the dialogue, colors, or dancers, edit [`tools/make_lobby.py`](tools/make_lobby.py), then regenerate it:
+## Web development
 
 ```sh
-python -m pip install Pillow
-python tools/make_lobby.py
+cd frontend
+npm ci
+npm run dev
 ```
 
-The generator uses local fonts and falls back to Pillow's bundled font if necessary.
+The UI runs at http://127.0.0.1:5173 and expects the reference API at port 8000. Follow the frontend README for the isolated database, storage, demo accounts, and integration checks.
 
-</details>
+## Scope
 
----
+The branch implements the candidate and employer web journeys and packages a small reference-backend compatibility patch. Real email/AI provider configuration, complete localization, production hardening, and remaining subject/board requirements are tracked explicitly in the frontend README. This is a reviewable prototype branch, not a claim that all project requirements are complete.
 
-<div align="center">
-
-**No code was harmed in the making of this repository.**
-
-There wasn't any.
-
-</div>
+Implementation is AI-assisted. Original reference backend authorship is retained; commit dates and development history reflect the actual work.
