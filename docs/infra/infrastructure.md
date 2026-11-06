@@ -8,7 +8,7 @@ Infra owns four mandatory items and five module points. The reference already ha
 
 - **Mandatory:** one command starts everything; every browser connection is HTTPS; `.env` stays out of Git with a complete `.env.example`; the evaluator can sign up without a paid email service.
 - **Modules:** Prometheus + Grafana (Major, 2, core); WAF / ModSecurity + Vault (Major, 2, buffer); health check, status page and backups (Minor, 1, buffer).
-- **Front proxy decided (2026-11-04, INF-01):** nginx + ModSecurity v3 + OWASP Core Rule Set is the only front door instead of Caddy.
+- **Front proxy decided (2026-11-04, INF-01):** nginx + ModSecurity v3 + OWASP Core Rule Set is the only front door instead of Caddy. Configuration: [infra/proxy/](../../infra/proxy/README.md).
 - **One origin for everything** (`https://localhost` at the defense): frontend at `/`, API at `/api`, WebSockets at `/ws`, files at `/files`, Grafana at `/grafana`, Mailpit at `/mail`. One certificate warning, no CORS, no mixed content.
 
 ## Front proxy (decided 2026-11-04)
@@ -21,7 +21,7 @@ Only the proxy publishes ports to the host; everything else stays on the interna
 
 | Service | Image | Purpose | Published | Status |
 | --- | --- | --- | --- | --- |
-| `proxy` | `owasp/modsecurity-crs:nginx-alpine` (pinned release) | TLS, single origin, routing, WAF | 443 (80 → redirect) | New: replaces the reference's Caddy (API only) |
+| `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210` | TLS, single origin, routing, WAF | 443 (80 → redirect) | Config in `infra/proxy/`; joins compose in INF-02 |
 | `frontend` | Multi-stage: Node build → static files served by the proxy or `nginx:alpine` | React app | no | New |
 | `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start | no | Exists |
 | `worker` | Same image as `api`, command `celery … worker -B` | Video moderation + beat for stuck videos | no | Exists, beat missing |
@@ -40,43 +40,20 @@ We skip ELK: Elasticsearch is memory-hungry and risky on an evaluation laptop; P
 
 ## One origin over HTTPS
 
-Everything the browser touches goes through one host and one certificate. Locally that is `https://localhost` with a self-signed certificate, so the evaluator accepts one warning once.
+Everything the browser touches goes through one host and one certificate. Locally that is `https://localhost` with a self-signed certificate from `infra/proxy/scripts/gen-cert.sh`, so the evaluator accepts one warning once.
 
 | Path | Upstream | Notes |
 | --- | --- | --- |
-| `/` | `frontend` static files | SPA fallback to `index.html` for client routes |
+| `/` | `frontend:80` | The frontend container does the SPA fallback to `index.html` for client routes |
 | `/api/*` | `api:8000` | FastAPI includes all routers under the `/api` prefix; the proxy does not strip paths |
-| `/ws`, `/ws/game` | `api:8000` | WebSocket upgrade (nginx handles it with the right headers) |
-| `/files/*` | `minio:9000` | Bucket `files`; Host header passed through unchanged so presigned signatures match |
+| `/ws`, `/ws/game` | `api:8000` | WebSocket upgrade: HTTP/1.1, `Upgrade` and `Connection` headers, long read timeout |
+| `/files/*` | `minio:9000` | Bucket `files`; Host header passed through unchanged so presigned signatures match; 60 MB body limit |
 | `/grafana/*` | `grafana:3000` | `GF_SERVER_ROOT_URL=https://localhost/grafana/`, `serve_from_sub_path=true`, login required |
 | `/mail/*` | `mailpit:8025` | `MP_WEBROOT=/mail/` |
 | `/_internal/*`, `/metrics` | blocked | Prometheus scrapes them inside the Docker network only |
 | `http://` any | redirect to `https://` |  |
 
-Routing sketch from the first draft, written as a Caddyfile; the nginx config in INF-03 implements the same routes.
-
-```
-{$DOMAIN} {
-    tls internal                     # self-signed for localhost; real domain → automatic Let's Encrypt
-    encode gzip
-
-    @blocked path /_internal/* /metrics
-    respond @blocked 404
-
-    handle /api/*     { reverse_proxy api:8000 }
-    handle /ws*       { reverse_proxy api:8000 }
-    handle /files/*   { reverse_proxy minio:9000 }   # keep Host: presigned URLs are signed for {$DOMAIN}
-    handle /grafana/* { reverse_proxy grafana:3000 }
-    handle /mail/*    { reverse_proxy mailpit:8025 }
-    handle {
-        root * /srv/frontend
-        try_files {path} /index.html
-        file_server
-    }
-}
-```
-
-The table translates one-to-one to nginx `location` blocks in the ModSecurity image.
+The table translates one-to-one to the `location` blocks in `infra/proxy/templates/conf.d/default.conf.template`. ModSecurity covers all of them and runs in `DetectionOnly` until INF-11 switches it to blocking. The image runs unprivileged and listens on 8080 and 8443 inside the container, so compose publishes `443:8443` and `80:8080`. `infra/proxy/README.md` lists which files are ours and which come from the image.
 
 ## File storage over HTTPS
 
