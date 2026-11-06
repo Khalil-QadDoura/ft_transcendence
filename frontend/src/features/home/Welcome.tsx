@@ -40,7 +40,7 @@ export function Welcome() {
               SIDE OF WORK.
             </span>
             <span>
-              WOZU®
+              WOZU ✳
               <br />
               EST. 2026
             </span>
