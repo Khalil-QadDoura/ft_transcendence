@@ -13,6 +13,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
+import { SignalArtwork } from "../../components/SignalArtwork";
 import { useTranslation } from "react-i18next";
 import { api, post, remove, type Schema } from "../../api/client";
 import { socketURL, type SocketEvent } from "../../app/live";
@@ -103,27 +104,7 @@ export function GameLobby() {
             </span>
           </div>
         </div>
-        <div className="game-art" aria-hidden="true">
-          <div className="game-art-ring" />
-          <span className="game-floating-star">✦</span>
-          <div className="game-face face-human">
-            <span className="face-eyes">• •</span>
-            <span className="face-smile">⌣</span>
-            <span className="face-label">HUMAN?</span>
-          </div>
-          <div className="game-face face-bot">
-            <span className="face-antenna" />
-            <span className="bot-eyes">
-              <i />
-              <i />
-            </span>
-            <span className="bot-mouth" />
-            <span className="face-label">OR NOT?</span>
-          </div>
-          <div className="game-chat-pill">
-            “That sounds very human.” <span>…</span>
-          </div>
-        </div>
+        <SignalArtwork variant="duel" />
       </section>
       <div className="game-steps">
         {[
@@ -188,7 +169,7 @@ export function GameRoom() {
   const [now, setNow] = useState(Date.now());
   const [votes, setVotes] = useState<Record<number, string>>({});
   const socket = useRef<WebSocket | null>(null);
-  const bottom = useRef<HTMLDivElement>(null);
+  const messagePane = useRef<HTMLDivElement>(null);
   const room = useQuery({
     queryKey: ["room", id],
     queryFn: () => api<Room>(`/game/rooms/${id}`),
@@ -266,8 +247,9 @@ export function GameRoom() {
     };
   }, [id]);
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "nearest" });
-  }, [messages.length]);
+    const pane = messagePane.current;
+    if (pane) pane.scrollTop = pane.scrollHeight;
+  }, [messages.length, room.data?.messages?.length]);
   if (room.isPending) return <Loading />;
   if (!room.data) return <ErrorNotice error={room.error} />;
   const r = room.data;
@@ -297,24 +279,65 @@ export function GameRoom() {
           </Badge>
         }
       />
-      <div className="room-layout">
+      <section className="arena-banner" aria-label={t("Round progress")}>
+        <div className="arena-brand">
+          <span className="arena-symbol">✳</span>
+          <div>
+            <span className="eyebrow">TURING DUEL</span>
+            <strong>
+              {t(
+                r.state === "finished"
+                  ? "Round complete."
+                  : "Instincts on. Masks on.",
+              )}
+            </strong>
+          </div>
+        </div>
+        <ol className="arena-phases">
+          {[
+            { state: "discussion", label: "Discuss" },
+            { state: "voting", label: "Decide" },
+            { state: "finished", label: "Reveal" },
+          ].map((phase, index) => (
+            <li
+              key={phase.state}
+              className={r.state === phase.state ? "current" : ""}
+              aria-current={r.state === phase.state ? "step" : undefined}
+            >
+              <span>0{index + 1}</span>
+              {t(phase.label)}
+            </li>
+          ))}
+        </ol>
+        <div className="arena-clock">
+          <strong>
+            {r.state === "finished" ? (
+              <Check size={30} />
+            ) : remaining !== null ? (
+              `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
+            ) : (
+              "—"
+            )}
+          </strong>
+          <span>
+            {t(r.state === "finished" ? "ALL REVEALED" : "TIME REMAINING")}
+          </span>
+        </div>
+      </section>
+      <div
+        className={`room-layout state-${r.state} ${r.state === "finished" ? "is-finished" : ""}`}
+      >
         <section className="panel room-conversation">
           <div className="section-heading">
             <h2>{t("The conversation")}</h2>
             <Badge>{t(r.state)}</Badge>
-            {remaining !== null && (
-              <span className="phase-timer" aria-label={t("Time remaining")}>
-                {Math.floor(remaining / 60)}:
-                {String(remaining % 60).padStart(2, "0")}
-              </span>
-            )}
           </div>
           {reconnected && !r.messages && (
             <p className="notice">
               {t("You reconnected. Earlier messages may be missing.")}
             </p>
           )}
-          <div className="game-messages">
+          <div className="game-messages" ref={messagePane}>
             {visibleMessages.length === 0 && (
               <div className="empty">
                 <Sparkles size={30} />
@@ -325,7 +348,10 @@ export function GameRoom() {
               </div>
             )}
             {visibleMessages.map((m) => (
-              <article className="game-message" key={m.id}>
+              <article
+                className={`game-message ${m.participant_id === r.self_participant_id ? "is-self" : ""}`}
+                key={m.id}
+              >
                 <span
                   className={`participant-dot color-${m.participant_id % 5}`}
                 >
@@ -337,7 +363,6 @@ export function GameRoom() {
                 </div>
               </article>
             ))}
-            <div ref={bottom} />
           </div>
           <ErrorNotice error={sendError} />
           <form
@@ -359,7 +384,13 @@ export function GameRoom() {
           >
             <input
               aria-label={t("Room message")}
-              placeholder={t("Ask something unexpected…")}
+              placeholder={t(
+                r.state === "finished"
+                  ? "This conversation has ended."
+                  : r.state === "voting"
+                    ? "Time to vote. Choose your suspects."
+                    : "Ask something unexpected…",
+              )}
               maxLength={4000}
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -378,67 +409,92 @@ export function GameRoom() {
           <h2>{t("The usual suspects")}</h2>
           <p className="muted small-text">
             {t(
-              r.state === "voting"
-                ? "Choose human or bot for each other player."
-                : "Look for clues. Voting opens after the discussion.",
+              r.state === "finished"
+                ? "The identities are in. How good were your instincts?"
+                : r.state === "voting"
+                  ? "Choose human or bot for each other player."
+                  : "Look for clues. Voting opens after the discussion.",
             )}
           </p>
           <ErrorNotice error={vote.error || results.error} />
-          {r.participants.map((p) => (
-            <article className="participant" key={p.id}>
-              <span className={`participant-dot color-${p.id % 5}`}>
-                <UserRound size={20} />
-              </span>
-              <div>
-                <strong>
-                  {p.display_label}
-                  {p.id === r.self_participant_id ? ` (${t("You")})` : ""}
-                </strong>
-                {r.state === "voting" &&
-                  p.id !== r.self_participant_id &&
-                  (recordedVotes[p.id] ? (
-                    <Badge>
-                      <Check size={12} />
-                      {t(recordedVotes[p.id])}
-                    </Badge>
-                  ) : (
-                    <div className="vote-buttons">
-                      <button
-                        disabled={vote.isPending}
-                        onClick={() =>
-                          vote.mutate({ target: p.id, guess: "human" })
-                        }
-                      >
-                        <UserRound size={14} />
-                        {t("Human")}
-                      </button>
-                      <button
-                        disabled={vote.isPending}
-                        onClick={() =>
-                          vote.mutate({ target: p.id, guess: "bot" })
-                        }
-                      >
-                        <Bot size={14} />
-                        {t("Bot")}
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            </article>
-          ))}
+          {r.state === "finished" && results.isPending && <Loading />}
+          {r.state !== "finished" &&
+            r.participants.map((p) => (
+              <article className="participant" key={p.id}>
+                <span className={`participant-dot color-${p.id % 5}`}>
+                  <UserRound size={20} />
+                </span>
+                <div>
+                  <strong>
+                    {p.display_label}
+                    {p.id === r.self_participant_id ? ` (${t("You")})` : ""}
+                  </strong>
+                  {r.state === "voting" &&
+                    p.id !== r.self_participant_id &&
+                    (recordedVotes[p.id] ? (
+                      <Badge>
+                        <Check size={12} />
+                        {t(recordedVotes[p.id])}
+                      </Badge>
+                    ) : (
+                      <div className="vote-buttons">
+                        <button
+                          disabled={vote.isPending}
+                          onClick={() =>
+                            vote.mutate({ target: p.id, guess: "human" })
+                          }
+                        >
+                          <UserRound size={14} />
+                          {t("Human")}
+                        </button>
+                        <button
+                          disabled={vote.isPending}
+                          onClick={() =>
+                            vote.mutate({ target: p.id, guess: "bot" })
+                          }
+                        >
+                          <Bot size={14} />
+                          {t("Bot")}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </article>
+            ))}
           {results.data && (
             <div className="results">
-              <Trophy size={28} />
+              <div className="reveal-emblem">
+                <Trophy size={32} />
+              </div>
+              <span className="eyebrow">{t("BEHIND THE MASKS")}</span>
               <h3>{t("The reveal")}</h3>
               {results.data.participants.map((p) => (
                 <div className="result-line" key={p.participant_id}>
-                  <strong>{p.display_label}</strong>
-                  <Badge>{t(p.is_bot ? "Bot" : "Human")}</Badge>
+                  <span
+                    className={`participant-dot color-${p.participant_id % 5}`}
+                  >
+                    {p.is_bot ? <Bot size={20} /> : <UserRound size={20} />}
+                  </span>
+                  <div className="result-identity">
+                    <strong>
+                      {p.display_label}
+                      {p.participant_id === r.self_participant_id
+                        ? ` (${t("You")})`
+                        : ""}
+                    </strong>
+                    <Badge>{t(p.is_bot ? "Bot" : "Human")}</Badge>
+                  </div>
                   <span>
                     {p.is_bot
                       ? `${Math.round((p.deception_rate || 0) * 100)}%`
                       : p.score}{" "}
-                    {t(p.is_bot ? "fooled" : "points")}
+                    {t(
+                      p.is_bot
+                        ? "fooled"
+                        : Math.abs(p.score ?? 0) === 1
+                          ? "point"
+                          : "points",
+                    )}
                   </span>
                 </div>
               ))}

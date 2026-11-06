@@ -2,6 +2,19 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 const translations: Record<string, Record<string, string>> = {
   ar: {
+    "Round progress": "مراحل الجولة",
+    "Round complete.": "اكتملت الجولة.",
+    "Instincts on. Masks on.": "ثق بحدسك. الوجوه مخفية.",
+    Discuss: "ناقش",
+    Decide: "قرر",
+    Reveal: "اكتشف",
+    "ALL REVEALED": "انكشفت الهويات",
+    "TIME REMAINING": "الوقت المتبقي",
+    "BEHIND THE MASKS": "خلف الأقنعة",
+    "The identities are in. How good were your instincts?":
+      "انكشفت الهويات. هل أصاب حدسك؟",
+    "This conversation has ended.": "انتهت هذه المحادثة.",
+    "Time to vote. Choose your suspects.": "حان وقت التصويت. اختر من تشتبه به.",
     "Discover jobs": "اكتشف الوظائف",
     "My applications": "طلباتي",
     "Video studio": "استوديو الفيديو",

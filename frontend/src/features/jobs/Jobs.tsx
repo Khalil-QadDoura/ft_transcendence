@@ -12,7 +12,6 @@ import {
   Clock3,
   Compass,
   MapPin,
-  Play,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -27,6 +26,7 @@ import {
   type Job,
   type Schema,
 } from "../../api/client";
+import { SignalArtwork } from "../../components/SignalArtwork";
 import { useAuth, useSavedJobs } from "../../app/state";
 import {
   Avatar,
@@ -46,45 +46,7 @@ import {
 } from "../../components/ui";
 
 export function HeroArtwork() {
-  return (
-    <div className="hero-art" aria-hidden="true">
-      <div className="art-orbit orbit-one" />
-      <div className="art-orbit orbit-two" />
-      <span className="art-star star-one">✳</span>
-      <span className="art-star star-two">✦</span>
-      <div className="art-card back-card">
-        <div className="art-lines">
-          <i />
-          <i />
-          <i />
-        </div>
-        <span className="art-check">
-          <Check size={24} />
-        </span>
-      </div>
-      <div className="art-card front-card">
-        <div className="art-person">
-          <div className="person-head" />
-          <div className="person-body" />
-          <div className="person-hair" />
-          <div className="art-play">
-            <Play fill="currentColor" size={20} />
-          </div>
-          <span className="record-dot" />
-          <span className="record-time">00:30</span>
-        </div>
-        <div className="art-card-bottom">
-          <span className="waveform">▂▅▃▇▂▆▃▅▂▇▃</span>
-          <span className="art-badge">
-            <Check size={13} />
-          </span>
-        </div>
-      </div>
-      <span className="floating-pill">
-        <Sparkles size={15} /> A little more you.
-      </span>
-    </div>
-  );
+  return <SignalArtwork />;
 }
 function JobCard({
   job,

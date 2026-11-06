@@ -49,11 +49,11 @@ python3 scripts/reference-dev.py seed-media
 
 The fixtures are fictional local data: six companies/jobs, a candidate, a friend, a conversation, and an explicitly approved sample MP4. **The sample video's approval is a fixture, not an AI moderation result.** Both seed scripts refuse non-demo databases. No fixture is automatically created on application startup.
 
-| Role | Email | Password |
-| --- | --- | --- |
+| Role      | Email                 | Password      |
+| --------- | --------------------- | ------------- |
 | Candidate | candidate@example.com | WozuDemo!2026 |
-| Employer | employer@example.com | WozuDemo!2026 |
-| Friend | friend@example.com | WozuDemo!2026 |
+| Employer  | employer@example.com  | WozuDemo!2026 |
+| Friend    | friend@example.com    | WozuDemo!2026 |
 
 These credentials are for the isolated local demo only. Never use them in a shared deployment. Existing checkout locations can be supplied through `WOZU_REFERENCE_REPO`, `WOZU_REFERENCE_ENV`, `WOZU_REFERENCE_VENV`, and `WOZU_REFERENCE_MINIO`.
 
@@ -99,4 +99,4 @@ The integration check only permits the isolated demo database. It exercises auth
 
 ## Design and provenance
 
-The visual system uses forest green, warm white, mint and restrained orange, Manrope/DM Sans typography, and original CSS illustrations. Fonts are bundled locally. There are no external stock-image requests or fabricated live statistics. AI-assisted implementation is recorded in this branch's real commits; no dates or historical activity are fabricated.
+The visual system uses warm ivory, near-black, vivid coral and a restrained chartreuse accent for Turing Duel. Manrope/DM Sans typography pairs with italic editorial headlines and an original animated SVG orbital sculpture. Fonts and artwork are bundled locally; motion respects the reduced-motion preference. `src/identity.css` owns the shared visual identity and responsive refinements, while `src/index.css` provides feature layouts. The game room shows server-controlled phases, remaining time and real participant results. There are no external stock-image requests or fabricated live statistics. AI-assisted implementation is recorded in this branch's real commits; no dates or historical activity are fabricated.
