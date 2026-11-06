@@ -26,7 +26,7 @@ import {
   type Job,
   type Schema,
 } from "../../api/client";
-import { SignalArtwork } from "../../components/SignalArtwork";
+import { HumanPoster } from "../../components/HumanPoster";
 import { useAuth, useSavedJobs } from "../../app/state";
 import {
   Avatar,
@@ -46,7 +46,7 @@ import {
 } from "../../components/ui";
 
 export function HeroArtwork() {
-  return <SignalArtwork />;
+  return <HumanPoster />;
 }
 function JobCard({
   job,

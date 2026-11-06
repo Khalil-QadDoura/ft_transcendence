@@ -1,15 +1,15 @@
-/* WOZU editorial identity: warm paper, precise ink, expressive coral.
+/* WOZU editorial identity: warm paper, botanical olive, expressive human detail.
    Layout and feature mechanics live in index.css; this file owns the visual system. */
 :root {
-  color: #232323;
-  background: #f5f3ee;
-  --ink: #232323;
-  --green: #242424;
-  --deep: #202120;
+  color: #262b25;
+  background: #f4f2ed;
+  --ink: #262b25;
+  --green: #293329;
+  --deep: #293329;
   --mint: #eeeae1;
-  --lime: #e6f5b2;
-  --paper: #f5f3ee;
-  --line: #e2dfd7;
+  --lime: #d7ef72;
+  --paper: #f4f2ed;
+  --line: #dcdfd3;
   --muted: #6e6c67;
   --orange: #f57558;
   --coral: #fa785b;
@@ -43,7 +43,7 @@ h2 {
   letter-spacing: 1.7px;
 }
 .button {
-  border-radius: 11px;
+  border-radius: 100px;
   font-size: 13px;
   min-height: 46px;
 }
@@ -158,9 +158,9 @@ textarea::placeholder {
 /* A quiet navigation rail lets the work take the stage. */
 .sidebar {
   width: 224px;
-  background: #eeece6;
+  background: #efeee8;
   color: #67645e;
-  border-inline-end: 1px solid #dedbd3;
+  border-inline-end: 1px solid #dedfd4;
   padding-inline: 16px;
   scrollbar-color: #cac5ba #eeece6;
 }
@@ -173,19 +173,19 @@ textarea::placeholder {
   letter-spacing: -2.6px;
 }
 .brand-symbol {
-  background: var(--coral);
-  border-radius: 11px;
+  background: #d7ef72;
+  border-radius: 50%;
   width: 33px;
   height: 35px;
   color: #232323;
   font-size: 28px;
-  transform: rotate(-10deg);
+  transform: none;
 }
 .brand-symbol > span {
   color: #232323;
 }
 .brand-dot {
-  color: #df654a;
+  color: #6b7e3b;
 }
 .sidebar-caption {
   color: #807970;
@@ -209,12 +209,12 @@ textarea::placeholder {
   color: #232323;
 }
 .sidebar .nav-link.active {
-  background: #242524;
-  color: #fffaf1;
-  box-shadow: 0 5px 10px #1818180b;
+  background: #293329;
+  color: #f5f4e9;
+  box-shadow: 0 5px 15px #29332915;
 }
 .sidebar .nav-link.active svg {
-  color: #ff9479;
+  color: #d7ef72;
   stroke-width: 1.8;
 }
 .nav-new {
@@ -230,8 +230,8 @@ textarea::placeholder {
   background: #dcd7cc;
 }
 .sidebar-promo {
-  background: #e5e1d7;
-  border-color: #d9d3c8;
+  background: #e5e8d9;
+  border-color: #d9deca;
 }
 .sidebar-promo h3,
 .sidebar-promo a {
@@ -321,65 +321,70 @@ textarea::placeholder {
   color: #827a6e;
 }
 .discovery-hero {
-  min-height: 332px;
-  padding: 32px 40px;
-  background: #f0d8c9;
-  border: 1px solid #e6cbb9;
-  border-radius: 24px;
+  min-height: 390px;
+  padding: 36px 44px;
+  background: #293329;
+  border: 1px solid #293329;
+  border-radius: 20px;
   isolation: isolate;
+  color: #f5f4e9;
 }
 .discovery-hero::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: radial-gradient(ellipse at 85% 50%, #fff7e499, transparent 60%);
+  background: radial-gradient(ellipse at 15% 90%, #6d784c25, transparent 65%);
 }
 .hero-copy {
   max-width: 62%;
 }
 .hero-copy .eyebrow {
-  color: #805946;
+  color: #d7ddc7;
   font-size: 10px;
   letter-spacing: 1.9px;
 }
 .tiny-dot {
-  background: #ce6344;
+  background: #d7ef72;
 }
 .hero-copy h1 {
-  color: #292824;
+  color: #f5f4e9;
   font-size: clamp(42px, 4.3vw, 70px);
-  line-height: 0.99;
-  font-weight: 600;
+  line-height: 1.06;
+  font-weight: 530;
   letter-spacing: -3.2px;
   margin-top: 24px;
 }
 .hero-copy em {
-  color: #a94d32;
+  color: #d7ef72;
   font-family: Georgia, serif;
   font-weight: 400;
   font-style: italic;
   letter-spacing: -3px;
 }
 .hero-copy p {
-  color: #735f51;
-  font-size: 13px;
+  color: #d5d8cb;
+  font-size: 14px;
   max-width: 330px;
   line-height: 1.7;
   margin-top: 21px;
 }
 .hero-link {
-  color: #302a24;
+  color: #293329;
   font-size: 12px;
   margin-top: 23px;
   border: 0;
   gap: 16px;
+  background: #d7ef72;
+  border-radius: 100px;
+  padding: 10px 18px;
+  width: fit-content;
 }
 .hero-link svg {
-  padding: 6px;
+  padding: 4px;
   width: 30px;
   height: 30px;
-  border: 1px solid #ad8f75;
+  border: 0;
   border-radius: 50%;
   transition: transform 0.2s;
 }
@@ -425,15 +430,15 @@ textarea::placeholder {
   }
 }
 .search-bar {
-  margin: 20px 0 32px;
+  margin: 24px 0 36px;
   padding: 10px 12px 10px 20px;
-  border-color: #d7d1c6;
-  border-radius: 14px;
-  background: #fffdf9;
-  box-shadow: 0 5px 20px #3f302507;
+  border-color: #d9ddce;
+  border-radius: 100px;
+  background: #fffefb;
+  box-shadow: 0 8px 24px #29332908;
 }
 .search-bar:focus-within {
-  box-shadow: 0 0 0 3px #f3b69f60;
+  box-shadow: 0 0 0 3px #bbd07c60;
 }
 .search-bar > svg {
   color: #8c6b56;
@@ -503,15 +508,15 @@ textarea::placeholder {
   gap: 17px;
 }
 .job-card {
-  background: #fffdf9;
-  border-color: #ded8cd;
-  border-radius: 17px;
-  padding: 22px;
+  background: #fffefb;
+  border-color: #dfe2d6;
+  border-radius: 16px;
+  padding: 24px;
   position: relative;
 }
 .job-card:hover {
-  border-color: #cf9a7b;
-  box-shadow: 0 14px 30px #5535180c;
+  border-color: #98aa72;
+  box-shadow: 0 14px 30px #2933290e;
   transform: translateY(-4px);
 }
 .company-mark {
@@ -520,7 +525,7 @@ textarea::placeholder {
   border-radius: 12px;
 }
 .job-company strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 .job-company > span {
   font-size: 10px;
@@ -542,15 +547,15 @@ textarea::placeholder {
   margin-bottom: 16px;
 }
 .job-title:hover {
-  color: #b95637;
+  color: #5c713b;
 }
 .job-tags .badge {
   font-size: 9px;
   padding: 4px 7px;
 }
 .job-excerpt {
-  font-size: 12px;
-  color: #746b5f;
+  font-size: 13px;
+  color: #666d5d;
   line-height: 1.75;
   min-height: 42px;
   margin: 18px 0 22px;
@@ -572,17 +577,19 @@ textarea::placeholder {
   width: 38px;
   height: 38px;
   color: #322e27;
-  border-color: #e3d8c9;
-  background: #f2e8db;
+  border-color: #dbe2c9;
+  background: #e9eddf;
+  border-radius: 50%;
 }
 .job-go:hover {
-  background: var(--coral);
+  background: #d7ef72;
 }
 .profile-card {
-  background: #ebe7dd;
+  background: #e9ebdf;
   border: 1px solid #ded7c9;
   border-radius: 18px;
   padding: 24px;
+  border-color: #daddce;
 }
 .profile-card h3 {
   font-size: 19px;
@@ -593,10 +600,10 @@ textarea::placeholder {
   color: #797063;
 }
 .profile-ring {
-  background: conic-gradient(#d98761 var(--progress), #d9d0c0 0);
+  background: conic-gradient(#7b914a var(--progress), #d7ddc7 0);
 }
 .profile-ring::before {
-  background: #ebe7dd;
+  background: #e9ebdf;
 }
 .profile-card .button {
   font-size: 11px;
@@ -614,7 +621,7 @@ textarea::placeholder {
   background: #d6cdbd;
 }
 .progress-track > span {
-  background: #c88865;
+  background: #7b914a;
 }
 .video-promo {
   background: #262827;
@@ -710,14 +717,15 @@ textarea::placeholder {
   line-height: 1.8;
 }
 .game-hero .game-start {
-  background: #fa886b;
+  background: #d7ef72;
   color: #272824;
   font-size: 13px;
   padding: 15px 22px;
   min-height: 50px;
+  border-radius: 100px;
 }
 .game-hero .game-start:hover {
-  background: #ffa184;
+  background: #e9ff9d;
 }
 .game-specs {
   color: #c3c6b6;
@@ -1206,7 +1214,7 @@ textarea::placeholder {
   border-color: #e4dccd;
 }
 .auth-story {
-  background: #252925;
+  background: #293329;
   color: #f5efdf;
 }
 .auth-story-copy h1 {
@@ -1214,7 +1222,7 @@ textarea::placeholder {
   line-height: 1;
 }
 .auth-story-copy h1 > span {
-  color: #f2a583;
+  color: #d7ef72;
 }
 .auth-story-copy > p {
   color: #c0bfad;
@@ -1738,5 +1746,140 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   .sculpture-float {
     animation: none;
+  }
+}
+
+/* The same original poster anchors the app and the incremental FE-02 shell. */
+.human-poster-wrap {
+  width: min(33%, 270px);
+  padding: 8px;
+}
+.human-poster {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  background: #e5e5d6;
+  color: #293329;
+  border-radius: 5px;
+  transform: rotate(4deg);
+  box-shadow: 12px 18px 30px #15201540;
+}
+.human-poster-top,
+.human-poster-bottom {
+  position: absolute;
+  inset-inline: 18px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 7px;
+  font-weight: 750;
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+  z-index: 1;
+}
+.human-poster-top {
+  top: 18px;
+}
+.human-poster-top > :last-child {
+  text-align: end;
+}
+.human-poster .human-bloom {
+  position: absolute;
+  inset-inline-start: 2%;
+  top: 6%;
+  width: 96%;
+  filter: drop-shadow(3px 9px 4px #27311f33);
+  animation: human-bloom 35s linear infinite;
+}
+.human-poster-word {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 17%;
+  text-align: center;
+  font-size: clamp(68px, 7.4vw, 108px);
+  line-height: 1;
+  letter-spacing: -0.09em;
+  font-weight: 850;
+}
+.human-poster-bottom {
+  bottom: 18px;
+  align-items: flex-end;
+}
+.human-poster-bottom > :last-child {
+  font-size: 25px;
+}
+.human-poster-stamp {
+  position: absolute;
+  bottom: 20%;
+  inset-inline-end: -20px;
+  width: 82px;
+  height: 82px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f1b49a;
+  color: #293329;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.3;
+  transform: rotate(12deg);
+  box-shadow: 0 5px 15px #28332920;
+}
+.human-poster-stamp em {
+  font-family: Georgia, serif;
+  font-size: 13px;
+}
+.auth-story .human-poster-wrap {
+  width: 56%;
+  max-width: 245px;
+  margin: 28px auto 10px;
+}
+.auth-story .human-poster-word {
+  font-size: 88px;
+}
+@keyframes human-bloom {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .human-poster .human-bloom {
+    animation: none;
+  }
+}
+@media (max-width: 1100px) and (min-width: 701px) {
+  .human-poster-word {
+    font-size: 78px;
+  }
+  .human-poster-stamp {
+    width: 64px;
+    height: 64px;
+    font-size: 9px;
+    inset-inline-end: -12px;
+  }
+  .human-poster-stamp em {
+    font-size: 11px;
+  }
+}
+@media (max-width: 700px) {
+  .discovery-hero {
+    padding-bottom: 26px;
+  }
+  .discovery-hero .human-poster-wrap {
+    width: 230px;
+    height: auto;
+    overflow: visible;
+    margin: 32px auto 0;
+  }
+  .human-poster-word {
+    font-size: 87px;
+  }
+  .hero-copy p {
+    font-size: 14px;
+  }
+  .hero-link {
+    font-size: 12px;
+  }
+  .search-bar {
+    border-radius: 16px;
   }
 }
