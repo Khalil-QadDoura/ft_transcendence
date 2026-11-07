@@ -36,7 +36,8 @@ uvicorn app.main:app --reload   # http://localhost:8000/api/docs when ENV=dev
 ## Checks
 
 ```sh
-pytest -q                          # no database needed
+pytest -q                          # runs test suite (unit tests require no database)
+TEST_DATABASE_URL=... pytest -q    # runs against dedicated test database with transactional rollbacks
 ruff check . && ruff format --check .
 docker build -t wozu-backend .     # runtime image only: no tests, no test tools
 ```
