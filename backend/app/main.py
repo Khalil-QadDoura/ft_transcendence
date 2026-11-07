@@ -12,7 +12,7 @@ from app.core.internal import require_internal_key
 from app.core.limiter import limiter
 from app.core.logging import configure_logging
 from app.core.request_id import request_id_middleware
-from app.db.session import engine
+from app.db.session import setup_database
 from app.health import routes as health
 
 log = structlog.get_logger("app")
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Code before `yield` runs once at start-up, code after it once at shutdown."""
     log.info("startup", env=app.state.settings.env)
     yield
-    await engine.dispose()  # close the pooled database connections
+    await app.state.engine.dispose()  # close this app's pooled database connections
     log.info("shutdown")
 
 
@@ -41,6 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.limiter = limiter  # slowapi looks for the limiter here
+    setup_database(app, settings)  # this app's engine, from this app's settings
 
     add_error_handlers(app)
     app.middleware("http")(request_id_middleware)

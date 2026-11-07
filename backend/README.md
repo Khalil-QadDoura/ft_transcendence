@@ -8,7 +8,7 @@ FastAPI + SQLAlchemy 2 (async) + Alembic, Python 3.11. Every route lives under `
 app/
   main.py        app factory: settings, logging, middleware, error handlers, routers, lifespan
   core/          config (env), errors, logging (JSON), limiter, request_id, internal (/_internal guard)
-  db/            base (Base + naming convention), session (engine, get_session), mixins (TimestampMixin)
+  db/            base (Base + naming convention), session (each app's engine, get_session), mixins (TimestampMixin)
   health/        GET /api/health and the internal database check
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
