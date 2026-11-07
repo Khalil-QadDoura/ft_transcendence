@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     # because a short key can be guessed. Generate one with: openssl rand -hex 32
     jwt_secret: str = Field(min_length=32)
 
+    # Outgoing email over SMTP. The defaults point at the Mailpit container (INF-05), which
+    # keeps every email in a web inbox instead of delivering it.
+    smtp_host: str = "mailpit"
+    smtp_port: int = 1025
+    mail_from: str = "no-reply@wozu.local"
+    # Optional: when set, emails go out through Brevo's API (real inboxes) instead of SMTP.
+    brevo_api_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
