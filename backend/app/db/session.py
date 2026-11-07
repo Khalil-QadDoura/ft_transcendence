@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import app.db.models  # noqa: F401  (every table must be known before a row is saved)
 from app.core.config import Settings
 
 

@@ -7,17 +7,9 @@ from alembic import context
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-# Each domain's models module is imported once here, so Base.metadata knows every table
+# Loads every table model, so Base.metadata knows all tables
 # (autogenerate and `alembic check` compare it with the database).
-import app.applications.models  # noqa: F401
-import app.auth.models  # noqa: F401
-import app.companies.models  # noqa: F401
-import app.conversations.models  # noqa: F401
-import app.friends.models  # noqa: F401
-import app.game.models  # noqa: F401
-import app.jobs.models  # noqa: F401
-import app.media.models  # noqa: F401
-import app.users.models  # noqa: F401
+import app.db.models  # noqa: F401
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.base import Base

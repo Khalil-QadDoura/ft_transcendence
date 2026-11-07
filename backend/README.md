@@ -9,7 +9,7 @@ app/
   main.py        app factory: settings, logging, middleware, error handlers, routers, lifespan
   core/          config (env), errors, logging (JSON), limiter, request_id, internal (/_internal guard)
   db/            base (Base + naming convention), session (each app's engine, get_session),
-                 mixins (TimestampMixin, AuditMixin)
+                 mixins (TimestampMixin, AuditMixin), models (imports every table model)
   health/        GET /api/health and the internal database check
   users/ auth/ friends/ companies/ jobs/ media/ conversations/ applications/ game/
                  only models.py so far (BE-02); each feature card adds its other four files
@@ -64,7 +64,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:5432/wozu_test py
 - **Migrations** run on container start (`alembic upgrade head` in `docker-entrypoint.sh`).
   A schema change is a new migration (`alembic revision --autogenerate -m "..."`, then read and
   tidy it); never edit one that has already run somewhere. A new models module is imported in
-  `alembic/env.py`. `alembic check` says whether the models and the database still agree.
+  `app/db/models.py`. `alembic check` says whether the models and the database still agree.
 - **Tables:** ids are `bigint`; every table has `created_at` / `updated_at` (`TimestampMixin`);
   every foreign key column has an index (PostgreSQL does not add one by itself) unless a unique
   constraint already starts with it; users, companies, jobs and videos are never removed, only
