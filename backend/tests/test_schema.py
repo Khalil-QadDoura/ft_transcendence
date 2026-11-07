@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.friends.models import Friendship
 from app.users.models import User
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -30,6 +31,7 @@ SCHEMA_TABLES = {
     "users",
     "refresh_tokens",
     "password_reset_tokens",
+    "friendships",
 }
 # Tables that are in the database but are not ours: Alembic's record of the applied
 # migrations, and PostGIS's list of map projections.
@@ -162,3 +164,31 @@ async def test_new_user_gets_the_defaults(session):
     user = await add(session, User(email="ana@example.com"))
     await session.refresh(user)
     assert (user.status, user.is_email_verified, user.token_version) == ("active", False, 1)
+
+
+async def two_users(session: AsyncSession) -> tuple[int, int]:
+    ana = await add(session, User(email="ana@example.com"))
+    ben = await add(session, User(email="ben@example.com"))
+    return ana.id, ben.id
+
+
+# Friends ----------------------------------------------------------------------------------
+
+
+async def test_a_pair_has_one_friendship_whoever_asked(session):
+    ana, ben = await two_users(session)
+    await add(session, Friendship(requester_id=ana, addressee_id=ben))
+    with pytest.raises(IntegrityError, match="uq_friendships_pair"):
+        await add(session, Friendship(requester_id=ben, addressee_id=ana))
+
+
+async def test_a_declined_request_does_not_block_a_new_one(session):
+    ana, ben = await two_users(session)
+    await add(session, Friendship(requester_id=ana, addressee_id=ben, status="declined"))
+    await add(session, Friendship(requester_id=ben, addressee_id=ana))
+
+
+async def test_nobody_can_befriend_themselves(session):
+    ana, _ = await two_users(session)
+    with pytest.raises(IntegrityError, match="ck_friendships_not_self"):
+        await add(session, Friendship(requester_id=ana, addressee_id=ana))

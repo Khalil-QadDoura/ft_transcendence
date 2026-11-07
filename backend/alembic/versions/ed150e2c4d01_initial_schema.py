@@ -25,8 +25,11 @@ depends_on: str | Sequence[str] | None = None
 # Enum types: created before the tables that use them, dropped after them.
 # create_type=False stops create_table from trying to create them a second time.
 user_status = postgresql.ENUM("active", "deleted", name="user_status", create_type=False)
+friendship_status = postgresql.ENUM(
+    "pending", "accepted", "declined", name="friendship_status", create_type=False
+)
 
-ENUMS = [user_status]
+ENUMS = [user_status, friendship_status]
 
 
 def timestamps() -> list[sa.Column]:
@@ -99,9 +102,32 @@ def upgrade() -> None:
         *timestamps(),
     )
 
+    # Friends ---------------------------------------------------------------------------
+    op.create_table(
+        "friendships",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("requester_id", "users", "CASCADE"),
+        reference("addressee_id", "users", "CASCADE"),
+        sa.Column("status", friendship_status, nullable=False, server_default="pending"),
+        *timestamps(),
+        sa.CheckConstraint("requester_id <> addressee_id", name="not_self"),
+    )
+    # One live row per pair of users, whoever asked first; declined rows do not count.
+    op.create_index(
+        "uq_friendships_pair",
+        "friendships",
+        [
+            sa.text("least(requester_id, addressee_id)"),
+            sa.text("greatest(requester_id, addressee_id)"),
+        ],
+        unique=True,
+        postgresql_where=sa.text("status IN ('pending', 'accepted')"),
+    )
+
 
 def downgrade() -> None:
     # Children before parents, then the enum types.
+    op.drop_table("friendships")
     op.drop_table("password_reset_tokens")
     op.drop_table("refresh_tokens")
     op.drop_table("users")
