@@ -2,8 +2,10 @@
 
 import os
 
-# Settings require DATABASE_URL, and importing the app reads the settings.
+# Settings require DATABASE_URL and JWT_SECRET, and importing the app reads the settings.
+# Made-up values, for tests only.
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
+os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-0123456789abcdef")
 
 import pytest
 from fastapi import FastAPI
