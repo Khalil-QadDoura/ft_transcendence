@@ -38,6 +38,18 @@ job_schedule = postgresql.ENUM(
     "full_time", "part_time", "internship", name="job_schedule", create_type=False
 )
 job_urgency = postgresql.ENUM("normal", "urgent", "hot", name="job_urgency", create_type=False)
+moderation_status = postgresql.ENUM(
+    "pending",
+    "approved",
+    "rejected",
+    "moderation_error",
+    name="moderation_status",
+    create_type=False,
+)
+lifecycle_status = postgresql.ENUM(
+    "loaded", "posted", "unposted", "deleted", name="lifecycle_status", create_type=False
+)
+video_rating = postgresql.ENUM("A", "B", "C", name="video_rating", create_type=False)
 
 ENUMS = [
     user_status,
@@ -47,6 +59,9 @@ ENUMS = [
     job_salary_type,
     job_schedule,
     job_urgency,
+    moderation_status,
+    lifecycle_status,
+    video_rating,
 ]
 
 
@@ -212,10 +227,35 @@ def upgrade() -> None:
     op.create_index("ix_jobs_location_point", "jobs", ["location_point"], postgresql_using="gist")
     op.create_index("ix_jobs_search_vector", "jobs", ["search_vector"], postgresql_using="gin")
 
+    # Videos ------------------------------------------------------------------------------
+    op.create_table(
+        "intro_videos",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("user_id", "users", "CASCADE"),
+        sa.Column("object_key", sa.String(500), nullable=False, unique=True),
+        sa.Column("duration_sec", sa.Integer(), nullable=False),
+        sa.Column("size_bytes", sa.BigInteger(), nullable=False),
+        sa.Column("content_type", sa.String(100), nullable=False),
+        sa.Column("moderation_status", moderation_status, nullable=False, server_default="pending"),
+        sa.Column("rejected_reason", sa.Text()),
+        sa.Column("lifecycle_status", lifecycle_status, nullable=False, server_default="loaded"),
+        sa.Column("video_rating", video_rating, nullable=False, server_default="B"),
+        *timestamps(),
+    )
+    # Only one posted video per user.
+    op.create_index(
+        "uq_intro_videos_user_id_posted",
+        "intro_videos",
+        ["user_id"],
+        unique=True,
+        postgresql_where=sa.text("lifecycle_status = 'posted'"),
+    )
+
 
 def downgrade() -> None:
     # Children before parents (a table's trigger and indexes go with it), then the enum types.
     # The postgis extension stays: it belongs to the database, not to this migration.
+    op.drop_table("intro_videos")
     op.drop_table("jobs")
     op.drop_table("companies")
     op.drop_table("friendships")

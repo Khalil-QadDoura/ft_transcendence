@@ -13,6 +13,7 @@ import app.auth.models  # noqa: F401
 import app.companies.models  # noqa: F401
 import app.friends.models  # noqa: F401
 import app.jobs.models  # noqa: F401
+import app.media.models  # noqa: F401
 import app.users.models  # noqa: F401
 from app.core.config import get_settings
 from app.core.logging import configure_logging

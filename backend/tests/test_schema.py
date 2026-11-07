@@ -24,6 +24,7 @@ from sqlalchemy.pool import NullPool
 from app.companies.models import Company
 from app.friends.models import Friendship
 from app.jobs.models import Job
+from app.media.models import IntroVideo
 from app.users.models import User
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -36,6 +37,7 @@ SCHEMA_TABLES = {
     "friendships",
     "companies",
     "jobs",
+    "intro_videos",
 }
 # Tables that are in the database but are not ours: Alembic's record of the applied
 # migrations, and PostGIS's list of map projections.
@@ -278,3 +280,34 @@ async def test_jobs_have_a_gist_and_a_gin_index():
     definitions = await query("SELECT indexdef FROM pg_indexes WHERE tablename = 'jobs'")
     assert any("USING gist (location_point)" in d for d in definitions)
     assert any("USING gin (search_vector)" in d for d in definitions)
+
+
+# Videos -----------------------------------------------------------------------------------
+
+
+def video(user_id: int, number: int, **fields) -> IntroVideo:
+    return IntroVideo(
+        user_id=user_id,
+        object_key=f"users/{user_id}/intro/{number}.mp4",
+        duration_sec=30,
+        size_bytes=1_000_000,
+        content_type="video/mp4",
+        **fields,
+    )
+
+
+async def test_moderation_status_includes_moderation_error():
+    assert await query("SELECT unnest(enum_range(NULL::moderation_status))::text") == [
+        "pending",
+        "approved",
+        "rejected",
+        "moderation_error",
+    ]
+
+
+async def test_a_user_has_one_posted_video(session):
+    ana = await add(session, User(email="ana@example.com"))
+    await add(session, video(ana.id, 1, lifecycle_status="posted"))
+    await add(session, video(ana.id, 2, lifecycle_status="unposted"))
+    with pytest.raises(IntegrityError, match="uq_intro_videos_user_id_posted"):
+        await add(session, video(ana.id, 3, lifecycle_status="posted"))
