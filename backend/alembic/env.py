@@ -6,19 +6,35 @@ from alembic import context
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+# Each domain's models module is imported once here, so Base.metadata knows every table
+# (autogenerate and `alembic check` compare it with the database).
+import app.auth.models  # noqa: F401
+import app.users.models  # noqa: F401
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.base import Base
-
-# Import each domain's models module here so autogenerate sees its tables (from BE-02 on).
 
 settings = get_settings()
 configure_logging(settings.log_level)
 target_metadata = Base.metadata
 
 
+def include_name(name: str | None, type_: str, parent_names: dict) -> bool:
+    """Compare only the tables our models describe.
+
+    PostGIS brings tables of its own (spatial_ref_sys, and the tiger and topology schemas,
+    which the postgis image puts on the search path); autogenerate must leave them alone.
+    The catch: a table removed from the models is not noticed, so write its op.drop_table.
+    """
+    if type_ == "table":
+        return name in target_metadata.tables
+    return True
+
+
 def run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, target_metadata=target_metadata, include_name=include_name
+    )
     with context.begin_transaction():
         context.run_migrations()
 
