@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.applications.models import Application
 from app.companies.models import Company
 from app.conversations.models import Conversation, ConversationParticipant, Message
 from app.friends.models import Friendship
@@ -42,6 +43,9 @@ SCHEMA_TABLES = {
     "conversations",
     "conversation_participants",
     "messages",
+    "applications",
+    "application_events",
+    "job_views",
 }
 # Tables that are in the database but are not ours: Alembic's record of the applied
 # migrations, and PostGIS's list of map projections.
@@ -352,3 +356,33 @@ async def test_deleting_a_user_removes_their_memberships_but_keeps_their_message
     assert await session.scalar(memberships) == 0  # CASCADE
     author = select(Message.author_id).where(Message.id == message.id)
     assert await session.scalar(author) is None  # SET NULL
+
+
+# Applications -----------------------------------------------------------------------------
+
+
+async def test_a_person_applies_to_a_job_once(session):
+    job = await new_job(session)
+    ana = await add(session, User(email="ana@example.com"))
+    first = Application(job_id=job.id, applicant_id=ana.id, company_id=job.owner_id)
+    await add(session, first)
+    with pytest.raises(IntegrityError, match="uq_applications_job_id_applicant_id"):
+        await add(session, Application(job_id=job.id, applicant_id=ana.id, company_id=job.owner_id))
+
+
+async def test_an_application_and_its_conversation_point_at_each_other(session):
+    job = await new_job(session)
+    ana = await add(session, User(email="ana@example.com"))
+    chat = await add(session, Conversation(type="direct", job_id=job.id))
+    application = await add(
+        session,
+        Application(
+            job_id=job.id, applicant_id=ana.id, company_id=job.owner_id, conversation_id=chat.id
+        ),
+    )
+    chat.application_id = application.id
+    await session.flush()
+
+    await session.execute(delete(Application).where(Application.id == application.id))
+    link = select(Conversation.application_id).where(Conversation.id == chat.id)
+    assert await session.scalar(link) is None  # SET NULL: the chat stays

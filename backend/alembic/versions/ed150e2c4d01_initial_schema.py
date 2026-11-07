@@ -60,6 +60,17 @@ message_status = postgresql.ENUM(
     "sent", "delivered", "read", name="message_status", create_type=False
 )
 message_type = postgresql.ENUM("text", "system", "ai", name="message_type", create_type=False)
+application_status = postgresql.ENUM(
+    "submitted",
+    "viewed",
+    "shortlisted",
+    "rejected",
+    "contacted",
+    "hired",
+    "withdrawn",
+    name="application_status",
+    create_type=False,
+)
 
 ENUMS = [
     user_status,
@@ -76,6 +87,7 @@ ENUMS = [
     participant_role,
     message_status,
     message_type,
+    application_status,
 ]
 
 
@@ -272,6 +284,8 @@ def upgrade() -> None:
         sa.Column("type", conversation_type, nullable=False),
         sa.Column("title", sa.String(150)),
         reference("job_id", "jobs", "SET NULL", nullable=True),
+        # Its foreign key comes after the applications table, below.
+        sa.Column("application_id", sa.BigInteger(), index=True),
         # Shortcut to the newest message: not a foreign key, on purpose.
         sa.Column("last_message_id", sa.BigInteger()),
         *timestamps(),
@@ -304,10 +318,65 @@ def upgrade() -> None:
         sa.UniqueConstraint("conversation_id", "idempotency_key"),
     )
 
+    # Applications ------------------------------------------------------------------------
+    op.create_table(
+        "applications",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("job_id", "jobs", "CASCADE", index=False),
+        reference("applicant_id", "users", "CASCADE"),
+        reference("company_id", "companies", "CASCADE"),
+        reference("intro_video_id", "intro_videos", "SET NULL", nullable=True),
+        sa.Column("status", application_status, nullable=False, server_default="submitted"),
+        sa.Column("cover_note", sa.String(1000)),
+        reference("conversation_id", "conversations", "SET NULL", nullable=True),
+        sa.Column(
+            "applied_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column("viewed_at", sa.DateTime(timezone=True)),
+        *timestamps(),
+        sa.UniqueConstraint("job_id", "applicant_id"),
+    )
+    # conversations and applications point at each other; now both exist, add the second key.
+    op.create_foreign_key(
+        "fk_conversations_application_id_applications",
+        "conversations",
+        "applications",
+        ["application_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+    op.create_table(
+        "application_events",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("application_id", "applications", "CASCADE"),
+        reference("actor_id", "users", "SET NULL", nullable=True),
+        sa.Column("from_status", application_status),
+        sa.Column("to_status", application_status, nullable=False),
+        sa.Column("note", sa.String(500)),
+        *timestamps(),
+    )
+    op.create_table(
+        "job_views",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("job_id", "jobs", "CASCADE"),
+        reference("viewer_id", "users", "SET NULL", nullable=True),
+        sa.Column(
+            "viewed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        *timestamps(),
+    )
+
 
 def downgrade() -> None:
     # Children before parents (a table's trigger and indexes go with it), then the enum types.
     # The postgis extension stays: it belongs to the database, not to this migration.
+    op.drop_table("job_views")
+    op.drop_table("application_events")
+    # Remove one of the two keys between conversations and applications first.
+    op.drop_constraint(
+        "fk_conversations_application_id_applications", "conversations", type_="foreignkey"
+    )
+    op.drop_table("applications")
     op.drop_table("messages")
     op.drop_table("conversation_participants")
     op.drop_table("conversations")

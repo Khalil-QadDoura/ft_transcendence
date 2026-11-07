@@ -24,6 +24,12 @@ class Conversation(TimestampMixin, Base):
     job_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("jobs.id", ondelete="SET NULL"), index=True
     )
+    # Set when the chat started from an application. This key and applications.conversation_id
+    # point at each other, so one of the two can only be added once both tables exist
+    # (use_alter=True; the migration adds it with op.create_foreign_key).
+    application_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("applications.id", ondelete="SET NULL", use_alter=True), index=True
+    )
     # A copy of the newest message's id, so the chat list needs no extra query. Not a
     # foreign key, on purpose (wozu-backend.md): it is a shortcut, not a relation.
     last_message_id: Mapped[int | None] = mapped_column(BigInteger)

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 # Each domain's models module is imported once here, so Base.metadata knows every table
 # (autogenerate and `alembic check` compare it with the database).
+import app.applications.models  # noqa: F401
 import app.auth.models  # noqa: F401
 import app.companies.models  # noqa: F401
 import app.conversations.models  # noqa: F401
