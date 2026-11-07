@@ -50,6 +50,16 @@ lifecycle_status = postgresql.ENUM(
     "loaded", "posted", "unposted", "deleted", name="lifecycle_status", create_type=False
 )
 video_rating = postgresql.ENUM("A", "B", "C", name="video_rating", create_type=False)
+conversation_type = postgresql.ENUM(
+    "direct", "group", "ai", name="conversation_type", create_type=False
+)
+participant_role = postgresql.ENUM(
+    "member", "admin", "bot", name="participant_role", create_type=False
+)
+message_status = postgresql.ENUM(
+    "sent", "delivered", "read", name="message_status", create_type=False
+)
+message_type = postgresql.ENUM("text", "system", "ai", name="message_type", create_type=False)
 
 ENUMS = [
     user_status,
@@ -62,6 +72,10 @@ ENUMS = [
     moderation_status,
     lifecycle_status,
     video_rating,
+    conversation_type,
+    participant_role,
+    message_status,
+    message_type,
 ]
 
 
@@ -251,10 +265,52 @@ def upgrade() -> None:
         postgresql_where=sa.text("lifecycle_status = 'posted'"),
     )
 
+    # Chat --------------------------------------------------------------------------------
+    op.create_table(
+        "conversations",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        sa.Column("type", conversation_type, nullable=False),
+        sa.Column("title", sa.String(150)),
+        reference("job_id", "jobs", "SET NULL", nullable=True),
+        # Shortcut to the newest message: not a foreign key, on purpose.
+        sa.Column("last_message_id", sa.BigInteger()),
+        *timestamps(),
+    )
+    op.create_table(
+        "conversation_participants",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("conversation_id", "conversations", "CASCADE", index=False),
+        reference("user_id", "users", "CASCADE"),
+        sa.Column("role", participant_role, nullable=False, server_default="member"),
+        sa.Column("last_read_message_id", sa.BigInteger()),
+        sa.Column("is_muted", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("left_at", sa.DateTime(timezone=True)),
+        *timestamps(),
+        sa.UniqueConstraint("conversation_id", "user_id"),
+    )
+    op.create_table(
+        "messages",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("conversation_id", "conversations", "CASCADE", index=False),
+        reference("author_id", "users", "SET NULL", nullable=True),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("status", message_status, nullable=False, server_default="sent"),
+        reference("reply_to_id", "messages", "SET NULL", nullable=True),
+        sa.Column("idempotency_key", sa.String(64)),
+        sa.Column("message_type", message_type, nullable=False, server_default="text"),
+        sa.Column("edited_at", sa.DateTime(timezone=True)),
+        sa.Column("deleted_at", sa.DateTime(timezone=True)),
+        *timestamps(),
+        sa.UniqueConstraint("conversation_id", "idempotency_key"),
+    )
+
 
 def downgrade() -> None:
     # Children before parents (a table's trigger and indexes go with it), then the enum types.
     # The postgis extension stays: it belongs to the database, not to this migration.
+    op.drop_table("messages")
+    op.drop_table("conversation_participants")
+    op.drop_table("conversations")
     op.drop_table("intro_videos")
     op.drop_table("jobs")
     op.drop_table("companies")

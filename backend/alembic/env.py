@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 # (autogenerate and `alembic check` compare it with the database).
 import app.auth.models  # noqa: F401
 import app.companies.models  # noqa: F401
+import app.conversations.models  # noqa: F401
 import app.friends.models  # noqa: F401
 import app.jobs.models  # noqa: F401
 import app.media.models  # noqa: F401

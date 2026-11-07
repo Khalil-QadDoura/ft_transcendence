@@ -16,12 +16,13 @@ import sys
 from pathlib import Path
 
 import pytest
-from sqlalchemy import make_url, text
+from sqlalchemy import delete, func, make_url, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.companies.models import Company
+from app.conversations.models import Conversation, ConversationParticipant, Message
 from app.friends.models import Friendship
 from app.jobs.models import Job
 from app.media.models import IntroVideo
@@ -38,6 +39,9 @@ SCHEMA_TABLES = {
     "companies",
     "jobs",
     "intro_videos",
+    "conversations",
+    "conversation_participants",
+    "messages",
 }
 # Tables that are in the database but are not ours: Alembic's record of the applied
 # migrations, and PostGIS's list of map projections.
@@ -311,3 +315,40 @@ async def test_a_user_has_one_posted_video(session):
     await add(session, video(ana.id, 2, lifecycle_status="unposted"))
     with pytest.raises(IntegrityError, match="uq_intro_videos_user_id_posted"):
         await add(session, video(ana.id, 3, lifecycle_status="posted"))
+
+
+# Chat -------------------------------------------------------------------------------------
+
+
+async def test_a_user_joins_a_conversation_once(session):
+    ana, _ = await two_users(session)
+    chat = await add(session, Conversation(type="direct"))
+    await add(session, ConversationParticipant(conversation_id=chat.id, user_id=ana))
+    with pytest.raises(
+        IntegrityError, match="uq_conversation_participants_conversation_id_user_id"
+    ):
+        await add(session, ConversationParticipant(conversation_id=chat.id, user_id=ana))
+
+
+async def test_a_retried_send_does_not_make_a_second_message(session):
+    ana, _ = await two_users(session)
+    chat = await add(session, Conversation(type="direct"))
+    for _ in range(2):  # without a key, the same text twice is two messages
+        await add(session, Message(conversation_id=chat.id, author_id=ana, content="Hi"))
+    await add(session, Message(conversation_id=chat.id, content="Hi", idempotency_key="k1"))
+    with pytest.raises(IntegrityError, match="uq_messages_conversation_id_idempotency_key"):
+        await add(session, Message(conversation_id=chat.id, content="Hi", idempotency_key="k1"))
+
+
+async def test_deleting_a_user_removes_their_memberships_but_keeps_their_messages(session):
+    ana, _ = await two_users(session)
+    chat = await add(session, Conversation(type="direct"))
+    await add(session, ConversationParticipant(conversation_id=chat.id, user_id=ana))
+    message = await add(session, Message(conversation_id=chat.id, author_id=ana, content="Hi"))
+
+    await session.execute(delete(User).where(User.id == ana))
+
+    memberships = select(func.count()).where(ConversationParticipant.user_id == ana)
+    assert await session.scalar(memberships) == 0  # CASCADE
+    author = select(Message.author_id).where(Message.id == message.id)
+    assert await session.scalar(author) is None  # SET NULL
