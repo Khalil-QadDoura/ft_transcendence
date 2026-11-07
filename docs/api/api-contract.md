@@ -11,7 +11,7 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 | Topic | Rule |
 | --- | --- |
 | Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind Caddy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
-| Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
+| Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. A missing, invalid or expired token, or one made before a password change (`token_version`), gets 401 with `WWW-Authenticate: Bearer`. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
 | Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
 | Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
 | Rate limit | 429 with the same error body. Limits per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min |
@@ -27,11 +27,11 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/auth/register` | — | `{email, password}` password 8–128 | 202 `{message}` | 409 email already verified |
+| POST | `/auth/register` | — | `{email, password}` password 8–128 | 202 `{message}`; the verification email is sent after the answer | 409 email already verified, 422, 429 |
 | GET | `/auth/verify` | — | query `token` | 200 `{verified, email, updated}` | 400 invalid / expired |
-| POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials, 403 email not verified |
-| POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed |
-| POST | `/auth/logout` | — | `{refresh_token}` | 204 always | — |
+| POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials (same answer for an unknown email), 403 email not verified, 429 |
+| POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
+| POST | `/auth/logout` | — | `{refresh_token}` (optional) | 204 always, even with no token or a bad one | — |
 | POST | `/auth/change-password` | Bearer | `{current_password, new_password}` | 204; all tokens revoked | 400 `wrong_current_password` |
 | POST | `/auth/forgot-password` | — | `{email}` | 202 always | — |
 | POST | `/auth/reset-password` | — | `{token, new_password}` | 204; all tokens revoked | 400 invalid / expired |
@@ -40,6 +40,13 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | DELETE | `/users/me` | Bearer | — | 204 (soft delete) | — |
 
 `UserOut` = `{id, email, phone, username, first_name, last_name, position, birth_date, bio, avatar_object_key, is_email_verified, is_phone_verified, account_number}`; `account_number` is computed as `WZ-000123`.
+
+Sign-up and login in the new backend (BE-03):
+
+- Emails are compared in lower case. Registering again before the email is verified keeps the one account, replaces its password with the new one and sends a new link (202).
+- The verification email links to the frontend page `<FRONTEND_BASE_URL>/verify-email?token=…` (valid 24 h); that page calls `GET /api/auth/verify?token=…`. Opening the link twice answers 200 with `updated: false`.
+- Access token: JWT (HS256), 15 min, claims `sub` (user id), `scope` (`access`), `ver` (`users.token_version`), `jti`, `iat`, `exp`. Refresh token: JWT, 30 days, stored by its `jti` in `refresh_tokens`; each refresh revokes it and returns a new pair (rotation), and a reused one gets 401.
+- A deleted account gets the same 401 as a wrong password at login, and 401 on every protected route.
 
 ## Friends, profiles and conversations
 
