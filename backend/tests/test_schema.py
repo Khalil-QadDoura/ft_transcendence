@@ -9,14 +9,9 @@ To run them:
     TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:5432/wozu_test pytest -q
 """
 
-import os
-import socket
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
-from sqlalchemy import delete, func, make_url, select, text
+from conftest import TEST_DATABASE_URL, alembic, needs_database
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -29,9 +24,6 @@ from app.game.models import GameParticipant, GameRoom, GameVote
 from app.jobs.models import Job
 from app.media.models import IntroVideo
 from app.users.models import User
-
-TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
-BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 SCHEMA_TABLES = {
     "users",
@@ -68,43 +60,12 @@ DROPPED_TABLES = {
 BOOKKEEPING_TABLES = {"alembic_version", "spatial_ref_sys"}
 
 
-def skip_reason() -> str | None:
-    """Why these tests cannot run here, or None when they can."""
-    if not TEST_DATABASE_URL:
-        return "TEST_DATABASE_URL is not set"
-    url = make_url(TEST_DATABASE_URL)
-    if "test" not in (url.database or ""):
-        return "the TEST_DATABASE_URL database name must contain 'test'"
-    try:
-        socket.create_connection((url.host or "localhost", url.port or 5432), timeout=2).close()
-    except OSError:
-        return f"no database answers at {url.host}:{url.port}"
-    return None
-
-
-SKIP_REASON = skip_reason()
-pytestmark = [
-    pytest.mark.skipif(SKIP_REASON is not None, reason=str(SKIP_REASON)),
-    pytest.mark.anyio,
-]
+pytestmark = [needs_database, pytest.mark.anyio]
 
 
 @pytest.fixture(scope="module")
 def anyio_backend():
     return "asyncio"
-
-
-def alembic(*args: str) -> str:
-    """Run an Alembic command on the test database, as the container does on start."""
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
-        cwd=BACKEND_DIR,
-        env={**os.environ, "DATABASE_URL": TEST_DATABASE_URL},
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    return result.stdout + result.stderr
 
 
 @pytest.fixture(scope="module", autouse=True)
