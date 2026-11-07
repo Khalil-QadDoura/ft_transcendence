@@ -132,16 +132,16 @@ async def issue_token_pair(session: AsyncSession, settings: Settings, user: User
     access_token, _ = security.create_token(
         settings.jwt_secret, user.id, ACCESS_SCOPE, ACCESS_TOKEN_LIFETIME, ver=user.token_version
     )
-    refresh_token, refresh = security.create_token(
+    refresh_token, refresh_claims = security.create_token(
         settings.jwt_secret, user.id, REFRESH_SCOPE, REFRESH_TOKEN_LIFETIME
     )
     # Only the token's id (jti) is stored, never the token itself.
     repo.add_refresh_token(
         session,
         user.id,
-        jti=refresh["jti"],
+        jti=refresh_claims["jti"],
         token_version=user.token_version,
-        expires_at=refresh["exp"],
+        expires_at=refresh_claims["exp"],
     )
     await session.commit()
     return TokenPairOut(access_token=access_token, refresh_token=refresh_token)
