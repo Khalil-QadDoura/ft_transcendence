@@ -1,0 +1,10 @@
+# What the API needs to run. The Docker image installs only this file.
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.1
+pydantic-settings==2.16.1
+structlog==26.1.0
+slowapi==0.1.10
+SQLAlchemy[asyncio]==2.0.55
+asyncpg==0.32.0
+alembic==1.20.1

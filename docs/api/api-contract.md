@@ -12,7 +12,8 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 | --- | --- |
 | Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind Caddy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
 | Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
-| Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only) |
+| Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
+| Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
 | Rate limit | 429 with the same error body. Limits per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min |
 | Pagination | Request `cursor` (id of the last item seen) + `limit`; response `{items: [...], next_cursor: id or null}`. Messages use `before_id` → `prev_before_id` (older pages) |
 | Times | ISO 8601 with timezone, UTC (`2026-10-27T14:03:00+00:00`) |
@@ -138,6 +139,17 @@ Join the queue over REST, then wait for `game_room_formed` on `/ws`, open `/game
 | GET | `/game/rooms/{id}/results` | Bearer (participant) | — | 200 `{room_id, state, participants: [{participant_id, display_label, is_bot, score (humans), deception_rate (bots)}]}` | 409 not finished |
 
 Room states: `waiting → discussion (120 s) → voting (45 s) → finished`. The server moves the phases; today the phase events carry only the room id, so the client cannot show an exact countdown (planned change: send phase\_ends\_at).
+
+## System
+
+Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*` are not part of this contract: they are left out of the spec, need the `X-Internal-Key` header and are blocked by the proxy.
+
+| Method | Path | Auth | Request | Success | Errors |
+| --- | --- | --- | --- | --- | --- |
+| GET | `/api/health` | — | — | 200 `{status: "ok"}` | — |
+| GET | `/api/openapi.json` | — | — | 200 OpenAPI 3.1 spec of every public route | — |
+| GET | `/api/docs` | — | — | 200 Swagger UI, only when `ENV=dev` | 404 otherwise |
+| GET | `/api/docs/oauth2-redirect` | — | — | 200 Swagger UI's OAuth helper page, only when `ENV=dev` | 404 otherwise |
 
 ## WebSocket protocol
 

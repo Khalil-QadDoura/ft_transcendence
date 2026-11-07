@@ -1,0 +1,5 @@
+# Tools for development and CI only. Never installed in the Docker image.
+-r requirements.txt
+pytest==9.1.1
+httpx2==2.13.1  # HTTP client behind FastAPI's TestClient
+ruff==0.17.2
