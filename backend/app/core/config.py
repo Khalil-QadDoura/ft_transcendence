@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     # Signs the login tokens (JWTs). Required, like DATABASE_URL, and at least 32 characters,
     # because a short key can be guessed. Generate one with: openssl rand -hex 32
     jwt_secret: str = Field(min_length=32)
+    # Links in emails open the frontend at this address, e.g. <it>/verify-email?token=...
+    frontend_base_url: str = "https://localhost"
 
     # Outgoing email over SMTP. The defaults point at the Mailpit container (INF-05), which
     # keeps every email in a web inbox instead of delivering it.

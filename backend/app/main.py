@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import APIRouter, Depends, FastAPI
 
+from app.auth import routes as auth
 from app.core.config import Settings, get_settings
 from app.core.errors import add_error_handlers
 from app.core.internal import require_internal_key
@@ -51,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Public API: every router goes under /api. WebSockets will live under /ws.
     api = APIRouter(prefix="/api")
     api.include_router(health.router)
+    api.include_router(auth.router)
     app.include_router(api)
 
     # Internal routes: left out of the OpenAPI spec and locked by X-Internal-Key.
