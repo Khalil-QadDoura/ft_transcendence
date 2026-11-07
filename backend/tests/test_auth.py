@@ -83,6 +83,21 @@ def verify(client, token: str):
     return client.get("/api/auth/verify", params={"token": token})
 
 
+def sign_up(client, mailbox, email="ana@example.com", password=PASSWORD) -> None:
+    """Register, then open the link of the email: a verified account, ready to log in."""
+    assert register(client, email, password).status_code == 202
+    assert verify(client, link_token(mailbox.sent[-1])).status_code == 200
+
+
+def login(client, email="ana@example.com", password=PASSWORD):
+    return client.post("/api/auth/login", json={"email": email, "password": password})
+
+
+def claims(client, token: str, scope: str) -> dict:
+    """What a token says inside (checked with the app's secret)."""
+    return security.read_token(client.app.state.settings.jwt_secret, token, scope)
+
+
 def test_register_answers_202_and_emails_a_link_to_the_frontend(client, mailbox):
     response = register(client)
     assert response.status_code == 202
@@ -175,4 +190,72 @@ def test_register_allows_5_requests_a_minute_per_ip(client):
     assert response.status_code == 429
     assert response.json() == {
         "error": {"code": "429", "detail": "Rate limit exceeded: 5 per 1 minute"}
+    }
+
+
+def test_login_gives_an_access_token_and_a_refresh_token(client, mailbox):
+    sign_up(client, mailbox)
+    response = login(client)
+    assert response.status_code == 200
+    tokens = response.json()
+    assert tokens["token_type"] == "bearer"
+
+    access = claims(client, tokens["access_token"], "access")
+    assert (access["sub"], access["scope"], access["ver"]) == ("1", "access", 1)
+    assert access["exp"] - access["iat"] == 15 * 60  # 15 minutes
+    refresh = claims(client, tokens["refresh_token"], "refresh")
+    assert refresh["exp"] - refresh["iat"] == 30 * 24 * 3600  # 30 days
+    # The refresh token is remembered by its id (jti); the token itself is not stored.
+    assert sql("SELECT user_id, jti, token_version, revoked FROM refresh_tokens") == [
+        (1, refresh["jti"], 1, False)
+    ]
+
+
+def test_login_is_refused_with_403_until_the_email_is_verified(client, mailbox):
+    register(client)
+    response = login(client)
+    assert response.status_code == 403
+    assert response.json() == {"error": {"code": "403", "detail": "Email not verified"}}
+    # With a wrong password the answer is 401: only the owner learns "not verified".
+    assert login(client, password="wrong password").status_code == 401
+
+    verify(client, link_token(mailbox.sent[0]))
+    assert login(client).status_code == 200
+
+
+def test_wrong_password_and_unknown_email_get_the_same_answer(client, mailbox):
+    sign_up(client, mailbox)
+    wrong_password = login(client, password="wrong password")
+    unknown_email = login(client, email="nobody@example.com")
+    assert wrong_password.status_code == unknown_email.status_code == 401
+    assert (
+        wrong_password.json()
+        == unknown_email.json()
+        == {"error": {"code": "401", "detail": "Invalid email or password"}}
+    )
+
+
+def test_a_deleted_account_cannot_log_in(client, mailbox):
+    sign_up(client, mailbox)
+    sql("UPDATE users SET status = 'deleted'")
+    response = login(client)
+    assert response.status_code == 401
+    assert response.json()["error"]["detail"] == "Invalid email or password"
+
+
+def test_login_uses_the_newest_password_after_registering_twice(client, mailbox):
+    register(client, password="first password")
+    register(client, password="second password")
+    verify(client, link_token(mailbox.sent[-1]))
+    assert login(client, password="first password").status_code == 401
+    assert login(client, password="second password").status_code == 200
+
+
+def test_login_allows_10_requests_a_minute_per_ip(client):
+    for _ in range(10):
+        assert login(client, email="nobody@example.com").status_code == 401
+    response = login(client, email="nobody@example.com")
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": {"code": "429", "detail": "Rate limit exceeded: 10 per 1 minute"}
     }

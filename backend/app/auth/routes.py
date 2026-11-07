@@ -6,8 +6,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import service
-from app.auth.constants import REGISTER_RATE_LIMIT
-from app.auth.schemas import MessageOut, RegisterIn, VerifyOut
+from app.auth.constants import LOGIN_RATE_LIMIT, REGISTER_RATE_LIMIT
+from app.auth.schemas import LoginIn, MessageOut, RegisterIn, TokenPairOut, VerifyOut
 from app.core.limiter import limiter
 from app.core.mailer import Mailer, get_mailer
 from app.db.session import get_session
@@ -35,3 +35,10 @@ async def register(
 async def verify(request: Request, token: str, session: Session) -> VerifyOut:
     """Called by the frontend's /verify-email page with the token from the email's link."""
     return await service.verify_email(session, request.app.state.settings, token)
+
+
+@router.post("/login")
+@limiter.limit(LOGIN_RATE_LIMIT)
+async def login(request: Request, data: LoginIn, session: Session) -> TokenPairOut:
+    """Log in: 401 for a wrong email or password, 403 while the email is not verified."""
+    return await service.login(session, request.app.state.settings, data)
