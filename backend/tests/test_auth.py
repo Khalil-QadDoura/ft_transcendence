@@ -10,17 +10,27 @@ from datetime import timedelta
 
 import pytest
 from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database
+from fastapi import APIRouter
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.auth import security
+from app.auth.deps import CurrentUser
 from app.core.mailer import get_mailer
 
 pytestmark = needs_database
 
 PASSWORD = "correct horse battery"
+
+# A test-only route behind the login check, standing in for /users/me (BE-05).
+protected = APIRouter()
+
+
+@protected.get("/api/test/whoami")
+async def who_am_i_route(user: CurrentUser):
+    return {"id": user.id, "email": user.email}
 
 
 class FakeMailer:
@@ -64,6 +74,7 @@ def client(mailbox):
     sql("TRUNCATE users RESTART IDENTITY CASCADE")
     app = build_app(database_url=TEST_DATABASE_URL)
     app.dependency_overrides[get_mailer] = lambda: mailbox
+    app.include_router(protected)
     with TestClient(app) as test_client:
         yield test_client
 
@@ -101,9 +112,39 @@ def logout(client, refresh_token: str):
     return client.post("/api/auth/logout", json={"refresh_token": refresh_token})
 
 
+def who_am_i(client, access_token: str | None):
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+    return client.get("/api/test/whoami", headers=headers)
+
+
 def claims(client, token: str, scope: str) -> dict:
     """What a token says inside (checked with the app's secret)."""
     return security.read_token(client.app.state.settings.jwt_secret, token, scope)
+
+
+def test_the_whole_journey(client, mailbox):
+    # 1. Register: one user, not verified yet, and one email with the link.
+    assert register(client, email="Ana@Example.com").status_code == 202
+    assert sql("SELECT email, is_email_verified FROM users") == [("ana@example.com", False)]
+    [email] = mailbox.sent
+    # 2. The link opens the frontend's page, which calls verify with the token.
+    assert verify(client, link_token(email)).json()["verified"] is True
+    assert sql("SELECT is_email_verified FROM users") == [(True,)]
+    # 3. Login: a token pair; the refresh token is stored by its id.
+    first = login(client).json()
+    assert sql("SELECT count(*) FROM refresh_tokens WHERE NOT revoked") == [(1,)]
+    # 4. The access token opens protected routes.
+    response = who_am_i(client, first["access_token"])
+    assert response.json() == {"id": 1, "email": "ana@example.com"}
+    # 5. Refresh: a new pair; the old refresh token is used up.
+    second = refresh(client, first["refresh_token"]).json()
+    assert who_am_i(client, second["access_token"]).status_code == 200
+    assert refresh(client, first["refresh_token"]).status_code == 401
+    # 6. Logout: the refresh token stops working. (The access token still works until it
+    #    expires, at most 15 minutes; the frontend forgets it.)
+    assert logout(client, second["refresh_token"]).status_code == 204
+    assert refresh(client, second["refresh_token"]).status_code == 401
+    assert sql("SELECT revoked FROM refresh_tokens ORDER BY id") == [(True,), (True,)]
 
 
 def test_register_answers_202_and_emails_a_link_to_the_frontend(client, mailbox):
@@ -330,3 +371,46 @@ def test_refresh_allows_20_requests_a_minute_per_ip(client):
     assert response.json() == {
         "error": {"code": "429", "detail": "Rate limit exceeded: 20 per 1 minute"}
     }
+
+
+def test_a_protected_route_without_a_token_is_401(client):
+    response = who_am_i(client, None)
+    assert response.status_code == 401
+    assert response.json() == {"error": {"code": "401", "detail": "Not authenticated"}}
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_raising_token_version_ends_every_older_token(client, mailbox):
+    sign_up(client, mailbox)
+    tokens = login(client).json()
+    assert who_am_i(client, tokens["access_token"]).status_code == 200
+    # What a password change or reset will do (BE-04).
+    sql("UPDATE users SET token_version = token_version + 1")
+    assert who_am_i(client, tokens["access_token"]).status_code == 401
+    assert refresh(client, tokens["refresh_token"]).status_code == 401
+    # A new login gives tokens with the new version, and they work.
+    assert who_am_i(client, login(client).json()["access_token"]).status_code == 200
+
+
+def test_an_expired_access_token_is_refused(client, mailbox):
+    sign_up(client, mailbox)
+    secret = client.app.state.settings.jwt_secret
+    expired, _ = security.create_token(secret, 1, "access", timedelta(seconds=-1), ver=1)
+    response = who_am_i(client, expired)
+    assert response.status_code == 401
+    assert response.json() == {"error": {"code": "401", "detail": "Invalid or expired token"}}
+
+
+def test_a_bad_token_or_a_refresh_token_does_not_open_protected_routes(client, mailbox):
+    sign_up(client, mailbox)
+    refresh_token = login(client).json()["refresh_token"]
+    for token in ("not-a-token", refresh_token):
+        assert who_am_i(client, token).status_code == 401
+
+
+def test_a_deleted_account_loses_access_at_once(client, mailbox):
+    sign_up(client, mailbox)
+    tokens = login(client).json()
+    sql("UPDATE users SET status = 'deleted'")
+    assert who_am_i(client, tokens["access_token"]).status_code == 401
+    assert refresh(client, tokens["refresh_token"]).status_code == 401
