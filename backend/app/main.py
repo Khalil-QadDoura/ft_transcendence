@@ -36,6 +36,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         openapi_url="/api/openapi.json",
         docs_url="/api/docs" if settings.env == "dev" else None,
+        # Swagger's helper page for its "Authorize" button; it exists only with the docs.
+        swagger_ui_oauth2_redirect_url="/api/docs/oauth2-redirect",
         redoc_url=None,
         lifespan=lifespan,
     )

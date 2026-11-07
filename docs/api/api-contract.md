@@ -149,6 +149,7 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 | GET | `/api/health` | — | — | 200 `{status: "ok"}` | — |
 | GET | `/api/openapi.json` | — | — | 200 OpenAPI 3.1 spec of every public route | — |
 | GET | `/api/docs` | — | — | 200 Swagger UI, only when `ENV=dev` | 404 otherwise |
+| GET | `/api/docs/oauth2-redirect` | — | — | 200 Swagger UI's OAuth helper page, only when `ENV=dev` | 404 otherwise |
 
 ## WebSocket protocol
 
