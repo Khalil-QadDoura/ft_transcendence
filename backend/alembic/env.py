@@ -1,6 +1,7 @@
 """Alembic runs this file for every migration command. The database URL comes from our settings."""
 
 import asyncio
+import warnings
 
 from alembic import context
 from sqlalchemy import Connection
@@ -9,7 +10,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 # Each domain's models module is imported once here, so Base.metadata knows every table
 # (autogenerate and `alembic check` compare it with the database).
 import app.auth.models  # noqa: F401
+import app.companies.models  # noqa: F401
 import app.friends.models  # noqa: F401
+import app.jobs.models  # noqa: F401
 import app.users.models  # noqa: F401
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -18,6 +21,10 @@ from app.db.base import Base
 settings = get_settings()
 configure_logging(settings.log_level)
 target_metadata = Base.metadata
+
+# SQLAlchemy cannot read PostGIS's geography type back from the database. That is expected
+# (jobs.location_point is compared by name only), so do not warn about it.
+warnings.filterwarnings("ignore", message="Did not recognize type 'geography'")
 
 
 def include_name(name: str | None, type_: str, parent_names: dict) -> bool:

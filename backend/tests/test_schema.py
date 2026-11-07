@@ -21,7 +21,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.companies.models import Company
 from app.friends.models import Friendship
+from app.jobs.models import Job
 from app.users.models import User
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -32,6 +34,8 @@ SCHEMA_TABLES = {
     "refresh_tokens",
     "password_reset_tokens",
     "friendships",
+    "companies",
+    "jobs",
 }
 # Tables that are in the database but are not ours: Alembic's record of the applied
 # migrations, and PostGIS's list of map projections.
@@ -192,3 +196,85 @@ async def test_nobody_can_befriend_themselves(session):
     ana, _ = await two_users(session)
     with pytest.raises(IntegrityError, match="ck_friendships_not_self"):
         await add(session, Friendship(requester_id=ana, addressee_id=ana))
+
+
+# Companies and jobs -------------------------------------------------------------------------
+
+
+async def new_job(session: AsyncSession, **fields) -> Job:
+    """A job of a new company; keyword arguments replace the default values."""
+    owner = await add(session, User(email="boss@example.com"))
+    company = await add(session, Company(owner_user_id=owner.id, name="Sea Cafe"))
+    values = {
+        "title": "Barista",
+        "description": "Make coffee for our guests",
+        "latitude": 24.4539,  # Abu Dhabi
+        "longitude": 54.3773,
+        "location": "Abu Dhabi",
+        **fields,
+    }
+    return await add(session, Job(owner_id=company.id, **values))
+
+
+async def test_an_owner_has_one_active_company(session):
+    owner = await add(session, User(email="boss@example.com"))
+    await add(session, Company(owner_user_id=owner.id, name="Old Cafe", status="deleted"))
+    await add(session, Company(owner_user_id=owner.id, name="Sea Cafe"))
+    with pytest.raises(IntegrityError, match="uq_companies_owner_active"):
+        await add(session, Company(owner_user_id=owner.id, name="Second Cafe"))
+
+
+async def test_job_status_is_draft_open_deleted_and_starts_as_draft(session):
+    assert await query("SELECT unnest(enum_range(NULL::job_status))::text") == [
+        "draft",
+        "open",
+        "deleted",
+    ]
+    job = await new_job(session)
+    await session.refresh(job)
+    assert job.status == "draft"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "check"),
+    [
+        ("latitude", 91, "ck_jobs_latitude_range"),
+        ("longitude", -181, "ck_jobs_longitude_range"),
+        ("salary_amount", -1, "ck_jobs_salary_not_negative"),
+        ("salary_currency", "usd", "ck_jobs_currency_iso_4217"),
+    ],
+)
+async def test_job_checks_reject_bad_values(session, field, value, check):
+    with pytest.raises(IntegrityError, match=check):
+        await new_job(session, **{field: value})
+
+
+async def test_job_checks_accept_an_empty_salary(session):
+    await new_job(session, salary_amount=None, salary_currency=None)
+
+
+async def test_trigger_keeps_search_vector_up_to_date(session):
+    job = await new_job(session)
+    matches = text("SELECT search_vector @@ to_tsquery('english', :word) FROM jobs WHERE id = :id")
+
+    assert await session.scalar(matches, {"word": "coffee", "id": job.id})
+    job.description = "Cook breakfast"
+    await session.flush()
+    assert await session.scalar(matches, {"word": "breakfast", "id": job.id})
+    assert not await session.scalar(matches, {"word": "coffee", "id": job.id})
+
+
+async def test_location_point_follows_latitude_and_longitude(session):
+    job = await new_job(session)
+    within = text(
+        "SELECT ST_DWithin(location_point, ST_MakePoint(55.2708, 25.2048)::geography, :meters) "
+        "FROM jobs WHERE id = :id"
+    )  # Dubai is about 123 km away
+    assert await session.scalar(within, {"meters": 150_000, "id": job.id})
+    assert not await session.scalar(within, {"meters": 100_000, "id": job.id})
+
+
+async def test_jobs_have_a_gist_and_a_gin_index():
+    definitions = await query("SELECT indexdef FROM pg_indexes WHERE tablename = 'jobs'")
+    assert any("USING gist (location_point)" in d for d in definitions)
+    assert any("USING gin (search_vector)" in d for d in definitions)
