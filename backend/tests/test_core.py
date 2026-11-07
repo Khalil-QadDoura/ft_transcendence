@@ -1,0 +1,113 @@
+"""Error body, request id, JSON logs and the rate limiter."""
+
+import io
+import json
+import logging
+
+from conftest import build_app
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.testclient import TestClient
+from pydantic import BaseModel
+
+from app.core.limiter import limiter
+from app.core.logging import json_handler
+
+# Routes that exist only in tests, to trigger each kind of error.
+extra_routes = APIRouter(prefix="/api/test")
+
+
+class Item(BaseModel):
+    name: str
+    price: int
+
+
+@extra_routes.get("/conflict")
+def conflict():
+    raise HTTPException(status_code=409, detail="Already exists")
+
+
+@extra_routes.post("/items")
+def create_item(item: Item):
+    return item
+
+
+@extra_routes.get("/limited")
+@limiter.limit("2/minute")
+def limited(request: Request):
+    return {"ok": True}
+
+
+@extra_routes.get("/crash")
+def crash():
+    raise RuntimeError("secret internals")
+
+
+def add_extra_routes(app):
+    app.include_router(extra_routes)
+
+
+def test_http_error_uses_the_error_body(client):
+    add_extra_routes(client.app)
+    response = client.get("/api/test/conflict")
+    assert response.status_code == 409
+    assert response.json() == {"error": {"code": "409", "detail": "Already exists"}}
+
+
+def test_unknown_route_uses_the_error_body(client):
+    response = client.get("/api/does-not-exist")
+    assert response.status_code == 404
+    assert response.json() == {"error": {"code": "404", "detail": "Not Found"}}
+
+
+def test_validation_error_returns_only_the_first_failing_field(client):
+    add_extra_routes(client.app)
+    # Both fields are wrong; only the first one (name) is reported.
+    response = client.post("/api/test/items", json={"price": "not a number"})
+    assert response.status_code == 422
+    assert response.json() == {"error": {"code": "422", "detail": "body → name: Field required"}}
+
+
+def test_unexpected_error_hides_internals():
+    app = build_app()
+    add_extra_routes(app)
+    # By default the test client re-raises server errors; here we want the 500 response.
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/test/crash")
+    assert response.status_code == 500
+    assert response.json() == {"error": {"code": "500", "detail": "Internal server error"}}
+
+
+def test_rate_limiter_returns_429_with_the_error_body(client):
+    add_extra_routes(client.app)
+    assert client.get("/api/test/limited").status_code == 200
+    assert client.get("/api/test/limited").status_code == 200
+    response = client.get("/api/test/limited")
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": {"code": "429", "detail": "Rate limit exceeded: 2 per 1 minute"}
+    }
+
+
+def test_every_response_gets_a_request_id(client):
+    response = client.get("/api/health")
+    assert len(response.headers["x-request-id"]) == 32
+
+
+def test_request_id_from_the_caller_is_kept(client):
+    response = client.get("/api/health", headers={"x-request-id": "abc-123"})
+    assert response.headers["x-request-id"] == "abc-123"
+
+
+def test_request_log_line_is_json_with_the_request_id(client):
+    stream = io.StringIO()
+    handler = json_handler(stream)
+    logging.getLogger().addHandler(handler)
+    try:
+        client.get("/api/health", headers={"x-request-id": "abc-123"})
+    finally:
+        logging.getLogger().removeHandler(handler)
+    lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+    request_line = next(line for line in lines if line["event"] == "request")
+    assert request_line["request_id"] == "abc-123"
+    assert request_line["path"] == "/api/health"
+    assert request_line["status"] == 200
