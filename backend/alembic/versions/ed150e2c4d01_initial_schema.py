@@ -28,7 +28,6 @@ user_status = postgresql.ENUM("active", "deleted", name="user_status", create_ty
 friendship_status = postgresql.ENUM(
     "pending", "accepted", "declined", name="friendship_status", create_type=False
 )
-
 company_status = postgresql.ENUM("active", "deleted", name="company_status", create_type=False)
 job_status = postgresql.ENUM("draft", "open", "deleted", name="job_status", create_type=False)
 job_salary_type = postgresql.ENUM(

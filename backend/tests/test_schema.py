@@ -82,7 +82,11 @@ def skip_reason() -> str | None:
     return None
 
 
-pytestmark = [pytest.mark.skipif(bool(skip_reason()), reason=str(skip_reason())), pytest.mark.anyio]
+SKIP_REASON = skip_reason()
+pytestmark = [
+    pytest.mark.skipif(SKIP_REASON is not None, reason=str(SKIP_REASON)),
+    pytest.mark.anyio,
+]
 
 
 @pytest.fixture(scope="module")
@@ -385,8 +389,7 @@ async def test_deleting_a_user_removes_their_memberships_but_keeps_their_message
 async def test_a_person_applies_to_a_job_once(session):
     job = await new_job(session)
     ana = await add(session, User(email="ana@example.com"))
-    first = Application(job_id=job.id, applicant_id=ana.id, company_id=job.owner_id)
-    await add(session, first)
+    await add(session, Application(job_id=job.id, applicant_id=ana.id, company_id=job.owner_id))
     with pytest.raises(IntegrityError, match="uq_applications_job_id_applicant_id"):
         await add(session, Application(job_id=job.id, applicant_id=ana.id, company_id=job.owner_id))
 
