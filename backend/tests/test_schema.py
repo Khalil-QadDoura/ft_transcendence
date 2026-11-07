@@ -25,6 +25,7 @@ from app.applications.models import Application
 from app.companies.models import Company
 from app.conversations.models import Conversation, ConversationParticipant, Message
 from app.friends.models import Friendship
+from app.game.models import GameParticipant, GameRoom, GameVote
 from app.jobs.models import Job
 from app.media.models import IntroVideo
 from app.users.models import User
@@ -46,6 +47,21 @@ SCHEMA_TABLES = {
     "applications",
     "application_events",
     "job_views",
+    "game_rooms",
+    "game_participants",
+    "game_messages",
+    "game_votes",
+}
+# Tables of the reference backend we do not port (legacy chat, resumes, anonymous drafts).
+DROPPED_TABLES = {
+    "chat_threads",
+    "chat_messages",
+    "resumes",
+    "resume_experiences",
+    "resume_educations",
+    "resume_skills",
+    "resume_languages",
+    "draft_videos",
 }
 # Tables that are in the database but are not ours: Alembic's record of the applied
 # migrations, and PostGIS's list of map projections.
@@ -144,6 +160,11 @@ async def test_upgrade_on_an_empty_database_creates_our_tables_and_nothing_else(
 
     alembic("upgrade", "head")
     assert await our_tables() == SCHEMA_TABLES
+    assert len(SCHEMA_TABLES) == 17
+
+
+async def test_legacy_tables_are_not_created():
+    assert DROPPED_TABLES.isdisjoint(await our_tables())
 
 
 async def test_models_match_the_migration():
@@ -386,3 +407,44 @@ async def test_an_application_and_its_conversation_point_at_each_other(session):
     await session.execute(delete(Application).where(Application.id == application.id))
     link = select(Conversation.application_id).where(Conversation.id == chat.id)
     assert await session.scalar(link) is None  # SET NULL: the chat stays
+
+
+# Game -------------------------------------------------------------------------------------
+
+
+async def test_a_person_joins_a_room_once_but_a_room_can_have_several_bots(session):
+    ana, _ = await two_users(session)
+    room = await add(session, GameRoom(target_size=3))
+    await add(session, GameParticipant(room_id=room.id, display_label="Player 1"))
+    await add(session, GameParticipant(room_id=room.id, display_label="Player 2"))
+    await add(session, GameParticipant(room_id=room.id, user_id=ana, display_label="Player 3"))
+    with pytest.raises(IntegrityError, match="uq_game_participants_room_id_user_id"):
+        await add(session, GameParticipant(room_id=room.id, user_id=ana, display_label="P4"))
+
+
+async def two_bots(session: AsyncSession) -> tuple[int, int, int]:
+    """A room with two bots in it; returns the ids of the room and of the two bots."""
+    room = await add(session, GameRoom(target_size=3))
+    one = await add(session, GameParticipant(room_id=room.id, display_label="Player 1"))
+    two = await add(session, GameParticipant(room_id=room.id, display_label="Player 2"))
+    return room.id, one.id, two.id
+
+
+def vote(room: int, voter: int, target: int, guess: str) -> GameVote:
+    return GameVote(
+        room_id=room, voter_participant_id=voter, target_participant_id=target, guess=guess
+    )
+
+
+async def test_a_player_guesses_once_about_each_other_player(session):
+    room, one, two = await two_bots(session)
+    await add(session, vote(room, one, two, "bot"))
+    unique_pair = "uq_game_votes_voter_participant_id_target_participant_id"
+    with pytest.raises(IntegrityError, match=unique_pair):
+        await add(session, vote(room, one, two, "human"))
+
+
+async def test_a_player_cannot_vote_about_themselves(session):
+    room, one, _ = await two_bots(session)
+    with pytest.raises(IntegrityError, match="ck_game_votes_not_self"):
+        await add(session, vote(room, one, one, "bot"))

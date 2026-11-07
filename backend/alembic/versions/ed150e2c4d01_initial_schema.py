@@ -1,4 +1,4 @@
-"""Initial schema: the tables of the new backend.
+"""Initial schema: the 17 tables of the new backend.
 
 Revision ID: ed150e2c4d01
 Revises:
@@ -71,6 +71,10 @@ application_status = postgresql.ENUM(
     name="application_status",
     create_type=False,
 )
+game_room_state = postgresql.ENUM(
+    "waiting", "discussion", "voting", "finished", name="game_room_state", create_type=False
+)
+game_vote_guess = postgresql.ENUM("bot", "human", name="game_vote_guess", create_type=False)
 
 ENUMS = [
     user_status,
@@ -88,6 +92,8 @@ ENUMS = [
     message_status,
     message_type,
     application_status,
+    game_room_state,
+    game_vote_guess,
 ]
 
 
@@ -366,10 +372,60 @@ def upgrade() -> None:
         *timestamps(),
     )
 
+    # Game (Turing Duel) ------------------------------------------------------------------
+    op.create_table(
+        "game_rooms",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        sa.Column("target_size", sa.Integer(), nullable=False),
+        sa.Column("state", game_room_state, nullable=False, server_default="waiting"),
+        sa.Column("discussion_started_at", sa.DateTime(timezone=True)),
+        sa.Column("voting_started_at", sa.DateTime(timezone=True)),
+        sa.Column("finished_at", sa.DateTime(timezone=True)),
+        *timestamps(),
+    )
+    op.create_table(
+        "game_participants",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("room_id", "game_rooms", "CASCADE", index=False),
+        # Empty for a bot.
+        reference("user_id", "users", "SET NULL", nullable=True),
+        sa.Column("display_label", sa.String(20), nullable=False),
+        sa.Column("score", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        *timestamps(),
+        # A person is in a room once; bots (empty user_id) never clash.
+        sa.UniqueConstraint("room_id", "user_id"),
+    )
+    op.create_table(
+        "game_messages",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("room_id", "game_rooms", "CASCADE"),
+        reference("participant_id", "game_participants", "CASCADE"),
+        sa.Column("text", sa.Text(), nullable=False),
+        sa.Column(
+            "sent_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        *timestamps(),
+    )
+    op.create_table(
+        "game_votes",
+        sa.Column("id", sa.BigInteger(), primary_key=True),
+        reference("room_id", "game_rooms", "CASCADE"),
+        reference("voter_participant_id", "game_participants", "CASCADE", index=False),
+        reference("target_participant_id", "game_participants", "CASCADE"),
+        sa.Column("guess", game_vote_guess, nullable=False),
+        *timestamps(),
+        sa.UniqueConstraint("voter_participant_id", "target_participant_id"),
+        sa.CheckConstraint("voter_participant_id <> target_participant_id", name="not_self"),
+    )
+
 
 def downgrade() -> None:
     # Children before parents (a table's trigger and indexes go with it), then the enum types.
     # The postgis extension stays: it belongs to the database, not to this migration.
+    op.drop_table("game_votes")
+    op.drop_table("game_messages")
+    op.drop_table("game_participants")
+    op.drop_table("game_rooms")
     op.drop_table("job_views")
     op.drop_table("application_events")
     # Remove one of the two keys between conversations and applications first.
