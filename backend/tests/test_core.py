@@ -88,6 +88,16 @@ def test_rate_limiter_returns_429_with_the_error_body(client):
     }
 
 
+def test_rate_limits_count_each_client_ip_separately(client):
+    add_extra_routes(client.app)
+    first_browser = {"X-Real-IP": "203.0.113.1"}
+    second_browser = {"X-Real-IP": "203.0.113.2"}
+    for _ in range(2):
+        assert client.get("/api/test/limited", headers=first_browser).status_code == 200
+    assert client.get("/api/test/limited", headers=first_browser).status_code == 429
+    assert client.get("/api/test/limited", headers=second_browser).status_code == 200
+
+
 def test_every_response_gets_a_request_id(client):
     response = client.get("/api/health")
     assert len(response.headers["x-request-id"]) == 32

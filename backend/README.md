@@ -45,7 +45,7 @@ docker build -t wozu-backend .     # runtime image only: no tests, no test tools
 
 - **Errors** always look like `{"error": {"code": "<status>", "detail": ...}}`. Raise `HTTPException(status_code, detail)`; validation errors report only the first failing field, e.g. `"body → email: Field required"`.
 - **Request id**: every response has an `x-request-id` header, and every log line of that request carries the same `request_id`.
-- **Rate limits** are opt-in per route: `@limiter.limit("5/minute")` from `app.core.limiter`, with a `request: Request` argument on the route. Over the limit → 429 with the error body.
+- **Rate limits** are opt-in per route: `@limiter.limit("5/minute")` from `app.core.limiter`, with a `request: Request` argument on the route. Limits count per client IP, taken from the `X-Real-IP` header the proxy sets (the direct connection's IP when there is no proxy). Over the limit → 429 with the error body.
 - **Internal routes** go under `/_internal`. They are left out of the OpenAPI spec and answer 404 unless the `X-Internal-Key` header matches `INTERNAL_API_KEY`; the proxy also blocks them.
 - **OpenAPI** is at `/api/openapi.json` (the frontend generates its types from it); Swagger UI is at `/api/docs` only when `ENV=dev`.
 - **Migrations** run on container start (`alembic upgrade head` in `docker-entrypoint.sh`).
