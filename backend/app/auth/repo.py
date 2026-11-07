@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import RefreshToken
@@ -30,4 +30,15 @@ def add_refresh_token(
     """Remember a refresh token by its id (jti), saved with the next commit."""
     session.add(
         RefreshToken(user_id=user_id, jti=jti, token_version=token_version, expires_at=expires_at)
+    )
+
+
+async def revoke_refresh_token(session: AsyncSession, jti: str) -> RefreshToken | None:
+    """Mark the token revoked and return its row, as one database step. Returns None when it
+    is unknown or was already revoked, so if the same token comes twice, only one call wins."""
+    return await session.scalar(
+        update(RefreshToken)
+        .where(RefreshToken.jti == jti, RefreshToken.revoked.is_(False))
+        .values(revoked=True)
+        .returning(RefreshToken)
     )

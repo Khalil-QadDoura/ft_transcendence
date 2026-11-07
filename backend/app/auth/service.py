@@ -25,6 +25,7 @@ EMAIL_TAKEN = "Email already registered"
 INVALID_LINK = "Invalid or expired link"
 INVALID_CREDENTIALS = "Invalid email or password"
 EMAIL_NOT_VERIFIED = "Email not verified"
+INVALID_TOKEN = "Invalid or expired token"
 
 VERIFY_SUBJECT = "Verify your WOZU account"
 VERIFY_BODY = """\
@@ -95,6 +96,34 @@ async def login(session: AsyncSession, settings: Settings, data: LoginIn) -> Tok
     if not user.is_email_verified:
         raise HTTPException(status_code=403, detail=EMAIL_NOT_VERIFIED)
     return await issue_token_pair(session, settings, user)
+
+
+async def refresh(session: AsyncSession, settings: Settings, refresh_token: str) -> TokenPairOut:
+    """Rotation: the refresh token is used up (revoked) and a new pair is given."""
+    try:
+        claims = security.read_token(settings.jwt_secret, refresh_token, REFRESH_SCOPE)
+    except jwt.InvalidTokenError:  # changed, expired, or not a refresh token
+        raise HTTPException(status_code=401, detail=INVALID_TOKEN) from None
+    row = await repo.revoke_refresh_token(session, claims["jti"])
+    if row is None:  # already used once, or logged out: a reused token gets nothing
+        raise HTTPException(status_code=401, detail=INVALID_TOKEN)
+    user = await repo.get_user_by_id(session, row.user_id)
+    # token_version goes up when the password changes (BE-04): older tokens stop working.
+    if user.status != "active" or row.token_version != user.token_version:
+        raise HTTPException(status_code=401, detail=INVALID_TOKEN)
+    return await issue_token_pair(session, settings, user)  # saves the revoke with the new row
+
+
+async def logout(session: AsyncSession, settings: Settings, refresh_token: str | None) -> None:
+    """Revoke this refresh token if it is a valid one. The answer is 204 either way."""
+    if not refresh_token:
+        return
+    try:
+        claims = security.read_token(settings.jwt_secret, refresh_token, REFRESH_SCOPE)
+    except jwt.InvalidTokenError:  # it already opens nothing: nothing to revoke
+        return
+    await repo.revoke_refresh_token(session, claims["jti"])
+    await session.commit()
 
 
 async def issue_token_pair(session: AsyncSession, settings: Settings, user: User) -> TokenPairOut:

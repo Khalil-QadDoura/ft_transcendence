@@ -36,3 +36,12 @@ class TokenPairOut(BaseModel):
     access_token: str
     refresh_token: str
     token_type: Literal["bearer"] = "bearer"
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+
+class LogoutIn(BaseModel):
+    # Optional: logout always answers 204, even with no token or a bad one.
+    refresh_token: str | None = None

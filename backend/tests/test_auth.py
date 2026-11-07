@@ -93,6 +93,14 @@ def login(client, email="ana@example.com", password=PASSWORD):
     return client.post("/api/auth/login", json={"email": email, "password": password})
 
 
+def refresh(client, refresh_token: str):
+    return client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
+
+
+def logout(client, refresh_token: str):
+    return client.post("/api/auth/logout", json={"refresh_token": refresh_token})
+
+
 def claims(client, token: str, scope: str) -> dict:
     """What a token says inside (checked with the app's secret)."""
     return security.read_token(client.app.state.settings.jwt_secret, token, scope)
@@ -258,4 +266,67 @@ def test_login_allows_10_requests_a_minute_per_ip(client):
     assert response.status_code == 429
     assert response.json() == {
         "error": {"code": "429", "detail": "Rate limit exceeded: 10 per 1 minute"}
+    }
+
+
+def test_refresh_gives_a_new_pair_and_retires_the_old_refresh_token(client, mailbox):
+    sign_up(client, mailbox)
+    first = login(client).json()
+    response = refresh(client, first["refresh_token"])
+    assert response.status_code == 200
+    second = response.json()
+    assert second["refresh_token"] != first["refresh_token"]
+    assert second["access_token"] != first["access_token"]
+
+    old_jti = claims(client, first["refresh_token"], "refresh")["jti"]
+    new_jti = claims(client, second["refresh_token"], "refresh")["jti"]
+    assert sql("SELECT jti, revoked FROM refresh_tokens ORDER BY id") == [
+        (old_jti, True),
+        (new_jti, False),
+    ]
+    assert refresh(client, second["refresh_token"]).status_code == 200  # the new one works
+
+
+def test_a_reused_refresh_token_is_401(client, mailbox):
+    sign_up(client, mailbox)
+    old = login(client).json()["refresh_token"]
+    assert refresh(client, old).status_code == 200
+    response = refresh(client, old)  # the same token a second time
+    assert response.status_code == 401
+    assert response.json() == {"error": {"code": "401", "detail": "Invalid or expired token"}}
+
+
+def test_refresh_refuses_a_bad_an_expired_or_an_access_token(client, mailbox):
+    sign_up(client, mailbox)
+    access_token = login(client).json()["access_token"]
+    secret = client.app.state.settings.jwt_secret
+    expired, _ = security.create_token(secret, 1, "refresh", timedelta(seconds=-1))
+    for token in ("not-a-token", expired, access_token):
+        assert refresh(client, token).status_code == 401
+
+
+def test_logout_revokes_the_refresh_token(client, mailbox):
+    sign_up(client, mailbox)
+    tokens = login(client).json()
+    response = logout(client, tokens["refresh_token"])
+    assert response.status_code == 204
+    assert response.content == b""
+    assert sql("SELECT revoked FROM refresh_tokens") == [(True,)]
+    assert refresh(client, tokens["refresh_token"]).status_code == 401
+    assert logout(client, tokens["refresh_token"]).status_code == 204  # twice is fine
+
+
+def test_logout_with_no_token_or_a_bad_one_still_answers_204(client):
+    assert client.post("/api/auth/logout").status_code == 204  # no body at all
+    assert client.post("/api/auth/logout", json={}).status_code == 204  # no token
+    assert logout(client, "not-a-token").status_code == 204
+
+
+def test_refresh_allows_20_requests_a_minute_per_ip(client):
+    for _ in range(20):
+        assert refresh(client, "not-a-token").status_code == 401
+    response = refresh(client, "not-a-token")
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": {"code": "429", "detail": "Rate limit exceeded: 20 per 1 minute"}
     }

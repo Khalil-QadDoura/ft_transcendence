@@ -6,8 +6,16 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import service
-from app.auth.constants import LOGIN_RATE_LIMIT, REGISTER_RATE_LIMIT
-from app.auth.schemas import LoginIn, MessageOut, RegisterIn, TokenPairOut, VerifyOut
+from app.auth.constants import LOGIN_RATE_LIMIT, REFRESH_RATE_LIMIT, REGISTER_RATE_LIMIT
+from app.auth.schemas import (
+    LoginIn,
+    LogoutIn,
+    MessageOut,
+    RefreshIn,
+    RegisterIn,
+    TokenPairOut,
+    VerifyOut,
+)
 from app.core.limiter import limiter
 from app.core.mailer import Mailer, get_mailer
 from app.db.session import get_session
@@ -42,3 +50,17 @@ async def verify(request: Request, token: str, session: Session) -> VerifyOut:
 async def login(request: Request, data: LoginIn, session: Session) -> TokenPairOut:
     """Log in: 401 for a wrong email or password, 403 while the email is not verified."""
     return await service.login(session, request.app.state.settings, data)
+
+
+@router.post("/refresh")
+@limiter.limit(REFRESH_RATE_LIMIT)
+async def refresh(request: Request, data: RefreshIn, session: Session) -> TokenPairOut:
+    """A new token pair for a refresh token, which then stops working (rotation)."""
+    return await service.refresh(session, request.app.state.settings, data.refresh_token)
+
+
+@router.post("/logout", status_code=204)
+async def logout(request: Request, session: Session, data: LogoutIn | None = None) -> None:
+    """Log out this session: its refresh token stops working. Always 204."""
+    refresh_token = data.refresh_token if data else None
+    await service.logout(session, request.app.state.settings, refresh_token)
