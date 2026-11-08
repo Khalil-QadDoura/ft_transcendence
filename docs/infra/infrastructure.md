@@ -23,9 +23,9 @@ Only the proxy publishes ports to the host; everything else stays on the interna
 | --- | --- | --- | --- | --- |
 | `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210`, by digest | TLS, single origin, routing, WAF | 443 (80 → redirect); host ports set by `HTTPS_PORT` / `HTTP_PORT` | In compose (INF-02) |
 | `frontend` | Built from `frontend/` (FE-01 Dockerfile, stage `preview`: Node build → `nginx:1.28-alpine`); site config `infra/frontend/default.conf` mounted for the SPA fallback | React app | no | In compose (INF-02) |
-| `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start; waits for `db` and `redis` to be healthy | no | In compose (INF-02) |
+| `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start; waits for `db` and `redis` to be healthy | no | In compose, `/api/health` health check (Python `urllib`; the image has no curl) |
 | `worker` | Same image as `api`, command `celery -A app.worker.celery_app worker -B` | Video moderation + beat for stuck videos | no | In compose behind the `worker` profile (off by default) until BE-29 adds the Celery app |
-| `db` | `postgis/postgis:15-3.4` (`platform: linux/amd64`: no arm64 image exists, so Apple Silicon runs it emulated) | PostgreSQL + PostGIS | no | In compose, `pg_isready` health check |
+| `db` | `imresamu/postgis:15-3.4`, by digest (PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, amd64 + arm64; every `postgis/postgis` tag is amd64 only, so Apple Silicon would run it emulated) | PostgreSQL + PostGIS | no | In compose, `pg_isready` health check |
 | `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker | no | In compose, `redis-cli ping` health check |
 | `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, by digest (the official `minio/minio` and `minio/mc` images left Docker Hub on 2025-10-23) | Object storage for videos, avatars, logos | no (proxied at `/files`) | In compose; bucket in INF-04 |
 | `minio-init` | to be chosen in INF-04 (`minio/mc` is gone) | One-shot: create bucket `files`, set policies | no | INF-04 |
@@ -89,7 +89,7 @@ Add Mailpit and send mail over plain SMTP from the API; the evaluator opens `htt
 | --- | --- |
 | `make` (`all`) | `env` + `up` |
 | `make env` | `scripts/init-env.sh`: when `.env` is missing, copies `.env.example` and fills the empty secrets (`JWT_SECRET`, `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) with `openssl rand -hex 32`; prints their names, never the values; never overwrites an existing `.env` |
-| `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait` |
+| `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait`, which returns once `db`, `redis` and `api` are healthy |
 | `make down` | stops and removes the containers, keeps volumes |
 | `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
 | `make test` | backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only); frontend lint, format check, type check and `vitest` in the build stage of its image |
