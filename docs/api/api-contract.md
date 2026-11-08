@@ -28,7 +28,7 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
 | POST | `/auth/register` | — | `{email, password}` password 8–128 | 202 `{message}`; the verification email is sent after the answer | 409 email already verified, 422, 429 |
-| GET | `/auth/verify` | — | query `token` | 200 `{verified, email, updated}` | 400 invalid / expired |
+| GET | `/auth/verify` | — | query `token` | 200 `{verified, email, updated}` | 400 invalid, expired, or replaced by a newer link |
 | POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials (same answer for an unknown email), 403 email not verified, 429 |
 | POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
 | POST | `/auth/logout` | — | `{refresh_token}` (optional) | 204 always, even with no token or a bad one | — |
@@ -43,8 +43,8 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 
 Sign-up and login in the new backend (BE-03):
 
-- Emails are compared in lower case. Registering again before the email is verified keeps the one account, replaces its password with the new one and sends a new link (202).
-- The verification email links to the frontend page `<FRONTEND_BASE_URL>/verify-email?token=…` (valid 24 h); that page calls `GET /api/auth/verify?token=…`. Opening the link twice answers 200 with `updated: false`.
+- Emails are compared in lower case. Registering again before the email is verified keeps the one account, replaces its password with the new one, raises `users.token_version` and sends a new link (202). That is also how a new link is asked for.
+- The verification email links to the frontend page `<FRONTEND_BASE_URL>/verify-email?token=…` (valid 24 h); that page calls `GET /api/auth/verify?token=…`. The link carries `ver` (`users.token_version`), so **only the newest link is valid**: it verifies the account with the newest password, and every older link answers 400. Opening the newest link twice answers 200 with `updated: false`. A link and a sign-up arriving together are handled one after the other by the database, so a sign-up never changes an account that has just been verified (that sign-up gets 409).
 - Access token: JWT (HS256), 15 min, claims `sub` (user id), `scope` (`access`), `ver` (`users.token_version`), `jti`, `iat`, `exp`. Refresh token: JWT, 30 days, stored by its `jti` in `refresh_tokens`; each refresh revokes it and returns a new pair (rotation), and a reused one gets 401.
 - A deleted account gets the same 401 as a wrong password at login, and 401 on every protected route.
 

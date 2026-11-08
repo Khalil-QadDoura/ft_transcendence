@@ -8,6 +8,7 @@ import asyncio
 import re
 from datetime import timedelta
 
+import httpx2
 import pytest
 from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database
 from fastapi import APIRouter
@@ -206,10 +207,13 @@ def test_registering_again_before_verifying_keeps_one_account_and_sends_a_new_li
     assert register(client, password="a newer password").status_code == 202
 
     assert len(mailbox.sent) == 2
-    [(newest_hash,)] = sql("SELECT password_hash FROM users")  # still one row: one account
-    # The newest password wins (whoever reads the inbox decides).
+    # Still one row: one account. The newest password wins (whoever reads the inbox decides),
+    # and token_version went up, so only the newest link works.
+    [(newest_hash, version)] = sql("SELECT password_hash, token_version FROM users")
     assert newest_hash != first_hash
     assert security.verify_password("a newer password", newest_hash)
+    assert version == 2
+    assert verify(client, link_token(mailbox.sent[-1])).status_code == 200
 
 
 def test_emails_are_kept_in_lower_case(client, mailbox):
@@ -298,6 +302,103 @@ def test_login_uses_the_newest_password_after_registering_twice(client, mailbox)
     verify(client, link_token(mailbox.sent[-1]))
     assert login(client, password="first password").status_code == 401
     assert login(client, password="second password").status_code == 200
+
+
+def test_an_older_link_stops_working_once_someone_signs_up_again(client, mailbox):
+    # 1. The owner signs up and gets link 1.
+    register(client, password="owner password")
+    # 2. Before the owner opens it, someone else signs up with the same email and their own
+    #    password. Link 2 goes to the owner's inbox, so the other person never sees it.
+    register(client, password="intruder password")
+    first_link, second_link = (link_token(email) for email in mailbox.sent)
+    # 3. The owner opens link 1: it was made for the old password, so it no longer works.
+    response = verify(client, first_link)
+    assert response.status_code == 400
+    assert response.json() == {"error": {"code": "400", "detail": "Invalid or expired link"}}
+    assert sql("SELECT is_email_verified, token_version FROM users") == [(False, 2)]
+    # 4. So the other person's password does not open the account.
+    assert login(client, password="intruder password").status_code == 403
+
+    # The owner signs up again (this is how a new link is asked for): link 3 replaces link 2.
+    register(client, password="owner password")
+    third_link = link_token(mailbox.sent[-1])
+    assert verify(client, second_link).status_code == 400
+    assert verify(client, third_link).json()["updated"] is True
+    assert login(client, password="intruder password").status_code == 401
+    assert login(client, password="owner password").status_code == 200
+    # Only the newest link stays valid, even after verifying.
+    assert verify(client, first_link).status_code == 400
+    assert verify(client, third_link).json()["updated"] is False
+
+
+async def wait_for_requests_on_the_lock(engine, count: int) -> None:
+    """Wait (10 seconds at most) until `count` database sessions are waiting for a lock."""
+    for _ in range(200):
+        async with engine.connect() as watcher:
+            waiting = await watcher.scalar(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity"
+                    " WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                )
+            )
+        if waiting == count:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"{count} request(s) should be waiting for the lock, not {waiting}")
+
+
+async def open_link_and_sign_up_at_the_same_moment(first: str) -> dict:
+    """The owner opens link 1 while someone else signs up with the same email and their own
+    password. `first` is the request PostgreSQL serves first. Returns both status codes."""
+    mailbox = FakeMailer()
+    app = build_app(database_url=TEST_DATABASE_URL)
+    app.dependency_overrides[get_mailer] = lambda: mailbox
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    # Both requests go to the real app at once, in this one event loop.
+    transport = httpx2.ASGITransport(app=app)
+    async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        owner = {"email": "ana@example.com", "password": "owner password"}
+        await http.post("/api/auth/register", json=owner)
+        first_link = link_token(mailbox.sent[0])
+        requests = {
+            "verify": lambda: http.get("/api/auth/verify", params={"token": first_link}),
+            "register": lambda: http.post(
+                "/api/auth/register", json={**owner, "password": "intruder password"}
+            ),
+        }
+        async with engine.connect() as gate:
+            # The gate holds the account's row locked, like a slow request would, so both
+            # requests reach the database while the other one is still waiting there.
+            await gate.execute(text("SELECT id FROM users FOR UPDATE"))
+            tasks = {}
+            for name in (first, *(other for other in requests if other != first)):
+                tasks[name] = asyncio.create_task(requests[name]())
+                await wait_for_requests_on_the_lock(engine, len(tasks))
+            await gate.commit()  # PostgreSQL now lets them through one at a time, in order
+            answers = {name: (await task).status_code for name, task in tasks.items()}
+    await app.state.engine.dispose()
+    await engine.dispose()
+    return answers
+
+
+@pytest.mark.parametrize("first", ["verify", "register"])
+def test_opening_a_link_and_signing_up_at_the_same_moment_never_mix(first):
+    sql("TRUNCATE users RESTART IDENTITY CASCADE")
+    answers = asyncio.run(open_link_and_sign_up_at_the_same_moment(first))
+
+    [(verified, password_hash, version)] = sql(
+        "SELECT is_email_verified, password_hash, token_version FROM users"
+    )
+    if first == "verify":
+        # Link 1 wins: verified with the owner's password, and the sign-up is refused.
+        assert answers == {"verify": 200, "register": 409}
+        assert (verified, version) == (True, 1)
+        assert security.verify_password("owner password", password_hash)
+    else:
+        # The sign-up wins: a new password, so link 1 is now too old and verifies nothing.
+        assert answers == {"register": 202, "verify": 400}
+        assert (verified, version) == (False, 2)
+        assert security.verify_password("intruder password", password_hash)
 
 
 def test_login_allows_10_requests_a_minute_per_ip(client):

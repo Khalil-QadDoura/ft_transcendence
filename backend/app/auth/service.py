@@ -4,7 +4,6 @@ import asyncio
 
 import jwt
 from fastapi import BackgroundTasks, HTTPException
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import repo, security
@@ -46,22 +45,24 @@ async def register(
     data: RegisterIn,
 ) -> None:
     """Create the account, or update one that is not verified yet, and email the link."""
-    user = await repo.get_user_by_email(session, data.email)
-    if user is not None and user.is_email_verified:
-        raise HTTPException(status_code=409, detail=EMAIL_TAKEN)
-    if user is None:
-        user = repo.add_user(session, data.email)
-    # Signing up again before verifying keeps the one account, with the newest password.
     # Argon2 is slow on purpose, so it runs in a worker thread: meanwhile the server keeps
     # answering other requests.
-    user.password_hash = await asyncio.to_thread(security.hash_password, data.password)
-    try:
-        await session.commit()
-    except IntegrityError:  # the same email signed up at the same moment (uq_users_email)
-        raise HTTPException(status_code=409, detail=EMAIL_TAKEN) from None
+    password_hash = await asyncio.to_thread(security.hash_password, data.password)
+    # Signing up again before verifying keeps the one account, with the newest password and
+    # a raised token_version. Check and change are one database step (see the repo).
+    user = await repo.create_or_update_unverified_user(session, data.email, password_hash)
+    if user is None:  # already verified: that account is never changed here
+        raise HTTPException(status_code=409, detail=EMAIL_TAKEN)
+    await session.commit()
 
+    # "ver" ties the link to this password: a new sign-up raises token_version, and from then
+    # on only its link (the newest one) works.
     token, _ = security.create_token(
-        settings.jwt_secret, user.id, EMAIL_VERIFY_SCOPE, EMAIL_VERIFY_TOKEN_LIFETIME
+        settings.jwt_secret,
+        user.id,
+        EMAIL_VERIFY_SCOPE,
+        EMAIL_VERIFY_TOKEN_LIFETIME,
+        ver=user.token_version,
     )
     # The link opens the frontend's page, which calls GET /api/auth/verify with the token.
     link = f"{settings.frontend_base_url.rstrip('/')}/verify-email?token={token}"
@@ -70,18 +71,30 @@ async def register(
 
 
 async def verify_email(session: AsyncSession, settings: Settings, token: str) -> VerifyOut:
-    """Mark the email of the token's user as verified. Opening the link twice is fine."""
+    """Mark the email of the token's user as verified, if this is the newest link.
+    Opening it twice is fine."""
     try:
         claims = security.read_token(settings.jwt_secret, token, EMAIL_VERIFY_SCOPE)
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=400, detail=INVALID_LINK) from None
-    user = await repo.get_user_by_id(session, int(claims["sub"]))
-    if user is None or user.status != "active":
-        raise HTTPException(status_code=400, detail=INVALID_LINK)
-    updated = not user.is_email_verified
-    user.is_email_verified = True
+    user_id, version = int(claims["sub"]), claims.get("ver")
+    # The check (is this still the newest link?) and the change are one database step, so a
+    # sign-up at the same moment cannot slip a new password in between.
+    user = await repo.mark_email_verified(session, user_id, version)
     await session.commit()
-    return VerifyOut(verified=True, email=user.email, updated=updated)
+    if user is not None:
+        return VerifyOut(verified=True, email=user.email, updated=True)
+    # Nothing changed. Fine if this newest link was already used: a verified account never
+    # goes back to unverified, and sign-up never changes it, so this answer cannot go stale.
+    user = await repo.get_user_by_id(session, user_id)
+    if (
+        user is None
+        or user.status != "active"
+        or not user.is_email_verified
+        or user.token_version != version
+    ):
+        raise HTTPException(status_code=400, detail=INVALID_LINK)
+    return VerifyOut(verified=True, email=user.email, updated=False)
 
 
 async def login(session: AsyncSession, settings: Settings, data: LoginIn) -> TokenPairOut:
