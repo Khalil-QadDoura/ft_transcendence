@@ -1,118 +1,100 @@
-<div align="center">
+*This project has been created as part of the 42 curriculum by \<login-Burhan\>, \<login-Khalil\>, \<login-Nader\>, \<login-Zayid\>, \<login-Ahmad\>.*
+
+<!-- TODO DOC-03 (byul-byul): replace each <login-NAME> in the line above with the member's 42 intra login, keeping the sentence and the single asterisks exactly as they are. The backslashes only keep GitHub from hiding the placeholders; remove them with the real logins. -->
+
+# WOZU Web
+
+> Status: in development (sprint 1 of 4). Sections with a TODO comment are filled by the owner card named in the comment; nothing below describes a feature as finished unless it exists in the repository.
+
+## Description
+
+**WOZU Web** is a job platform for the web. A candidate applies to a job with a short video instead of a CV, talks to employers in real-time chat, and can play a social-deduction mini-game called the Turing Duel. The project is a new backend and a new web frontend, built on top of the WOZU backend as a reference.
+
+**Goal:** a complete web application (frontend, backend, database) that meets the ft_transcendence subject and runs with a single command.
+
+**Key features (planned; the Features List section records what is implemented):**
+
+- Video-based job applications instead of CVs.
+- Real-time chat between candidates and employers.
+- Turing Duel: a multiplayer mini-game in which humans and bots chat, and each human guesses who is a bot. The rules are written up in the project docs (card DOC-08).
+
+Planning documents (roles, module plan, API contract, infrastructure) are in [docs/](docs/README.md).
+
+## Instructions
+
+<!-- TODO DOC-05 (byul-byul): prerequisites (software, tools, versions), .env setup, step-by-step run with make, Mailpit at /mail. Only commands that work. -->
+
+## Resources
+
+<!-- TODO DOC-07 (Zayid): classic references (documentation, articles, tutorials) and the final description of how AI was used, for which tasks and which parts. -->
+
+**AI usage (running list, incomplete until DOC-07):**
+
+- The plan documents in `docs/` were drafted with AI assistance (Claude) and reviewed by the team.
+- The Trello card plan and card texts were drafted with Claude and approved by the Product Owner.
+- DOC-08 (the Turing Duel rules text) was written with Claude Code.
+- INF-01 (nginx + ModSecurity proxy configuration, certificate script, verification) was written with Claude Code.
+- Each owner reviewed and tested the result and can explain it.
+
+## Team Information
+
+| Member | Role(s) | Responsibilities |
+| --- | --- | --- |
+| byul-byul (Burhan) | Product Owner + Developer (DevOps) | Product vision, backlog priorities, acceptance of finished cards, README and legal pages content; Docker, nginx + ModSecurity / TLS, monitoring, security modules |
+| Khalil-QadDoura (Khalil) | Technical Lead + Developer (Backend A) | Backend architecture and API contract, stack decisions, review of critical PRs, code quality rules |
+| NaderZico (Nader) | Developer (Backend B) | Ports and owns backend modules |
+| zayidelkhair (Zayid) | Project Manager / Scrum Master + Developer (Frontend A) | Runs the Trello board and the weekly sync, tracks deadlines and blockers, keeps the risk list; frontend modules |
+| a7mdwr (Ahmad) | Developer (Frontend B) | Owns frontend modules |
+
+<!-- TODO DOC-03 (byul-byul): each member checks their own row before submission; add the module names once the work split is final. -->
+
+## Project Management
+
+<!-- TODO DOC-04 (Zayid): how the work is organized (task distribution, meetings), tools, communication channels. -->
+
+Trello is used for planning and GitHub pull requests for code and documentation review.
+
+## Technical Stack
+
+Decided stack (starting point):
+
+- Frontend: React, TypeScript, Vite, Tailwind CSS; React Router, TanStack Query, react-i18next, native WebSocket.
+- Backend: FastAPI; Celery moderation worker.
+- Data: PostgreSQL with PostGIS, Redis; MinIO for files (served at `/files`).
+- Email in development: Mailpit (served at `/mail`).
+- Edge and operations: nginx with ModSecurity (OWASP CRS) as front proxy; Vault; Prometheus and Grafana.
+
+<!-- TODO DOC-05 (byul-byul): justification for each major technical choice, including why PostgreSQL. -->
+
+## Database Schema
+
+<!-- TODO BE-14 (Khalil): visual representation or description of the schema; tables and relationships; key fields and data types. -->
+
+## Features List
+
+<!-- TODO DOC-06 (byul-byul): complete list of implemented features, owner(s) of each, short description of each. Implemented features only. -->
+
+## Modules
+
+<!-- TODO DOC-06 (byul-byul): one row per chosen module, with justification and implementation notes. Add rows only for modules that work. -->
+
+| Module | Type | Points | Owner(s) | How it was implemented |
+| --- | --- | --- | --- | --- |
+
+**Total points:** TODO DOC-06 (Major = 2, Minor = 1).
+
+## Individual Contributions
+
+<!-- TODO DOC-07 (Zayid): per member, what they built (features, modules, components), plus challenges faced and how they were overcome. -->
+
+## Known limitations
+
+<!-- TODO DOC-03 (byul-byul), filled before submission: honest list of what does not work or is missing. -->
+
+## Credits
+
+The animated GIF below and its generator ([tools/make_lobby.py](tools/make_lobby.py)) were added to this repository by Zayid Elkahir.
+
+<!-- TODO DOC-07 (Zayid): confirm the author of the GIF and the license/attribution to write here. -->
 
 ![Four folders dancing in the group project lobby while actual progress stays at zero.](assets/group-project-lobby.gif)
-
-# This repository is a group project.
-
-**Everyone has accepted the invite. Nobody has accepted the responsibility.**
-
-`BUILD: emotional` · `TESTS: eventually` · `DEADLINE: getting closer`
-
-</div>
-
----
-
-## Welcome to the lobby
-
-The team is assembled. The group chat is created. Someone has already said “this should be easy.”
-
-We are now waiting for the mysterious fifth teammate known as **Actual Progress**.
-
-### Current features
-
-- **Multiplayer support** — several people can stare at the same empty repository.
-- **Zero dependencies** — the project currently depends on hope.
-- **Blazingly fast** — does nothing in under 0 milliseconds.¹
-- **Cloud ready** — our ideas are already up there somewhere.
-- **AI integration** — “Anyone Interested in starting?”
-- **Dark mode** — the future is unclear.
-
-<sub>¹ Benchmark performed by the person who said “this should take five minutes.”</sub>
-
-### Meet the team
-
-| Player | Special ability | Current quest |
-| :--- | :--- | :--- |
-| The Planner | Creates a group chat for the group chat | Schedule a meeting about scheduling |
-| The Speedrunner | Says “easy” before reading the requirements | Discover the requirements |
-| The Ghost | Appears when someone types “submitted” | Reconnect to this dimension |
-| You | Actually opened the repository | Carry the README |
-
-### Roadmap
-
-- [x] Accept the invitation
-- [x] Open the repository
-- [x] Give the repository a better social life than its contributors
-- [ ] Agree on what we are building
-- [ ] Say “we still have time” one last time
-- [ ] Write the code
-- [ ] Rename `final_FINAL_v2` to `actually_final`
-- [ ] Discover the assignment was a PDF
-
-### Quick start
-
-```text
-$ git clone our-collective-potential
-Cloning into 'optimism'...
-
-$ npm install motivation
-404: motivation not found
-
-$ git blame
-Please form an orderly queue.
-```
-
-<sub>These commands are jokes. Please do not open an issue because motivation failed to install.</sub>
-
-### Patch notes · v0.0.0
-
-**Added:** four collaborators, one README, and the illusion of momentum.
-
-**Fixed:** the repository being empty. You're welcome.
-
-**Known issue:** the deadline continues to approach even when nobody has the tab open.
-
-<details>
-<summary><strong>Emergency procedure: the teacher is looking at the repository</strong></summary>
-
-<br>
-
-Welcome to our **collaborative pre-implementation environment**.
-
-The animated folders represent parallel workstreams. Their lack of forward movement represents our commitment to careful planning.
-
-We are currently in the research phase.
-
-Please do not ask which phase comes next. We are researching that too.
-
-</details>
-
-<details>
-<summary><strong>Okay, how does the dancing thing actually work?</strong></summary>
-
-<br>
-
-It's a local GIF embedded in this README. GitHub can display it directly; there is no server, JavaScript, or setup to run.
-
-Keep `README.md` and the `assets` folder together when you add them to the repository.
-
-The animation is drawn from scratch with Python and Pillow. To change the dialogue, colors, or dancers, edit [`tools/make_lobby.py`](tools/make_lobby.py), then regenerate it:
-
-```sh
-python -m pip install Pillow
-python tools/make_lobby.py
-```
-
-The generator uses local fonts and falls back to Pillow's bundled font if necessary.
-
-</details>
-
----
-
-<div align="center">
-
-**No code was harmed in the making of this repository.**
-
-There wasn't any.
-
-</div>
