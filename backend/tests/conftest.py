@@ -5,6 +5,7 @@ tests (test_schema.py, test_auth.py) need a real PostgreSQL with PostGIS and are
 without one, so `pytest -q` works everywhere.
 """
 
+import asyncio
 import os
 import socket
 import subprocess
@@ -19,7 +20,9 @@ os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-0123456789abcdef")
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import make_url
+from sqlalchemy import make_url, text
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings
 from app.core.limiter import limiter
@@ -69,6 +72,20 @@ def alembic(*args: str) -> str:
     )
     assert result.returncode == 0, result.stderr
     return result.stdout + result.stderr
+
+
+def sql(statement: str, **params) -> list:
+    """Run one SQL statement on the test database; returns its rows."""
+
+    async def run() -> list:
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+        async with engine.begin() as connection:
+            result = await connection.execute(text(statement), params)
+            rows = result.all() if result.returns_rows else []
+        await engine.dispose()
+        return rows
+
+    return asyncio.run(run())
 
 
 def build_app(**overrides: object) -> FastAPI:
