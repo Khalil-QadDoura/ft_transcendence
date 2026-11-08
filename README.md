@@ -1,10 +1,9 @@
-*This project has been created as part of the 42 curriculum by \<login-Burhan\>, \<login-Khalil\>, \<login-Nader\>, \<login-Zayid\>, \<login-Ahmad\>.*
-
-<!-- TODO DOC-03 (byul-byul): replace each <login-NAME> in the line above with the member's 42 intra login, keeping the sentence and the single asterisks exactly as they are. The backslashes only keep GitHub from hiding the placeholders; remove them with the real logins. -->
+*This project has been created as part of the 42 curriculum by bhajili, kqaddour, nakhalil, zsid-ele, aradwan.*
 
 # WOZU Web
 
 > Status: in development (sprint 1 of 4). Sections with a TODO comment are filled by the owner card named in the comment; nothing below describes a feature as finished unless it exists in the repository.
+<!-- TODO DOC-06 (byul-byul): remove the Status line before submission. -->
 
 ## Description
 
@@ -38,13 +37,13 @@ Planning documents (roles, module plan, API contract, infrastructure) are in [do
 
 ## Team Information
 
-| Member | Role(s) | Responsibilities |
-| --- | --- | --- |
-| byul-byul (Burhan) | Product Owner + Developer (DevOps) | Product vision, backlog priorities, acceptance of finished cards, README and legal pages content; Docker, nginx + ModSecurity / TLS, monitoring, security modules |
-| Khalil-QadDoura (Khalil) | Technical Lead + Developer (Backend A) | Backend architecture and API contract, stack decisions, review of critical PRs, code quality rules |
-| NaderZico (Nader) | Developer (Backend B) | Ports and owns backend modules |
-| zayidelkhair (Zayid) | Project Manager / Scrum Master + Developer (Frontend A) | Runs the Trello board and the weekly sync, tracks deadlines and blockers, keeps the risk list; frontend modules |
-| a7mdwr (Ahmad) | Developer (Frontend B) | Owns frontend modules |
+| Member | 42 login | GitHub | Role(s) | Responsibilities |
+| --- | --- | --- | --- | --- |
+| Burhan | bhajili | byul-byul | Product Owner + Developer (DevOps) | Product vision, backlog priorities, acceptance of finished cards, README and legal pages content; Docker, nginx + ModSecurity / TLS, monitoring, security modules |
+| Khalil | kqaddour | Khalil-QadDoura | Technical Lead + Developer (Backend A) | Backend architecture and API contract, stack decisions, review of critical PRs, code quality rules |
+| Nader | nakhalil | NaderZico | Developer (Backend B) | Ports and owns backend modules |
+| Zayid | zsid-ele | zayidelkhair | Project Manager / Scrum Master + Developer (Frontend A) | Runs the Trello board and the weekly sync, tracks deadlines and blockers, keeps the risk list; frontend modules |
+| Ahmad | aradwan | a7mdwr | Developer (Frontend B) | Owns frontend modules |
 
 <!-- TODO DOC-03 (byul-byul): each member checks their own row before submission; add the module names once the work split is final. -->
 
@@ -89,7 +88,7 @@ Decided stack (starting point):
 
 ## Known limitations
 
-<!-- TODO DOC-03 (byul-byul), filled before submission: honest list of what does not work or is missing. -->
+<!-- TODO DOC-06 (byul-byul), filled before submission: honest list of what does not work or is missing. -->
 
 ## Credits
 
