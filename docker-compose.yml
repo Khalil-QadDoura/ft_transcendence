@@ -48,6 +48,8 @@ services:
     restart: unless-stopped
 
   # FastAPI. The image runs `alembic upgrade head` before uvicorn, so it waits for the db.
+  # Healthy once /api/health answers (after the migrations), so `make` returns only then.
+  # The image has no curl; Python asks.
   api:
     build: ./backend
     environment: *backend-env
@@ -56,6 +58,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   # Celery worker + beat for video moderation. Enabled by BE-29: the backend has no Celery
