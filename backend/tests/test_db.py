@@ -1,5 +1,8 @@
 """The table base class, checked on the SQL, and which database each app's sessions use."""
 
+import subprocess
+import sys
+from pathlib import Path
 from typing import Annotated
 
 from conftest import build_app
@@ -62,3 +65,20 @@ def test_shutdown_closes_the_engine_of_that_app(monkeypatch):
     with TestClient(app):
         pass  # leaving the block shuts the app down
     assert disposed == [app.state.engine]
+
+
+def test_the_session_module_loads_every_table():
+    """Code that uses the database imports app.db.session, which loads all 17 tables, so a
+    foreign key to another domain's table (intro_videos.user_id -> users) can be resolved.
+    It runs in a fresh Python, because this test process has already imported every model."""
+    code = (
+        "import app.db.session; from app.db.base import Base; "
+        "print(len(Base.metadata.sorted_tables))"  # sorted_tables follows every foreign key
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+    )
+    assert result.stdout.strip() == "17", result.stderr
