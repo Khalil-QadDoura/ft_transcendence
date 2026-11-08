@@ -17,19 +17,19 @@ nginx + ModSecurity v3 + OWASP Core Rule Set (CRS), image `owasp/modsecurity-crs
 
 ## Services
 
-Only the proxy publishes ports to the host; everything else stays on the internal Docker network. Pin every image tag (the reference uses `minio/minio:latest`).
+Only the proxy publishes ports to the host; everything else stays on the internal Docker network. Pin every image tag (the reference uses `minio/minio:latest`). All services are in the root `docker-compose.yml` (compose project `wozu`) since INF-02; INF-07 pins the remaining images by digest and adds the full health checks.
 
 | Service | Image | Purpose | Published | Status |
 | --- | --- | --- | --- | --- |
-| `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210` | TLS, single origin, routing, WAF | 443 (80 → redirect) | Config in `infra/proxy/`; joins compose in INF-02 |
-| `frontend` | Multi-stage: Node build → static files served by the proxy or `nginx:alpine` | React app | no | New |
-| `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start | no | Exists |
-| `worker` | Same image as `api`, command `celery … worker -B` | Video moderation + beat for stuck videos | no | Exists, beat missing |
-| `db` | `postgis/postgis:15-3.4` | PostgreSQL + PostGIS | no | Exists |
-| `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker | no | Exists |
-| `minio` | `minio/minio` (pinned release) | Object storage for videos, avatars, logos | no (proxied at `/files`) | Exists, not proxied |
-| `minio-init` | `minio/mc` | One-shot: create bucket `files`, set policies | no | New |
-| `mailpit` | `axllent/mailpit` | Catches all outgoing mail, web inbox | no (proxied at `/mail`) | New |
+| `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210`, by digest | TLS, single origin, routing, WAF | 443 (80 → redirect); host ports set by `HTTPS_PORT` / `HTTP_PORT` | In compose (INF-02) |
+| `frontend` | Built from `frontend/` (FE-01 Dockerfile, stage `preview`: Node build → `nginx:1.28-alpine`); site config `infra/frontend/default.conf` mounted for the SPA fallback | React app | no | In compose (INF-02) |
+| `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start; waits for `db` and `redis` to be healthy | no | In compose (INF-02) |
+| `worker` | Same image as `api`, command `celery -A app.worker.celery_app worker -B` | Video moderation + beat for stuck videos | no | In compose behind the `worker` profile (off by default) until BE-29 adds the Celery app |
+| `db` | `postgis/postgis:15-3.4` (`platform: linux/amd64`: no arm64 image exists, so Apple Silicon runs it emulated) | PostgreSQL + PostGIS | no | In compose, `pg_isready` health check |
+| `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker | no | In compose, `redis-cli ping` health check |
+| `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, by digest (the official `minio/minio` and `minio/mc` images left Docker Hub on 2025-10-23) | Object storage for videos, avatars, logos | no (proxied at `/files`) | In compose; bucket in INF-04 |
+| `minio-init` | to be chosen in INF-04 (`minio/mc` is gone) | One-shot: create bucket `files`, set policies | no | INF-04 |
+| `mailpit` | `axllent/mailpit:v1.33.1` | Catches all outgoing mail, web inbox | no (proxied at `/mail`) | In compose (INF-02) |
 | `prometheus` | `prom/prometheus` | Metrics scraping, alert rules | no | New (module) |
 | `grafana` | `grafana/grafana` | Dashboards, provisioned from files | no (proxied at `/grafana`) | New (module) |
 | exporters | `postgres-exporter`, `redis-exporter`, `cadvisor` or `node-exporter` | DB, Redis, container metrics | no | New (module) |
@@ -53,7 +53,7 @@ Everything the browser touches goes through one host and one certificate. Locall
 | `/_internal/*`, `/metrics` | blocked | Prometheus scrapes them inside the Docker network only |
 | `http://` any | redirect to `https://` |  |
 
-The table translates one-to-one to the `location` blocks in `infra/proxy/templates/conf.d/default.conf.template`. ModSecurity covers all of them and runs in `DetectionOnly` until INF-11 switches it to blocking. The image runs unprivileged and listens on 8080 and 8443 inside the container, so compose publishes `443:8443` and `80:8080`. `infra/proxy/README.md` lists which files are ours and which come from the image.
+The table translates one-to-one to the `location` blocks in `infra/proxy/templates/conf.d/default.conf.template`. ModSecurity covers all of them and runs in `DetectionOnly` until INF-11 switches it to blocking. The image runs unprivileged and listens on 8080 and 8443 inside the container, so compose publishes `443:8443` and `80:8080`. `HTTPS_PORT` and `HTTP_PORT` in `.env` change the host side; the redirect then carries the HTTPS port (`http://localhost:8080/` → `https://localhost:8443/`). `infra/proxy/README.md` lists which files are ours and which come from the image.
 
 ## File storage over HTTPS
 
@@ -85,43 +85,39 @@ Add Mailpit and send mail over plain SMTP from the API; the evaluator opens `htt
 
 `make` must take a fresh clone to a running site: it creates `.env` from `.env.example` with random secrets when missing, then builds and starts the stack. The only value a human must add is `OPENAI_API_KEY` (moderation module).
 
-```makefile
-all: env up
+| Target | What it does |
+| --- | --- |
+| `make` (`all`) | `env` + `up` |
+| `make env` | `scripts/init-env.sh`: when `.env` is missing, copies `.env.example` and fills the empty secrets (`JWT_SECRET`, `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) with `openssl rand -hex 32`; prints their names, never the values; never overwrites an existing `.env` |
+| `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait` |
+| `make down` | stops and removes the containers, keeps volumes |
+| `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
+| `make test` | backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only); frontend lint, format check, type check and `vitest` in the build stage of its image |
+| `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
+| `make re` | `fclean` + `all` |
 
-env:
-	@test -f .env || ./scripts/init-env.sh   # copies .env.example, fills SECRET_KEY, DB and MinIO passwords with openssl rand
+`down`, `logs` and `fclean` use `--profile '*'`, so they also reach services that are off by default (`worker`).
 
-up:
-	docker compose up -d --build
-
-down:
-	docker compose down
-
-logs:
-	docker compose logs -f api worker
-
-test:
-	docker compose run --rm api pytest -q
-
-fclean: down
-	docker compose down -v --rmi local
-
-re: fclean all
-```
-
-**`.env.example` additions to the reference file**
+**`.env.example` additions to the reference file** (every variable in `.env.example` has a comment there)
 
 | Variable | Example | Used by |
 | --- | --- | --- |
-| `DOMAIN` | `localhost` | proxy, links |
+| `DOMAIN` | `localhost` | proxy (`server_name`), links |
+| `HTTPS_PORT` / `HTTP_PORT` | `443` / `80` | host ports of the proxy |
 | `FRONTEND_BASE_URL` | `https://localhost` | email links |
+| `JWT_SECRET` | generated | api (BE-03 reads this name; the card said `SECRET_KEY`) |
+| `INTERNAL_API_KEY` | generated | api, `/_internal/*` |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `wozu` / generated / `wozu` | db; compose builds `DATABASE_URL` for api and worker from them |
+| `POSTGRES_TEST_DB` | `wozu_test` | compose builds `TEST_DATABASE_URL` for the tests; the database itself is not created yet (BE-20) |
+| `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | `wozu` / generated | minio |
 | `MINIO_EXTERNAL_ENDPOINT` | `https://localhost` | presigned URLs |
 | `MINIO_BUCKET` | `files` | api, worker, minio-init |
 | `SMTP_HOST` / `SMTP_PORT` / `MAIL_FROM` | `mailpit` / `1025` / `no-reply@wozu.local` | api |
-| `TEST_DATABASE_URL` | separate database `wozu_test` | tests |
 | `GRAFANA_ADMIN_PASSWORD` | generated | grafana |
 | `OPENAI_API_KEY` | empty, filled by hand | worker |
 | `MODERATION_FAIL_OPEN` | `false` on defense day | worker |
+
+Compose passes each service only the variables it needs (`environment:`), not the whole `.env`.
 
 **Rules:** `.env` and `scripts/*.local` in `.gitignore`; nothing secret in `docker-compose.yml`, images or logs; with the Vault module, secrets move from `.env` to Vault and `.env` keeps only the Vault address and AppRole credentials.
 
