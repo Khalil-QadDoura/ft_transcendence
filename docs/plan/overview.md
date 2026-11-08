@@ -249,5 +249,13 @@ Depends on: <CARD-ID>
 | 2026-11-04 | Schedule: S1 Nov 4–10, S2 Nov 11–17, S3 Nov 18–24, S4 Nov 25–28; card due date = sprint end 18:00 Asia/Baku; code freeze Nov 26; first defense Sunday Nov 29; max score has priority over the date | Final card plan | Decided |
 | 2026-11-04 | Trello board E3788fBx replaces 6Pob02M6; lists Backlog / To Do / In Progress / Review / Done; card ID as title prefix; branch `feat/<CARD-ID>-<short-name>` ([board.md](board.md)) | Final card plan | Decided |
 | 2026-11-04 | Root README placeholder is replaced by DOC-03; its author agreed | Final card plan | Decided |
+| 2026-11-05 | Front proxy: nginx + ModSecurity v3 + OWASP CRS from day one (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-01 PR |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
+
+**Front proxy, 2026-11-05**
+
+- **Decision:** nginx + ModSecurity v3 + OWASP Core Rule Set, using the `owasp/modsecurity-crs` nginx-alpine image at a pinned tag, as the only front door from day one. A script-generated self-signed certificate for `localhost` replaces Caddy's `tls internal`. The rule engine stays in `DetectionOnly` until card INF-11 switches it to blocking.
+- **Reason:** module M13 needs ModSecurity as the only front door, and switching proxies late costs more than choosing now. Running the WAF from the first route also shows false positives while the app is being built, not on the eve of the defense.
+- **Alternatives considered:** Caddy, the reference's proxy, has the simplest configuration and automatic TLS, but no ModSecurity image from the CRS project; a WAF would mean a custom build with a third-party module. Traefik has convenient Docker label routing, but a WAF is only available through a plugin, and it adds a second routing model to explain at the defense.
+- **Owner:** byul-byul. **Approval:** Tech Lead, through review of the INF-01 PR.
