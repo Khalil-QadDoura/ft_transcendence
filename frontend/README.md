@@ -41,3 +41,5 @@ Other route slots explicitly display a coming-soon state. Privacy/Terms content 
 Validation: lint, formatting, strict TypeScript, 31 route/redirect tests, Vite production build, Docker build, browser checks at 360 px and desktop, and reloads of protected/public routes. Reproduce with the commands above; production deep-link checks use the Docker preview on port 8080.
 
 AI assistance (Codex) was used for the scaffold, shell, artwork, documentation and checks. Zayid must review and be able to explain the changes before defense. Human cross-pair review and green CI are required before merge, per PM-00. FE-02 depends on FE-01 and should be reviewed against that branch, then retargeted to main after FE-01 merges.
+
+FE-03 adds [shared form validation](docs/form-validation.md): per-domain Zod schemas, React Hook Form resolver setup, and safe mapping of backend 422 errors. The guide records pending backend contracts, translation keys and consumer responsibilities.
