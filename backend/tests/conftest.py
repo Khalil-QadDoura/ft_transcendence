@@ -1,8 +1,8 @@
 """Shared test setup.
 
 Most tests need no database: the engine connects only when a query first runs. The database
-tests (test_schema.py, test_auth.py) need a real PostgreSQL with PostGIS and are skipped
-without one, so `pytest -q` works everywhere.
+tests (test_schema.py, test_auth.py, test_users.py) need a real PostgreSQL with PostGIS and
+are skipped without one, so `pytest -q` works everywhere.
 """
 
 import asyncio
