@@ -33,7 +33,8 @@ Planning documents (roles, module plan, API contract, infrastructure) are in [do
 - The Trello card plan and card texts were drafted with Claude and approved by the Product Owner.
 - DOC-08 (the Turing Duel rules text) was written with Claude Code.
 - INF-01 (nginx + ModSecurity proxy configuration, certificate script, verification) was written with Claude Code.
-- Each owner reviewed and tested the result and can explain it.
+- Each owner must review, test and be able to explain their AI-assisted work; this list is not evidence that every owner has already completed that preparation.
+- Codex assisted the November 8 review of this README skeleton, including checking required sections and correcting the owner-preparation statement. This does not replace each owner's review or defense practice.
 
 ## Team Information
 
