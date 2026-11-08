@@ -27,3 +27,9 @@ async def update_me(user: CurrentUser, data: UserUpdate, session: Session) -> Us
     """Change any of first_name, last_name, position, birth_date and bio; the rest stays."""
     user = await service.update_profile(session, user, data)
     return UserOut.model_validate(user)
+
+
+@router.delete("/me", status_code=204)
+async def delete_me(user: CurrentUser, session: Session) -> None:
+    """Delete my account (a soft delete). My tokens stop working and I cannot log in again."""
+    await service.delete_account(session, user)

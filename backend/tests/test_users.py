@@ -91,6 +91,10 @@ def patch_me(client, tokens: dict, body: dict):
     return client.patch("/api/users/me", json=body, headers=bearer(tokens))
 
 
+def delete_me(client, tokens: dict):
+    return client.delete("/api/users/me", headers=bearer(tokens))
+
+
 def profile_in_db(email: str) -> dict:
     """The five profile columns of this user, as stored in the users table."""
     [row] = sql(
@@ -281,8 +285,55 @@ def test_patch_changes_only_my_own_row(client, ana):
     assert profile_in_db("ben@example.com") == ANA
 
 
+def test_delete_marks_the_account_deleted_and_keeps_the_row(client, ana):
+    response = delete_me(client, ana)
+    assert response.status_code == 204
+    assert response.content == b""
+    # A soft delete: the row and the profile are still there, only the status changed.
+    assert sql("SELECT email, status FROM users") == [("ana@example.com", "deleted")]
+    assert profile_in_db("ana@example.com") == ANA
+
+
+def test_a_deleted_account_cannot_log_in(client, ana):
+    delete_me(client, ana)
+    response = login(client, "ana@example.com")
+    # The same answer as a wrong password: login does not say the account ever existed.
+    assert response.status_code == 401
+    assert response.json() == {"error": {"code": "401", "detail": "Invalid email or password"}}
+
+
+def test_after_delete_the_old_tokens_stop_working_at_once(client, ana):
+    assert delete_me(client, ana).status_code == 204
+    # The access token is less than 15 minutes old, but it opens nothing any more...
+    assert get_me(client, ana).status_code == 401
+    assert patch_me(client, ana, {"bio": "Still here?"}).status_code == 401
+    assert delete_me(client, ana).status_code == 401
+    # ...and the refresh token cannot get a new pair.
+    response = client.post("/api/auth/refresh", json={"refresh_token": ana["refresh_token"]})
+    assert response.status_code == 401
+    assert profile_in_db("ana@example.com") == ANA
+
+
+def test_a_deleted_accounts_email_stays_taken(client, ana):
+    delete_me(client, ana)
+    response = client.post(
+        "/api/auth/register", json={"email": "ana@example.com", "password": PASSWORD}
+    )
+    assert response.status_code == 409
+
+
+def test_delete_deletes_only_my_own_account(client, ana):
+    make_user("ben@example.com")
+    assert delete_me(client, ana).status_code == 204
+    assert sql("SELECT email, status FROM users ORDER BY id") == [
+        ("ana@example.com", "deleted"),
+        ("ben@example.com", "active"),
+    ]
+    assert login(client, "ben@example.com").status_code == 200
+
+
 # Every /users/me route, with a body that would be accepted, so only the token is wrong.
-ME_ROUTES = [("GET", None), ("PATCH", {"bio": "Hi"})]
+ME_ROUTES = [("GET", None), ("PATCH", {"bio": "Hi"}), ("DELETE", None)]
 
 
 @pytest.mark.parametrize(("method", "body"), ME_ROUTES)
