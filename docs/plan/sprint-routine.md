@@ -6,7 +6,7 @@ Owner: Zayid (@zayidelkhair / Trello @noobthinker). Updated November 8, 2026 (Am
 
 S1: Nov 4–10; S2: Nov 11–17; S3: Nov 18–24; S4: Nov 25–28. Due dates: 18:00 Baku at sprint end. Freeze Nov 26, then QA and rehearsal; first defense target Nov 29. These dates do not establish a weekly meeting time.
 
-Follow card → owned branch → PR → cross-pair human review → green CI → squash merge → Done. Keep dependency and blocking comments on the relevant card. A review request is not approval, and a working local prototype is not a merged ticket.
+Follow card → owned branch → PR → cross-pair human review → green CI → squash merge → Done. Every PR gets a review within 24 hours from someone in the other pair (Sprint 1 closeout rule supplied November 8). After every merge, the owner makes one small live change as defense practice and records what they changed and checked; an agent-generated study case does not prove that practice happened. Keep dependency and blocking comments on the relevant card. A review request is not approval, and a working local prototype is not a merged ticket.
 
 ## Questions for the team
 
@@ -14,7 +14,7 @@ Follow card → owned branch → PR → cross-pair human review → green CI →
 2. Who should host, what meeting link should we use, and which calendar addresses should receive the invitation?
 3. Which team chat/channel will hold the pinned daily update? What is the daily cutoff, in which timezone, and do we update on weekends?
 4. Ahmad: when can FE-20's shared client land, and what auth interface should FE-04 call for token storage, refresh and logout? FE-21's shared primitives also need an integration date.
-5. Khalil: should frontend integration target the fixed BE-03 branch until it merges, and what is the expected API contract after its dependent PRs are rebased?
+5. Khalil: BE-02 and the corrected BE-03 are now merged on main. When will dependent backend PRs be updated onto that main baseline, and are any API contract changes needed for FE-20/FE-04 integration?
 6. Has everyone joined their own Sprint 1 cards and attached each PR? Report blocked dependencies rather than marking incomplete work Done.
 
 Zayid confirmed on November 8 that the meeting time and chat details are not known yet. Do not invent agreement, send calendar invitations, or claim a pinned message until the team answers and the actual destination is known.
@@ -42,7 +42,7 @@ Blocked: CARD-ID — dependency, owner and the decision/help needed (or None)
 | GitHub Power-Up enabled and repo linked | Official Trello Inc GitHub Power-Up enabled November 8; directory shows Enabled 1 and Settings. Target repository connection remains pending account authorization. Ordinary PR links are not proof of a connected Power-Up. No new GitHub OAuth access grant was approved. |
 | Weekly sync agreed and in every calendar | Pending team agreement and verified invitations; no invitations sent. |
 | Daily format pinned in the team chat | Template prepared above; channel and cutoff pending, nothing posted or pinned. |
-| Overview board URL and decisions reconciled | Implemented in this PR from PM-00/PM-01 and merged BE-02 evidence; requires review/merge. |
+| Overview board URL and decisions reconciled | PM-00 board/plan docs are merged in PR #12. This PR retains that complete plan and adds only the November 8 operational follow-up and routine; its additions still require review/merge. |
 | Every member joined Sprint 1 cards | Verified November 8 from live board member badges and card Members sections; all 23 original S1 cards have their owners attached (table below). |
 
 ## Sprint 1 membership audit — November 8, 2026
@@ -55,6 +55,6 @@ Blocked: CARD-ID — dependency, owner and the decision/help needed (or None)
 | Ahmad / ahmadradwan | FE-20, FE-21 |
 | Burhan / byulbyul | DOC-08, DOC-03, INF-01, INF-02, INF-03, INF-04, INF-05, INF-06 |
 
-Membership does not establish completion, authorship or review approval. PM-00 stays as the reference card at the top of To Do. DOC-01 and DOC-02 were also visible in Review; they are not included in the original 23-card S1 count above.
+Membership does not establish completion, authorship or review approval. PM-00 stays as the reference card at the top of To Do. DOC-01 and DOC-02 were also visible in Review during the membership audit; this is historical board evidence, not current GitHub merge status. They are not included in the original 23-card S1 count above.
 
 This documentation completes the reviewable repository portion of PM-01. The operational ticket remains In Progress until the real agreements, links and membership evidence exist. Historical dates and teammates' contributions must remain accurate.
