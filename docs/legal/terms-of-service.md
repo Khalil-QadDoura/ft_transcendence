@@ -81,7 +81,7 @@ If you create a company and post jobs:
 
 You keep the ownership of what you post: your profile, avatar, videos, job posts, messages and game messages. You are responsible for it, and you promise that you have the right to post it.
 
-To run the service, you give us a free, non-exclusive permission to store your content, to process it (including the automatic check in section 6) and to show it to other users as described in the Privacy Policy. We use this permission only to run WOZU Web. It ends when you delete the content or your account, except that copies in backups stay for up to 7 days.
+To run the service, you give us a free, non-exclusive permission to store your content, to process it (including the automatic check in section 6) and to show it to other users as described in the Privacy Policy. We use this permission only to run WOZU Web. It ends when you delete the content or your account, except for copies we keep for up to 30 days to handle disputes and for up to 7 more days in backups. Messages you already sent stay visible to their recipients, shown as from "Deleted user".
 
 ## 9. Turing Duel
 
@@ -97,7 +97,7 @@ In addition to section 4:
 
 ## 10. Suspension and ending your account
 
-You can stop using WOZU Web at any time. To delete your account, open Settings in the app and choose "Delete account". What happens to your data is described in the Privacy Policy.
+You can stop using WOZU Web at any time. To delete your account, open Settings in the app and choose "Delete account". Your account is deactivated at once and anonymised after 30 days, as the Privacy Policy explains. What happens to your data is described in the Privacy Policy.
 
 We may remove content, suspend or close an account if you break these terms, if your content is rejected again and again, or if this is needed to protect other users or the service. We may also stop the service completely, because it is a student project.
 
