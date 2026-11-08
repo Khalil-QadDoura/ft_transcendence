@@ -9,6 +9,7 @@ Draft for discussion. Read `plan/overview.md` first, then the doc for your track
 | [api/wozu-reference-openapi.json](api/wozu-reference-openapi.json) | Frontend + backend | Snapshot of the WOZU reference API (OpenAPI 3.1), do not edit |
 | [infra/infrastructure.md](infra/infrastructure.md) | Infrastructure | Living: services, HTTPS routing, storage, email, infra modules |
 | [reference/wozu-backend.md](reference/wozu-backend.md) | Backend | Snapshot of the WOZU backend as of 2026-10-27, do not edit |
+| [legal/privacy-policy.md](legal/privacy-policy.md) | Users, evaluators, frontend | Living: Privacy Policy text shown on the app's privacy page (FE-13) |
 | [ft_transcendence.subject.txt](ft_transcendence.subject.txt) | Everyone | Project subject, v21.1 |
 
 ## Rules
