@@ -97,7 +97,7 @@ In addition to section 4:
 
 ## 10. Suspension and ending your account
 
-You can stop using WOZU Web at any time. To delete your account, open Settings in the app and choose "Delete account". Your account is deactivated at once and anonymised after 30 days, as the Privacy Policy explains. What happens to your data is described in the Privacy Policy.
+You can stop using WOZU Web at any time. To delete your account, open Settings in the app and choose "Delete account". Your account is deactivated at once and anonymised after 30 days, as the Privacy Policy explains.
 
 We may remove content, suspend or close an account if you break these terms, if your content is rejected again and again, or if this is needed to protect other users or the service. We may also stop the service completely, because it is a student project.
 
