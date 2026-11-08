@@ -75,10 +75,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, built for amd64 and arm64 by
+  # one of its maintainers (every postgis/postgis tag is amd64 only), so Apple Silicon runs it
+  # natively. Pinned by tag and the digest of the multi-arch index.
   db:
-    image: postgis/postgis:15-3.4
-    # The image is published for amd64 only; on arm64 hosts Docker runs it emulated.
-    platform: linux/amd64
+    image: imresamu/postgis:15-3.4@sha256:44d4443d107a7750ea29a441dec0050cd7543178f011ae0620e4b572578e9300
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
