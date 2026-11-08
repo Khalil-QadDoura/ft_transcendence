@@ -15,7 +15,7 @@
 
 - Video-based job applications instead of CVs.
 - Real-time chat between candidates and employers.
-- Turing Duel: a multiplayer mini-game in which humans and bots chat, and each human guesses who is a bot. The rules are written up in the project docs (card DOC-08).
+- Turing Duel: a multiplayer mini-game in which humans and bots chat, and each human guesses who is a bot. The full rules are in [docs/game/turing-duel-rules.md](docs/game/turing-duel-rules.md).
 
 Planning documents (roles, module plan, API contract, infrastructure) are in [docs/](docs/README.md).
 
@@ -45,7 +45,7 @@ Planning documents (roles, module plan, API contract, infrastructure) are in [do
 | Zayid | zsid-ele | zayidelkhair | Project Manager / Scrum Master + Developer (Frontend A) | Runs the Trello board and the weekly sync, tracks deadlines and blockers, keeps the risk list; frontend modules |
 | Ahmad | aradwan | a7mdwr | Developer (Frontend B) | Owns frontend modules |
 
-<!-- TODO DOC-03 (byul-byul): each member checks their own row before submission; add the module names once the work split is final. -->
+<!-- TODO DOC-06 (byul-byul): each member checks their own row before submission; add the module names once the work split is final. -->
 
 ## Project Management
 
