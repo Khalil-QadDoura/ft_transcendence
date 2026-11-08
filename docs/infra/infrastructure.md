@@ -179,7 +179,7 @@ Each checklist mirrors the subject's bullets for that module; every box must be 
 
 ## CI
 
-GitHub Actions on every PR to `main`; branch protection requires all three jobs green plus one review. CI is not a module, but it keeps `main` always demo-ready and makes reviews visible in the history.
+Target for INF-06: GitHub Actions on PRs to `main`, with applicable backend, frontend and stack jobs passing plus one approving review before merge. Configure branch protection to enforce the required checks. This is the planned setup, not evidence that every job or protection rule is already active. CI is not a module; it protects integration and makes reviews visible.
 
 | Job | Steps | Blocks merge |
 | --- | --- | --- |

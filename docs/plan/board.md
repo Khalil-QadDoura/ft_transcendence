@@ -8,11 +8,11 @@ How the Trello board works: lists, sprints, card IDs, card structure, assignment
 
 - Board: https://trello.com/b/E3788fBx/fttranscendence
 - The old board (`6Pob02M6`) is no longer used; nobody changes it. Cards that existed before the 2026-11-04 setup were moved to Done.
-- GitHub Power-Up on the board shows PRs and commits on each card (set up in card PM-01).
+- PM-01 connects the GitHub Power-Up so PRs and commits can appear on cards. As verified November 8, the Power-Up is enabled; repository authorization/linking is still pending. Ordinary PR links do not establish that connection.
 
 | Person | Trello member | Role(s) |
 | --- | --- | --- |
-| byul-byul | byul-byul | Product Owner + Developer (DevOps) |
+| byul-byul | byulbyul | Product Owner + Developer (DevOps) |
 | Khalil | khalilkaddoura | Tech Lead / Architect + Developer (Backend A) |
 | Nader | naderkhalil2 | Developer (Backend B) |
 | Zayid | noobthinker | PM / Scrum Master + Developer (Frontend A) |
@@ -30,9 +30,11 @@ Every card travels **Backlog → To Do → In Progress → Review → Done**, an
 | Review | Cards with an open PR | The PR is ready; a reviewer from the other pair reviews it |
 | Done | Finished cards | The PR is merged and every "Done when" item is ticked, including "Definition of Done met (PM-00)" |
 
+PM-00 is the reference card: keep it at the top of To Do. It has no sprint deadline or completion checklist; its documentation can be merged without moving the reference card to Done.
+
 ## Sprints and key dates
 
-One sprint per week; S4 is four days. Card due date = sprint end, 18:00 Asia/Baku.
+The counts below preserve the November 4 planning snapshot; consult Trello for current status. One sprint per week; S4 is four days. Card due date = sprint end, 18:00 Asia/Baku.
 
 | Sprint | Dates | Card due date | Cards |
 | --- | --- | --- | --- |
@@ -66,7 +68,7 @@ The card ID is the prefix of the card title, e.g. `BE-07 Port intro video upload
 | `TC` | Tier C modules (only if ahead of schedule) |
 
 - Branch: `feat/<CARD-ID>-<short-name>`, e.g. `feat/BE-07-intro-video`; other change types use the same pattern (`fix/BE-10-vote-room-check`, `docs/PM-00-board-docs`).
-- Commit message (from [overview.md](overview.md#ways-of-working)): `<type>(<scope>): <summary> (#<CARD-ID>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (#BE-10)`.
+- Commit message (from [overview.md](overview.md#ways-of-working)): `<type>(<scope>): <summary> (<CARD-ID>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (BE-10)`.
 - One card per PR.
 
 ## Card structure

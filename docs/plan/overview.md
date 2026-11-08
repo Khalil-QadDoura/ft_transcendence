@@ -182,6 +182,8 @@ The biggest risks are environment ones, not code: email, OpenAI and HTTPS upload
 | Big import commits, one person's code | Git history shows poor work distribution | Port the reference module by module, one card and one PR each, owner commits | All |
 | A member cannot explain another part | Live code-change request fails | Code reviews across pairs; a 30-minute walkthrough per module before the defense | PM |
 
+The final player-facing and implementation rules are maintained in [Turing Duel rules](../game/turing-duel-rules.md) (DOC-08, merged). The November 4 decisions above remain historical input; use that canonical document for exact timings, labels and scoring.
+
 ## Ways of working
 
 Every change travels card → branch → PR → review → merge → card moved, so the [Trello board](https://trello.com/b/E3788fBx/fttranscendence) and the Git history tell the same story at the defense. The board in detail: [board.md](board.md).
@@ -191,7 +193,7 @@ Every change travels card → branch → PR → review → merge → card moved,
 - Lists: Backlog → To Do (= current sprint) → In Progress → Review → Done. One-week sprints (S1 Nov 4–10, S2 Nov 11–17, S3 Nov 18–24, S4 Nov 25–28); byul-byul (PO) orders Backlog, Zayid (PM) runs To Do.
 - Labels: track (`Backend`, `Frontend`, `DevOps`, `Docs`), secondary (`Security`, `Database`), module (`M1` … `M20`), `Mandatory`, priority (`P1`, `P2`), `Bug`. Colors and meanings in [board.md](board.md#labels).
 - One owner per card, named on the `Owner:` line and matching the Trello member on the card; a reviewer from the other pair reviews the PR when the card reaches Review.
-- The GitHub Power-Up shows PRs and commits on the card (PM-01).
+- PM-01 connects the GitHub Power-Up to show PRs and commits on cards. November 8 status: enabled, repository authorization/linking still pending.
 
 **Card format**
 
@@ -211,9 +213,9 @@ Depends on: <CARD-ID>
 
 **Git**
 
-- `main` is protected: merge only through a PR with one approving review and green CI.
+- Merge policy: use a PR with one approving review and passing applicable CI. INF-06 owns enforcement through branch protection; this plan is not proof of the live settings.
 - Branch name: `<type>/<CARD-ID>-<short-name>`, e.g. `feat/BE-07-intro-video`, `fix/BE-10-vote-room-check`.
-- Commit message: `<type>(<scope>): <summary> (#<CARD-ID>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (#BE-10)`.
+- Commit message: `<type>(<scope>): <summary> (<CARD-ID>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (BE-10)`.
 - Small PRs (under \~400 changed lines), one card each. Squash merge keeps one clear commit per card on `main`.
 - Everyone commits their own work from their own account; pair work uses `Co-authored-by:` lines.
 - Weekly sync (30 min, PM leads) + async daily update in the team chat: done, next, blocked.
