@@ -59,9 +59,9 @@ If you create a company, we store its name, description, logo, country, city and
 
 ### Technical data
 
-- Technical logs of the service: the time of a request, which page or API was called, the result, a request ID and your IP address.
+- Technical logs of the service: the time of a request, which page or API was called, the result, a request ID and your IP address. IP addresses appear in the access logs of the front proxy. Logs are kept for up to 15 days.
 - Metrics about how the service runs (for example number of requests and errors). They do not contain your content.
-- Your IP address is also used to limit repeated requests, for example repeated sign-in attempts.
+- Your IP address is also used by the front proxy to limit repeated requests (rate limiting), for example repeated sign-in attempts.
 
 ## 3. Why we use your data
 
@@ -71,6 +71,8 @@ If you create a company, we store its name, description, logo, country, city and
 - **To keep the service working.** Logs and metrics help us find faults.
 
 We rely on your consent, which you give when you create an account and accept the Terms of Service. Some processing is also needed to provide the service you asked for, and some to keep the service safe for everyone. You can withdraw your consent at any time by deleting your account (section 8).
+
+After you delete your account we keep your data for 30 days because we have a legitimate need to establish or defend legal claims (UAE Personal Data Protection Law). We use it only to handle disputes, abuse reports and legal claims (section 6).
 
 We do not use your data for advertising. We do not make decisions about you that have legal effects. The video check is only used to decide whether a video can be shown to others.
 
@@ -114,7 +116,8 @@ We do not sell your data. We do not share it for advertising. Apart from the ser
 - Videos, avatars and company logos are stored as files in MinIO, an object storage run by us.
 - The service runs on servers operated by the team.
 - We keep your account, profile, videos, applications and chats until you delete them or delete your account.
-- When you delete your account, we delete your personal data (profile, videos, applications, chats and game data) from the service. Until then you can also delete a single video yourself.
+- When you delete your account, it happens in two stages. First, at once: your account is deactivated, you can no longer sign in, all your sessions end, and your profile, videos and job posts are hidden from everyone. Second, after 30 days: an automatic job anonymises the account. Your email, name, birth date and bio are erased or replaced, and your avatar and video files are deleted from storage. Applications and game records stay only in anonymised form. Chat messages you already sent stay visible to their recipients, shown as from "Deleted user".
+- During those 30 days we keep your data only to handle disputes, abuse reports and legal claims, and only the team can access it. If a complaint or dispute about your account is open, we keep the data needed for it until it is resolved. Deleted data can then stay in a backup for up to 7 more days. Until you delete your account, you can also delete a single video yourself.
 - Backups are kept for 7 days and then overwritten. Deleted data can stay in a backup for up to 7 days.
 - Technical logs and metrics are kept for up to 15 days.
 
@@ -135,7 +138,7 @@ You can ask us to:
 
 - **Access** your data: most of it is shown in the app, in your profile and your videos. For anything else, ask by email.
 - **Correct** your data: change your profile in the app, or ask by email.
-- **Delete** your data: in the app, open Settings and choose "Delete account". You can also delete a single video, or a chat message you sent.
+- **Delete** your data: in the app, open Settings and choose "Delete account". Your account is deactivated at once and anonymised after 30 days. You can also delete a single video, or a chat message you sent.
 - **Give you a copy** of your data: ask by email. We send it to the address of your account.
 - **Object** to the use of your data, or withdraw your consent: ask by email. If the processing is needed to run your account, we may have to close the account.
 
