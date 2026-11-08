@@ -118,7 +118,7 @@ We do not sell your data. We do not share it for advertising. Apart from the ser
 - We keep your account, profile, videos, applications and chats until you delete them or delete your account.
 - When you delete your account, it happens in two stages. First, at once: your account is deactivated, you can no longer sign in, all your sessions end, and your profile, videos and job posts are hidden from everyone. Second, after 30 days: an automatic job anonymises the account. Your email, name, birth date and bio are erased or replaced, and your avatar and video files are deleted from storage. Applications and game records stay only in anonymised form. Chat messages you already sent stay visible to their recipients, shown as from "Deleted user".
 - During those 30 days we keep your data only to handle disputes, abuse reports and legal claims, and only the team can access it. If a complaint or dispute about your account is open, we keep the data needed for it until it is resolved. Deleted data can then stay in a backup for up to 7 more days. Until you delete your account, you can also delete a single video yourself.
-- Backups are kept for 7 days and then overwritten. Deleted data can stay in a backup for up to 7 days.
+- Backups are kept for 7 days and then overwritten.
 - Technical logs and metrics are kept for up to 15 days.
 
 Connections between your browser and WOZU Web use HTTPS. Videos are opened through short-lived links. Passwords are stored as hashes. After repeated requests from one address, the service refuses further requests for a while.
