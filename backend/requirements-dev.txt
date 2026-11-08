@@ -3,3 +3,4 @@
 pytest==9.1.1
 httpx2==2.13.1  # HTTP client behind FastAPI's TestClient
 ruff==0.17.2
+aiosmtpd==1.4.6  # a small real SMTP server, started inside the email tests
