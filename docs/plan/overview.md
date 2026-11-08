@@ -1,22 +1,26 @@
 # ft\_transcendence — Overview & Plan
 
-Oct 27, 2026 · @byul-byul
+Original plan: Oct 27, 2026 · @byul-byul
+
+PM-01 reconciliation: Nov 8, 2026 · @zayidelkhair, with Codex assistance. Decisions below follow the active [PM-00](https://trello.com/c/twqpeAfN) and [PM-01](https://trello.com/c/F551icOK) cards. Historical reference-backend test counts are not claims about the current team backend.
 
 ## TL;DR
 
 We build **WOZU Web**: a job platform where candidates apply with a short video instead of a CV, talk to employers in real-time chat, and play a social-deduction mini-game ("Turing Duel"). The WOZU backend is our reference; we write a new backend and a web frontend on top of it.
 
-- **Target:** 14 mandatory points + 5 bonus = 19, the maximum that counts. We plan 24 points so that one or two modules can fail at the defense without losing the maximum.
+- **Target:** 14 mandatory points + 5 bonus = 19, the maximum that counts. We plan 26 points (including M18 Remote players) so that one or two modules can fail at the defense without losing the maximum.
 - **Good news:** the reference backend already covers most of the 19 core points. I ran it: all 36 migrations apply on a clean database and all 127 tests pass.
 - **Real work:** a web frontend from scratch, HTTPS for everything (including file uploads), Privacy Policy and Terms of Service pages, and fixing about 20 issues we must not copy.
 
-**Decide on the next call:**
+**Decided in the active board plan:**
 
-1. Roles: who is PO, PM / Scrum Master, Tech Lead (proposal below).
-2. Module set: confirm the 19-point core and the order of buffer modules.
-3. Frontend framework (proposal: React + TypeScript + Vite + Tailwind).
-4. Do we keep the Turing Duel game? Four core points depend on it.
-5. The defense date, so the PM can set milestones.
+1. Burhan is PO + DevOps; Khalil is Tech Lead + Backend A; Nader is Backend B; Zayid is PM / Scrum Master + Frontend A; Ahmad is Frontend B.
+2. The original 19-point core + 5-point buffer remains, with M18 Remote players (+2) added to planned scope: 26 planned points, still capped at 19 counted points. Planning a module does not mean it has been implemented or accepted.
+3. React + TypeScript + Vite + Tailwind; retain Turing Duel.
+4. Five frontend languages: English, Arabic, Azerbaijani, Turkish and Russian; Arabic includes RTL layout.
+5. First defense target: November 29, 2026. S1 Nov 4–10; S2 Nov 11–17; S3 Nov 18–24; S4 Nov 25–28, with code freeze Nov 26. Sprint deadlines are 18:00 Baku. Quality takes priority over the defense date (PM-00).
+
+The weekly meeting slot, team-chat location and daily update deadline are **not yet agreed**. See [sprint routine](sprint-routine.md); no calendar invitation or pinned chat message is claimed.
 
 ## What the reference gives us
 
@@ -55,27 +59,25 @@ Any miss here rejects the whole project, whatever the module score. The referenc
 | `.env` ignored by Git + `.env.example` | Yes | Keep, extend for new services | Infra |
 | Git: commits from all members, clear messages | n/a for the new repo | Conventions below; never import the reference as one big commit | All |
 | README with all required sections | One-line README | PO owns it; every member writes their part | All |
-| Team roles documented | Not yet | Decide on the next call | PO |
+| Team roles documented | Active PM-00 names the five owners | Keep README, overview and board ownership aligned | PO + PM |
 
 ## Roles
 
-Proposal: spread the three lead roles across the three tracks, so each sub-team has a lead and every member has a visible responsibility to explain at the defense. The subject allows combined roles in any team size.
+Roles recorded in the active PM-00 card:
 
 | Person | Track | Role(s) | Main responsibilities |
 | --- | --- | --- | --- |
-| byul-byul | Infrastructure | Product Owner + Developer (DevOps) | Product vision (knows WOZU best), backlog priorities, accepts finished cards, README and legal pages content; Docker, Caddy/TLS, monitoring, security modules |
-| Backend dev A | Backend | Tech Lead / Architect + Developer | Backend architecture and API contract, stack decisions, reviews critical PRs, code quality rules |
-| Backend dev B | Backend | Developer | Ports and owns backend modules (see Work split) |
-| Frontend dev A | Frontend | PM / Scrum Master + Developer | Runs the Trello board, weekly sync, tracks deadlines and blockers, keeps the risk list |
-| Frontend dev B | Frontend | Developer | Owns frontend modules (see Work split) |
+| Burhan (@byul-byul) | Infrastructure | Product Owner + Developer (DevOps) | Product vision, backlog priorities, accepts finished cards, README and legal content; containers, HTTPS, monitoring and security |
+| Khalil (@Khalil-QadDoura) | Backend A | Tech Lead / Architect + Developer | Backend architecture, API contract, auth/users/presence, intro-video upload (BE-07), critical reviews and code quality |
+| Nader (@NaderZico) | Backend B | Developer | Jobs, applications, moderation worker, friends/chat REST and game backend |
+| Zayid (@zayidelkhair; Trello @noobthinker) | Frontend A | PM / Scrum Master + Developer | Board, deadlines, dependencies and sprint routine; shell, auth, validation, i18n/RTL, profiles/friends and legal rendering |
+| Ahmad (@a7mdwr) | Frontend B | Developer | Shared API client (FE-20), shared UI/theme (FE-21), jobs/applications/video/chat/game screens |
 
-**Alternative:** byul-byul as Tech Lead + DevOps, a frontend dev as PO. Choose it if the team wants one person to hold the full technical picture. Its cost: three hats on one person and less leadership visible from the backend pair.
-
-Whatever the split, each member must be able to explain the whole project and make a small code change during the defense.
+Each member must be able to explain the whole project and make a small code change during the defense. Track summaries are not reassignment: the live card's Owner line is authoritative, including cross-track cards.
 
 ## Module plan
 
-Core set = 19 points, built mostly on what the reference already does; buffer tier B adds 5 more for a planned 24. A module counts only if it fully works at the defense, so the buffer is insurance, not extra credit.
+Core set = 19 points, built mostly on what the reference already does; buffer tier B adds 5 more for 24, and the decided M18 Remote players adds 2 for a planned 26. A module counts only if it fully works at the defense, so the buffer is insurance, not extra credit.
 
 **Core (19 points)**
 
@@ -90,11 +92,11 @@ Core set = 19 points, built mostly on what the reference already does; buffer ti
 | 7 | Web-based game | Major | 2 | Turing Duel backend | Game UI, clear win / loss result, room history endpoint | BE + FE |
 | 8 | Multiplayer game, 3+ players | Major | 2 | Rooms of 2 to 5 | Minimum room size 3, state sync for all clients | BE + FE |
 | 9 | Content moderation AI | Minor | 1 | Video moderation with Whisper + OpenAI moderation | Fix the `moderation_error` enum bug; demo both approve and reject | BE |
-| 10 | Multiple languages (3+) | Minor | 1 | WOZU app had EN / AR / ID / TR | i18n in the web app, language switcher | FE |
+| 10 | Multiple languages (3+) | Minor | 1 | Reference language set differs | EN / AR / AZ / TR / RU, language switcher | FE |
 | 11 | Right-to-left language support | Minor | 1 | Arabic already in the language set | Full layout mirroring | FE |
 | 12 | Monitoring with Prometheus + Grafana | Major | 2 | Structured JSON logs, health endpoint | Metrics, exporters, dashboards, alerts, secured Grafana | Infra |
 
-**Buffer tier B (+5, planned total 24)**
+**Buffer tier B (+5; original subtotal 24)**
 
 | # | Module | Type | Pts | Why it is cheap | Track |
 | --- | --- | --- | --- | --- | --- |
@@ -103,9 +105,11 @@ Core set = 19 points, built mostly on what the reference already does; buffer ti
 | 15 | OAuth 2.0 (42 intra) | Minor | 1 | One login flow on top of the existing token issuing | BE + FE |
 | 16 | Additional browsers (Firefox, Safari or Edge) | Minor | 1 | Test and fix, document limits | FE |
 
-**Tier C (only if ahead of schedule):** AI Opponent (Major, 2) needs the bot rewritten, today it sends random template lines and a careful evaluator may reject it; Remote players (Major, 2) needs reconnect and room resync; GDPR features (Minor, 1) fit the Privacy Policy; Organization system (Major, 2) would bring back WOZU company teams.
+**Additional decided scope: M18 Remote players (+2, planned total 26).** Two players on separate computers must play the same game; reconnect and room resync are implementation work, not already completed. M18 is no longer optional Tier C.
 
-**Point math:** core 19 = 7 Majors (14) + 5 Minors (5). Tier B: 1 Major + 3 Minors = 5. If two core minors fail, tier B still keeps us at 19+.
+**Tier C (only if ahead of schedule):** AI Opponent (Major, 2) needs the bot rewritten, today it sends random template lines and a careful evaluator may reject it; GDPR features (Minor, 1) fit the Privacy Policy; Organization system (Major, 2) would bring back WOZU company teams.
+
+**Point math:** core 19 = 7 Majors (14) + 5 Minors (5). Tier B: 1 Major + 3 Minors = 5. M18 adds another Major (2): total planned = 19 + 5 + 2 = 26; at most 19 count. If two core minors fail, tier B still keeps us at 19+. Each claim needs its own working demonstration.
 
 ## Work split
 
@@ -113,11 +117,11 @@ Each person owns whole modules end to end inside their track, so the README can 
 
 | Person | Owns (modules / areas) | Shared |
 | --- | --- | --- |
-| Backend dev A (Tech Lead) | Auth + users + avatar (4), WebSocket layer + presence (2), OAuth 42 (15), project skeleton, schema and migrations, API contract | ORM (5), game backend with B |
-| Backend dev B | Jobs + search (6), applications, video upload + moderation (9), friends and chat REST (3), game backend: rooms, phases, results (7, 8) | Fixes from the issue list |
-| Frontend dev A (PM) | App shell, routing, auth screens, design tokens, i18n + RTL (10, 11), profile + friends UI, legal pages | Browser testing (16) |
-| Frontend dev B | Jobs search + job detail + apply flow, video recording and upload UI, chat UI, game UI (7, 8) | WebSocket client with A |
-| byul-byul (PO + Infra) | Compose + Caddy + TLS for every route, MinIO over HTTPS, local mail catcher, Prometheus + Grafana (12), WAF + Vault (13), backups + status page (14), CI checks | README, Privacy Policy and ToS content, backlog |
+| Khalil (Backend A / Tech Lead) | Auth + users + avatar (4), intro-video upload (BE-07), WebSocket layer + presence (2), OAuth 42 (15), project skeleton, schema and migrations, API contract | ORM (5), game backend with B |
+| Nader (Backend B) | Jobs + search (6), applications, moderation worker (9), friends and chat REST (3), game backend: rooms, phases, results (7, 8) | Fixes from the issue list |
+| Zayid (Frontend A / PM) | App shell, routing, auth screens, shared validation, i18n + RTL (10, 11), profile + friends UI, legal pages | Browser testing (16) |
+| Ahmad (Frontend B) | Shared API client (FE-20), UI/theme primitives (FE-21), jobs search + job detail + apply flow, video recording and upload UI, chat UI, game UI (7, 8) | WebSocket client with A |
+| Burhan (PO + Infra) | Compose + Caddy + TLS for every route, MinIO over HTTPS, local mail catcher, Prometheus + Grafana (12), WAF + Vault (13), backups + status page (14), CI checks | README, Privacy Policy and ToS content, backlog |
 
 The frontend is the critical path: both frontend devs start on day one against the API contract and the reference backend running locally (it works today), not waiting for the new backend.
 
@@ -139,12 +143,12 @@ The biggest risks are environment ones, not code: email, OpenAI and HTTPS upload
 
 ## Ways of working
 
-Every change travels card → branch → PR → review → merge → card moved, so the [Trello board](https://trello.com/b/6Pob02M6/transcendence) and the Git history tell the same story at the defense.
+Every change travels card → branch → PR → review → merge → card moved, so the [Trello board](https://trello.com/b/E3788fBx/fttranscendence) and the Git history tell the same story at the defense.
 
 **Trello board**
 
-- Lists: Backlog → Sprint → In Progress → Review → Done. One-week sprints; the PO orders Backlog, the PM runs Sprint.
-- Labels: track (`FE`, `BE`, `INFRA`, `DOCS`), module (`M1 Frameworks` … `M16 Browsers`, `Mandatory`), priority (`P1`, `P2`).
+- Lists: Backlog → To Do → In Progress → Review → Done. One-week sprints; the PO orders Backlog, the PM runs To Do. The owner joins their card before starting. Done requires a merged PR and all acceptance gates (PM-00).
+- Labels: track (`Frontend`, `Backend`, `DevOps`, `Docs`), subject module (`M1`–`M20`), required scope (`Mandatory`), priority (`P1`, `P2`).
 - One owner per card; a reviewer from the other pair is added when the card reaches Review.
 - Turn on the GitHub Power-Up so PRs and commits appear on the card.
 
@@ -165,8 +169,8 @@ Depends on: #<card number>
 **Git**
 
 - `main` is protected: merge only through a PR with one approving review and green CI.
-- Branch name: `<type>/<card-number>-<short-name>`, e.g. `feat/42-avatar-url`, `fix/57-vote-room-check`.
-- Commit message: `<type>(<scope>): <summary> (#<card>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (#57)`.
+- Branch name: `<type>/<card-id>-<short-name>`, e.g. `feat/FE-04-auth-screens`, `fix/BE-10-vote-room-check`.
+- Commit message: `<type>(<scope>): <summary> (<card-id>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `fix(game): reject votes for other rooms (BE-10)`.
 - Small PRs (under \~400 changed lines), one card each. Squash merge keeps one clear commit per card on `main`.
 - Everyone commits their own work from their own account; pair work uses `Co-authored-by:` lines.
 - Weekly sync (30 min, PM leads) + async daily update in the team chat: done, next, blocked.
@@ -178,14 +182,16 @@ Depends on: #<card number>
 - ft\_transcendence — Infrastructure — for infra: services, HTTPS routing, file storage, email, modules, cards.
 - The reference OpenAPI file `wozu-reference-openapi.json` is shared alongside these docs.
 
-**Decisions log** (the PO keeps it current; change the status after each call)
+**Decisions log** (PO keeps it current; PM-01 explicitly requests the recorded decisions below. Operational agreements still pending are listed separately in the sprint routine.)
 
 | Decision | Proposed by | Status |
 | --- | --- | --- |
-| Roles: byul-byul PO + infra, backend dev A Tech Lead, frontend dev A PM | Overview doc | Proposed |
-| Core module set (19 points) + tier B buffer (5 points) | Overview doc | Proposed |
-| Frontend: React + TypeScript + Vite + Tailwind | Overview doc | Proposed |
-| Keep the Turing Duel game | Overview doc | Proposed |
-| New backend starts with a clean schema and fresh migrations | Backend Reference | Proposed |
+| Named roles above: Burhan PO, Khalil Tech Lead, Zayid PM; Nader Backend B, Ahmad Frontend B | PM-00 | Decided |
+| Core (19) + tier B (5) + M18 Remote players (2); 26 planned, max 19 counted | PM-01 | Decided |
+| Frontend: React + TypeScript + Vite + Tailwind | PM-01; FE-01 merged | Decided |
+| Keep the Turing Duel game | PM-01 | Decided |
+| Five languages: EN / AR / AZ / TR / RU; Arabic RTL | PM-01 / frontend plan | Decided |
+| First defense Nov 29, 2026; code freeze Nov 26; quality may move defense | PM-00 / PM-01 | Decided |
+| New backend starts with a clean schema and fresh migrations | BE-02, merged PR #7 | Decided / implemented schema |
 | One origin over HTTPS, files at `/files` | Infrastructure | Proposed |
 | Front proxy: nginx + ModSecurity if WAF module is claimed | Infrastructure | Proposed |
