@@ -37,6 +37,12 @@ The game starts as soon as one of these happens:
 
 Participants who have not joined when the game starts do not join later.
 
+### Leaving the waiting room
+
+A human may leave the room before the game starts. Their label goes back to the pool and the participant count drops by one. The room timer keeps running. If no human is left in the room, the room closes at once and any bots that were planned for it are dropped.
+
+Leaving after the game has started counts as a disconnect (section 6).
+
 ### When the room closes
 
 If the room timer runs out with only 1 participant, the room closes. The human goes back to the lobby and can create or join a new room.
@@ -63,9 +69,10 @@ A human's score is the sum over all their guesses. Marking a human as human earn
 
 ### Who wins
 
-- With 2 or more humans: the human with the highest score wins. If the top score is shared, those players draw. Everyone else loses.
+- With 2 or more humans: the human with the highest score wins, even if that score is 0 or negative, because the game is relative: you only have to do better than the other humans. If the top score is shared, those players draw. Everyone else loses.
 - With exactly 1 human in the room (that human plus bots): a score above 0 is a win, exactly 0 is a draw, below 0 is a loss.
 - Win, draw and loss apply to humans only. Bots have no score and no outcome.
+- On a draw, nobody is named the winner: the result has no winner (`winner_participant_ids` is empty) and `is_draw` is true. Each human still gets an outcome of win, draw or loss; the players who share the top score have the outcome draw.
 
 ### If a player disconnects
 
@@ -132,6 +139,7 @@ Rules for implementers (BE-27, BE-10, BE-09, FE-31, FE-32):
 - **Labels** are drawn from the same random pool for bots and humans. Label order never follows join order or the bot / human split.
 - **Join events** for bots and humans are the same event with the same shape. Bots join at random delays interleaved with humans; no bot joins in a burst or at a fixed offset from room creation.
 - **Counts** shown to players (participants present, "Start now" visibility, start conditions) always include bots. A count of humans only is never exposed.
+- **The last human leaves**: when the last human leaves the waiting room, the room just closes. Nothing sent to any client reveals whether the room had bots or planned any.
 - **The bot plan** (whether the room has bots, how many, when they join) is chosen on the server, kept on the server and never sent to a client before the results. A planned bot that has not joined when the game starts is dropped silently; nothing tells a client that a bot was planned.
 - **Timing and behaviour**: bot chat messages go through the same event and the same fields as human messages, with typing delays and message rates in the range of human behaviour. Bots have no profile, so no profile link or avatar exists for any participant.
 - **Waiting room and phase events** carry the same data in every room, whether or not it has bots.
