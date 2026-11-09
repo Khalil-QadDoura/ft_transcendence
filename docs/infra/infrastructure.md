@@ -1,6 +1,6 @@
 # ft\_transcendence — Infrastructure
 
-Oct 27, 2026 · @byul-byul
+Oct 27, 2026 · updated Nov 4, 2026 · @byul-byul
 
 ## TL;DR
 
@@ -8,8 +8,12 @@ Infra owns four mandatory items and five module points. The reference already ha
 
 - **Mandatory:** one command starts everything; every browser connection is HTTPS; `.env` stays out of Git with a complete `.env.example`; the evaluator can sign up without a paid email service.
 - **Modules:** Prometheus + Grafana (Major, 2, core); WAF / ModSecurity + Vault (Major, 2, buffer); health check, status page and backups (Minor, 1, buffer).
-- **Decide first (week 1):** the front proxy. If we will claim the WAF module, start with nginx + ModSecurity v3 + OWASP Core Rule Set as the only front door instead of Caddy; switching proxies late costs more than choosing now.
+- **Front proxy decided (2026-11-04, INF-01):** nginx + ModSecurity v3 + OWASP Core Rule Set is the only front door instead of Caddy. Configuration: [infra/proxy/](../../infra/proxy/README.md).
 - **One origin for everything** (`https://localhost` at the defense): frontend at `/`, API at `/api`, WebSockets at `/ws`, files at `/files`, Grafana at `/grafana`, Mailpit at `/mail`. One certificate warning, no CORS, no mixed content.
+
+## Front proxy (decided 2026-11-04)
+
+nginx + ModSecurity v3 + OWASP Core Rule Set (CRS), image `owasp/modsecurity-crs:nginx-alpine`, decided in card INF-01 (byul-byul) and logged in the decisions log of the overview. Caddy from the reference is not used. Reason: the WAF module (M13) needs ModSecurity, and switching proxies late costs more than choosing now. INF-03 implements the routes below as nginx `location` blocks; INF-11 tunes CRS in blocking mode.
 
 ## Services
 
@@ -17,7 +21,7 @@ Only the proxy publishes ports to the host; everything else stays on the interna
 
 | Service | Image | Purpose | Published | Status |
 | --- | --- | --- | --- | --- |
-| `proxy` | `caddy:2-alpine`, or `owasp/modsecurity-crs:nginx-alpine` if WAF | TLS, single origin, routing (+ WAF) | 443 (80 → redirect) | Exists (Caddy, API only) |
+| `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210` | TLS, single origin, routing, WAF | 443 (80 → redirect) | Config in `infra/proxy/`; joins compose in INF-02 |
 | `frontend` | Multi-stage: Node build → static files served by the proxy or `nginx:alpine` | React app | no | New |
 | `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start | no | Exists |
 | `worker` | Same image as `api`, command `celery … worker -B` | Video moderation + beat for stuck videos | no | Exists, beat missing |
@@ -36,41 +40,20 @@ We skip ELK: Elasticsearch is memory-hungry and risky on an evaluation laptop; P
 
 ## One origin over HTTPS
 
-Everything the browser touches goes through one host and one certificate. Locally that is `https://localhost` with Caddy's internal CA (`tls internal`), so the evaluator accepts one warning once.
+Everything the browser touches goes through one host and one certificate. Locally that is `https://localhost` with a self-signed certificate from `infra/proxy/scripts/gen-cert.sh`, so the evaluator accepts one warning once.
 
 | Path | Upstream | Notes |
 | --- | --- | --- |
-| `/` | `frontend` static files | SPA fallback to `index.html` for client routes |
+| `/` | `frontend:80` | The frontend container does the SPA fallback to `index.html` for client routes |
 | `/api/*` | `api:8000` | FastAPI includes all routers under the `/api` prefix; the proxy does not strip paths |
-| `/ws`, `/ws/game` | `api:8000` | WebSocket upgrade (Caddy and nginx handle it with the right headers) |
-| `/files/*` | `minio:9000` | Bucket `files`; Host header passed through unchanged so presigned signatures match |
+| `/ws`, `/ws/game` | `api:8000` | WebSocket upgrade: HTTP/1.1, `Upgrade` and `Connection` headers, long read timeout |
+| `/files/*` | `minio:9000` | Bucket `files`; Host header passed through unchanged so presigned signatures match; 60 MB body limit |
 | `/grafana/*` | `grafana:3000` | `GF_SERVER_ROOT_URL=https://localhost/grafana/`, `serve_from_sub_path=true`, login required |
 | `/mail/*` | `mailpit:8025` | `MP_WEBROOT=/mail/` |
 | `/_internal/*`, `/metrics` | blocked | Prometheus scrapes them inside the Docker network only |
 | `http://` any | redirect to `https://` |  |
 
-```
-{$DOMAIN} {
-    tls internal                     # self-signed for localhost; real domain → automatic Let's Encrypt
-    encode gzip
-
-    @blocked path /_internal/* /metrics
-    respond @blocked 404
-
-    handle /api/*     { reverse_proxy api:8000 }
-    handle /ws*       { reverse_proxy api:8000 }
-    handle /files/*   { reverse_proxy minio:9000 }   # keep Host: presigned URLs are signed for {$DOMAIN}
-    handle /grafana/* { reverse_proxy grafana:3000 }
-    handle /mail/*    { reverse_proxy mailpit:8025 }
-    handle {
-        root * /srv/frontend
-        try_files {path} /index.html
-        file_server
-    }
-}
-```
-
-The same table translates one-to-one to nginx `location` blocks if we switch to the ModSecurity image.
+The table translates one-to-one to the `location` blocks in `infra/proxy/templates/conf.d/default.conf.template`. ModSecurity covers all of them and runs in `DetectionOnly` until INF-11 switches it to blocking. The image runs unprivileged and listens on 8080 and 8443 inside the container, so compose publishes `443:8443` and `80:8080`. `infra/proxy/README.md` lists which files are ours and which come from the image.
 
 ## File storage over HTTPS
 
@@ -84,10 +67,10 @@ Recommendation: serve the bucket on the same origin at `/files/*` and presign UR
 
 **Required with option A:**
 
-- The worker must download videos with the internal MinIO client (`minio:9000`), not through the external presigned URL: inside a container `https://localhost` is the container itself. The reference downloads via the external URL (`moderation_task.py`), so this is a backend card.
+- The worker must download videos with the internal MinIO client (`minio:9000`), not through the external presigned URL: inside a container `https://localhost` is the container itself. The reference downloads via the external URL (`moderation_task.py`), so this is a backend card (BE-29).
 - `minio-init` creates the bucket and keeps it private; all access goes through presigned URLs (GET 5 min, PUT 15 min).
 - On `confirm`, the API calls `stat_object` to check the file exists and its real size.
-- Avatars need a stable read path: either short-lived presigned GET URLs returned in API responses, or a public-read prefix `files/avatars/*` (no secrets in avatars). Pick one with the backend Tech Lead.
+- Avatars need a stable read path: either short-lived presigned GET URLs returned in API responses, or a public-read prefix `files/avatars/*` (no secrets in avatars). byul-byul picks one with Khalil (Tech Lead); BE-08 returns `avatar_url` and `logo_url`.
 
 ## Email without a paid service
 
@@ -148,7 +131,7 @@ Each checklist mirrors the subject's bullets for that module; every box must be 
 
 **M12 — Monitoring with Prometheus + Grafana (Major, 2, core)**
 
-- [ ] Prometheus scrapes the API `/metrics` (via `prometheus-fastapi-instrumentator`; backend card), Postgres, Redis and container exporters
+- [ ] Prometheus scrapes the API `/metrics` (via `prometheus-fastapi-instrumentator`; backend card BE-30), Postgres, Redis and container exporters
 - [ ] Exporters and integrations configured in `prometheus.yml`, committed
 - [ ] Custom Grafana dashboards provisioned from JSON files: API request rate, error rate, p95 latency, WebSocket connections, DB connections, Redis memory, container CPU / RAM
 - [ ] Alerting rules: target down, API 5xx rate above a threshold, p95 latency above a threshold, disk almost full; show one alert firing live (stop a container)
@@ -173,7 +156,7 @@ Each checklist mirrors the subject's bullets for that module; every box must be 
 
 ## CI
 
-GitHub Actions on every PR to `main`; branch protection requires all three jobs green plus one review. CI is not a module, but it keeps `main` always demo-ready and makes reviews visible in the history.
+Target for INF-06: GitHub Actions on PRs to `main`, with applicable backend, frontend and stack jobs passing plus one approving review before merge. Configure branch protection to enforce the required checks. This is the planned setup, not evidence that every job or protection rule is already active. CI is not a module; it protects integration and makes reviews visible.
 
 | Job | Steps | Blocks merge |
 | --- | --- | --- |
@@ -183,21 +166,25 @@ GitHub Actions on every PR to `main`; branch protection requires all three jobs 
 
 ## Infra cards
 
-In this order; the first four unblock the rest of the team and should land in the first sprint.
+IDs and titles as on the Trello board (snapshot in [backlog.md](../plan/backlog.md)); every INF card is owned by byul-byul and carries the DevOps label. INF-01 … INF-06 are in S1 and unblock the rest of the team.
 
-| # | Card | Done when | Depends on | Module |
-| --- | --- | --- | --- | --- |
-| 1 | Decide front proxy: Caddy, or nginx + ModSecurity CRS | Decision in the decisions log; one config skeleton committed | — | M13 |
-| 2 | Repo layout + root `docker-compose.yml` + `Makefile` + `init-env.sh` | Fresh clone → `make` → all containers healthy | 1 | Mandatory |
-| 3 | One origin over HTTPS: `/`, `/api`, `/ws`, HTTP → HTTPS redirect | Frontend placeholder and API reachable at `https://localhost`; WebSocket connects | 2 | Mandatory |
-| 4 | MinIO at `/files` + `minio-init` bucket + external endpoint env | Browser PUT to a presigned URL succeeds over HTTPS | 3 | Mandatory |
-| 5 | Mailpit at `/mail` + SMTP env | Sign-up email visible in the inbox, link opens the frontend | 3 | Mandatory |
-| 6 | Pin images, multi-stage API image without test deps, health checks everywhere | `docker compose ps` all healthy; image smaller than the reference | 2 | Mandatory, M14 |
-| 7 | CI workflow (backend, frontend, stack) + branch protection | Red CI blocks a PR | 2 | — |
-| 8 | Prometheus + exporters | All targets `UP` | 3, API `/metrics` card | M12 |
-| 9 | Grafana at `/grafana` with provisioned dashboards | Dashboards load after `make re` with no clicks | 8 | M12 |
-| 10 | Alert rules + live alert demo | Stopping Redis fires an alert | 8 | M12 |
-| 11 | ModSecurity CRS tuning | SQLi / XSS probes blocked, full app flow passes | 1, app ready | M13 |
-| 12 | Vault server, unseal script, AppRole, secrets moved | No secrets left in `.env` except Vault access | 2 | M13 |
-| 13 | Backups + restore runbook + status page | Restore test passes; status page shows all green | 6 | M14 |
-| 14 | README: Instructions, Technical Stack, infra parts of Modules | A teammate follows the README on a clean machine | all | Mandatory |
+| ID | Card | Done when | Depends on | Module | Sprint |
+| --- | --- | --- | --- | --- | --- |
+| INF-01 | Decide front proxy: Caddy or nginx + ModSecurity CRS (decided: nginx + ModSecurity CRS) | Decision in the decisions log; one config skeleton committed | — | M13 | S1 |
+| INF-02 | Set up repo layout, root compose, Makefile and init-env script | Fresh clone → `make` → all containers healthy | INF-01 | Mandatory | S1 |
+| INF-03 | Serve frontend, /api and /ws on one HTTPS origin | Frontend placeholder and API reachable at `https://localhost`; WebSocket connects; HTTP → HTTPS redirect | INF-02 | Mandatory | S1 |
+| INF-04 | Expose MinIO at /files with bucket init and external endpoint | Browser PUT to a presigned URL succeeds over HTTPS | INF-03 | Mandatory | S1 |
+| INF-05 | Add Mailpit at /mail for verification emails | Sign-up email visible in the inbox, link opens the frontend | INF-03 | Mandatory | S1 |
+| INF-06 | Add CI for backend, frontend and stack with branch protection | Red CI blocks a PR | INF-02, BE-01, FE-01 | — | S1 |
+| INF-07 | Pin images, slim API image, health checks for every service | `docker compose ps` all healthy; image smaller than the reference | INF-02, BE-01 | Mandatory, M14 | S2 |
+| INF-08 | Add Prometheus with Postgres, Redis and container exporters | All targets `UP` | INF-03, BE-30 | M12 | S2 |
+| INF-09 | Provision Grafana at /grafana with dashboards | Dashboards load after `make re` with no clicks | INF-08 | M12 | S2 |
+| INF-10 | Add alert rules and a live alert demo | Stopping Redis fires an alert | INF-09 | M12 | S3 |
+| INF-11 | Tune ModSecurity CRS in blocking mode | SQLi / XSS probes blocked, full app flow passes | INF-01, FE-32 | M13 | S3 |
+| INF-12 | Run Vault in server mode with unseal script and AppRole | Vault in server mode with file storage; init and unseal by a startup script; unseal keys out of Git | INF-02 | M13 | S2 |
+| INF-13 | Move all service secrets from .env to Vault | No secrets left in `.env` except Vault access | INF-12 | M13 | S3 |
+| INF-14 | Add daily Postgres and bucket backups with 7-day retention | Daily `pg_dump` and bucket mirror run automatically, 7 copies kept | INF-07 | M14 | S3 |
+| INF-15 | Write and test the restore runbook | Restore test passes: drop the DB volume, restore, app works (`docs/disaster-recovery.md`) | INF-14 | M14 | S3 |
+| INF-16 | Build the public status page | Status page shows all components green | BE-31, INF-07 | M14 | S3 |
+
+The README Instructions and Technical Stack sections (row 14 of the first draft) are card DOC-05 (byul-byul, S4); the clean-machine rehearsal is QA-01 (byul-byul, S4).

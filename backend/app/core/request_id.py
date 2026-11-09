@@ -7,6 +7,8 @@ import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import RequestResponseEndpoint
 
+from app.core.errors import server_error
+
 HEADER = "x-request-id"
 log = structlog.get_logger("app.request")
 
@@ -20,7 +22,13 @@ async def request_id_middleware(request: Request, call_next: RequestResponseEndp
     structlog.contextvars.bind_contextvars(request_id=request_id)
 
     started = time.perf_counter()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        # A bug in a route. The traceback goes to our log only; the client gets the safe
+        # 500 body, and that response still gets its id and its "request" line below.
+        log.exception("unhandled error")
+        response = await server_error(request, exc)
     response.headers[HEADER] = request_id
     log.info(
         "request",

@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+*.log
+coverage/
+
+# Certificates and private keys are generated locally and never committed
+infra/proxy/certs/
+*.pem
+*.key
+*.crt
