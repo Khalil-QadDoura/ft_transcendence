@@ -297,7 +297,7 @@ async def list_participants(session: AsyncSession, conv_id: int) -> list[Convers
             ConversationParticipant.conversation_id == conv_id,
             ConversationParticipant.left_at.is_(None),
         )
-        .order_by(ConversationParticipant.joined_at)
+        .order_by(ConversationParticipant.created_at)
     )
     return list((await session.execute(q)).scalars().all())
 

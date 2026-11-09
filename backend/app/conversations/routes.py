@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import CurrentUser, get_current_user
+from app.auth.deps import CurrentUser
 from app.companies.models import Company
 from app.conversations import repo, service
 from app.conversations.models import ConversationParticipant
@@ -63,28 +63,25 @@ async def _require_participant(
 async def _validate_job_owner(session: AsyncSession, job_id: int, user_id: int) -> None:
     """Ensure the job belongs to an active company owned by the user.
 
-    Accepts both 'active' and 'open' job status.
+    Accepts 'draft' and 'open' job status.
     """
-    try:
-        from app.jobs.models import Job
+    from app.jobs.models import Job
 
-        result = await session.execute(
-            select(Job.id)
-            .join(Company, Company.id == Job.owner_id)
-            .where(
-                Job.id == job_id,
-                Job.status.in_(["active", "open"]),
-                Company.owner_user_id == user_id,
-                Company.status == "active",
-            )
+    result = await session.execute(
+        select(Job.id)
+        .join(Company, Company.id == Job.owner_id)
+        .where(
+            Job.id == job_id,
+            Job.status.in_(["draft", "open"]),
+            Company.owner_user_id == user_id,
+            Company.status == "active",
         )
-        if result.scalar_one_or_none() is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="job_id does not belong to your company or is not active",
-            )
-    except ImportError:
-        pass
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="job_id does not belong to your company or is not active",
+        )
 
 
 # ── Conversations ─────────────────────────────────────────────────────────────
@@ -94,7 +91,7 @@ async def _validate_job_owner(session: AsyncSession, job_id: int, user_id: int) 
 async def create_conversation(
     body: ConversationCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> ConversationOut:
     """Create or retrieve a direct conversation, or create an AI conversation."""
     if body.job_id is not None:
@@ -139,7 +136,7 @@ async def create_conversation(
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
     limit: int = Query(50, ge=1, le=100),
 ) -> list[ConversationOut]:
     """List conversations for the current user ordered by updated_at descending."""
@@ -150,7 +147,7 @@ async def list_conversations(
 @router.get("/unread", response_model=UnreadOut)
 async def get_unread(
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> UnreadOut:
     """Get total unread messages count across all non-AI conversations."""
     return UnreadOut(total_unread=await repo.get_total_unread(session, me.id))
@@ -160,7 +157,7 @@ async def get_unread(
 async def get_conversation(
     conv_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> ConversationOut:
     """Get conversation details with unread count for current user."""
     row = await repo.get_conversation_for_user(session, conv_id, me.id)
@@ -176,7 +173,7 @@ async def get_conversation(
 async def leave_conversation(
     conv_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> None:
     """Leave a conversation."""
     await _require_participant(session, conv_id, me.id)
@@ -191,7 +188,7 @@ async def leave_conversation(
 async def list_participants(
     conv_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> list[ParticipantOut]:
     """List active participants of a conversation."""
     await _require_participant(session, conv_id, me.id)
@@ -204,7 +201,7 @@ async def add_participant(
     conv_id: int,
     body: AddParticipantRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> dict[str, bool]:
     """Add a participant to the conversation (admin only)."""
     p = await _require_participant(session, conv_id, me.id)
@@ -223,7 +220,7 @@ async def remove_participant(
     conv_id: int,
     uid: int,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> None:
     """Remove a participant from the conversation (admin or self)."""
     p = await _require_participant(session, conv_id, me.id)
@@ -243,7 +240,7 @@ async def remove_participant(
 async def list_messages(
     conv_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
     before_id: int | None = Query(None, ge=0),
     limit: int = Query(50, ge=1, le=100),
 ) -> MessagesPage:
@@ -258,7 +255,7 @@ async def send_message(
     conv_id: int,
     body: SendMessageRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> SendResponse:
     """Send a message and broadcast over WebSocket."""
     try:
@@ -290,7 +287,7 @@ async def edit_message(
     mid: int,
     body: EditMessageRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> MessageOut:
     """Edit own message within the 15-minute window."""
     await _require_participant(session, conv_id, me.id)
@@ -330,7 +327,7 @@ async def delete_message(
     conv_id: int,
     mid: int,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> None:
     """Soft delete own message."""
     await _require_participant(session, conv_id, me.id)
@@ -357,7 +354,7 @@ async def mark_read(
     conv_id: int,
     body: ReadRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
-    me: Annotated[CurrentUser, Depends(get_current_user)],
+    me: CurrentUser,
 ) -> None:
     """Mark conversation messages as read up to the given message ID."""
     try:

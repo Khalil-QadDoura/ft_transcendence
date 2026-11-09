@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ── Response Models ────────────────────────────────────────────────────────────
 
@@ -29,11 +29,11 @@ class MessageOut(BaseModel):
 class ParticipantOut(BaseModel):
     user_id: int
     role: str
-    joined_at: datetime
+    joined_at: datetime = Field(validation_alias="created_at")
     last_read_message_id: int | None = None
     is_muted: bool = False
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class ConversationOut(BaseModel):

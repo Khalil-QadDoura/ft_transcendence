@@ -15,16 +15,32 @@ Covers:
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
-from app.auth.deps import CurrentUser, get_current_user
+from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database, sql
+from fastapi.testclient import TestClient
+
+from app.auth import security
+from app.auth.deps import get_current_user
 from app.conversations.models import Conversation, ConversationParticipant, Message
+from app.users.models import User
 
-AUTH_HEADER_A = {"Authorization": "Bearer 10"}
-AUTH_HEADER_B = {"Authorization": "Bearer 20"}
-AUTH_HEADER_OUTSIDER = {"Authorization": "Bearer 99"}
+AUTH_SECRET = "test-only-jwt-secret-0123456789abcdef"
+USER_A = User(id=10, email="alice@example.com", status="active", token_version=1)
+USER_B = User(id=20, email="bob@example.com", status="active", token_version=1)
+USER_OUTSIDER = User(id=99, email="outsider@example.com", status="active", token_version=1)
 
-USER_A = CurrentUser(id=10, email="alice@example.com")
-USER_B = CurrentUser(id=20, email="bob@example.com")
-USER_OUTSIDER = CurrentUser(id=99, email="outsider@example.com")
+TOKEN_A, _ = security.create_token(
+    AUTH_SECRET, user_id=10, scope="access", lifetime=timedelta(minutes=15), ver=1
+)
+TOKEN_B, _ = security.create_token(
+    AUTH_SECRET, user_id=20, scope="access", lifetime=timedelta(minutes=15), ver=1
+)
+TOKEN_OUTSIDER, _ = security.create_token(
+    AUTH_SECRET, user_id=99, scope="access", lifetime=timedelta(minutes=15), ver=1
+)
+
+AUTH_HEADER_A = {"Authorization": f"Bearer {TOKEN_A}"}
+AUTH_HEADER_B = {"Authorization": f"Bearer {TOKEN_B}"}
+AUTH_HEADER_OUTSIDER = {"Authorization": f"Bearer {TOKEN_OUTSIDER}"}
 
 
 def _fake_conv(
@@ -61,7 +77,8 @@ def _fake_participant(
         last_read_message_id=last_read_message_id,
         is_muted=False,
     )
-    p.joined_at = datetime.now(UTC)
+    p.created_at = datetime.now(UTC)
+    p.updated_at = datetime.now(UTC)
     p.left_at = None
     return p
 
@@ -112,9 +129,21 @@ def test_unauthenticated_requests_return_401(client):
     for method, path in endpoints:
         resp = getattr(client, method.lower())(path)
         assert resp.status_code == 401, f"{method} {path} returned {resp.status_code}"
-        assert resp.json() == {
-            "error": {"code": "401", "detail": "Missing or invalid authentication header"}
-        }
+        assert resp.json()["error"]["detail"] == "Not authenticated"
+
+
+def test_invalid_tokens_return_401(client):
+    """Numeric bearer bypass or invalid tokens return 401."""
+    resp = client.get("/api/conversations", headers={"Authorization": "Bearer 42"})
+    assert resp.status_code == 401
+    assert resp.json()["error"]["detail"] == "Invalid or expired token"
+
+    expired_token, _ = security.create_token(
+        AUTH_SECRET, user_id=10, scope="access", lifetime=timedelta(seconds=-10), ver=1
+    )
+    resp = client.get("/api/conversations", headers={"Authorization": f"Bearer {expired_token}"})
+    assert resp.status_code == 401
+    assert resp.json()["error"]["detail"] == "Invalid or expired token"
 
 
 def test_create_direct_requires_peer_user_id(client):
@@ -556,3 +585,218 @@ def test_openapi_contains_conversations_routes(client):
     assert "/api/conversations/{conv_id}/participants" in paths
     assert "/api/conversations/{conv_id}/messages" in paths
     assert "/api/conversations/{conv_id}/read" in paths
+
+
+# ── Real Database Tests (Requires live PostgreSQL with PostGIS) ────────────────
+
+
+PASSWORD = "correct horse battery"
+PASSWORD_HASH = security.hash_password(PASSWORD)
+
+
+def _seed_db_user(email: str, is_active: bool = True, token_version: int = 1) -> None:
+    status_str = "active" if is_active else "deleted"
+    sql(
+        "INSERT INTO users (email, password_hash, is_email_verified, status, token_version,"
+        " first_name, last_name, position, birth_date, bio)"
+        " VALUES (:email, :password_hash, true, :status, :token_version,"
+        " 'Test', 'User', 'Dev', '1995-01-01', 'Bio')",
+        email=email,
+        password_hash=PASSWORD_HASH,
+        status=status_str,
+        token_version=token_version,
+    )
+
+
+@needs_database
+def test_conversations_real_database_lifecycle():
+    """Real PostgreSQL integration: conversations lifecycle, auth, idempotency, read receipts."""
+    alembic("upgrade", "head")
+    sql(
+        "TRUNCATE users, companies, jobs, conversations, conversation_participants, messages "
+        "RESTART IDENTITY CASCADE"
+    )
+
+    with TestClient(build_app(database_url=TEST_DATABASE_URL)) as test_client:
+        # 1. Seed users in real PostgreSQL
+        _seed_db_user("alice@example.com")
+        _seed_db_user("bob@example.com")
+        _seed_db_user("charlie@example.com")
+
+        # 2. Login to get real signed JWT tokens
+        r_a = test_client.post(
+            "/api/auth/login",
+            json={"email": "alice@example.com", "password": PASSWORD},
+        )
+        assert r_a.status_code == 200
+        alice_h = {"Authorization": f"Bearer {r_a.json()['access_token']}"}
+        alice_id = test_client.get("/api/users/me", headers=alice_h).json()["id"]
+
+        r_b = test_client.post(
+            "/api/auth/login",
+            json={"email": "bob@example.com", "password": PASSWORD},
+        )
+        assert r_b.status_code == 200
+        bob_h = {"Authorization": f"Bearer {r_b.json()['access_token']}"}
+        bob_id = test_client.get("/api/users/me", headers=bob_h).json()["id"]
+
+        r_c = test_client.post(
+            "/api/auth/login",
+            json={"email": "charlie@example.com", "password": PASSWORD},
+        )
+        assert r_c.status_code == 200
+        charlie_h = {"Authorization": f"Bearer {r_c.json()['access_token']}"}
+
+        # 3. Create company and jobs for Alice
+        r_comp = test_client.post(
+            "/api/companies",
+            json={"name": "Alice Tech", "country": "UAE", "city": "Abu Dhabi"},
+            headers=alice_h,
+        )
+        assert r_comp.status_code == 201
+        company_id = r_comp.json()["id"]
+
+        # Insert an open job for Alice's company directly in DB
+        sql(
+            "INSERT INTO jobs (owner_id, title, description, status, latitude, longitude, location,"
+            " schedule, urgency) VALUES (:owner_id, 'Senior Python Engineer', 'Great role',"
+            " 'open', 24.4539, 54.3773, 'Abu Dhabi', 'full_time', 'normal')",
+            owner_id=company_id,
+        )
+        job_id = sql(
+            "SELECT id FROM jobs WHERE owner_id = :owner_id AND status = 'open' LIMIT 1",
+            owner_id=company_id,
+        )[0][0]
+
+        # Insert a deleted job for Alice's company
+        sql(
+            "INSERT INTO jobs (owner_id, title, description, status, latitude, longitude, location,"
+            " schedule, urgency) VALUES (:owner_id, 'Archived Role', 'Closed',"
+            " 'deleted', 24.4539, 54.3773, 'Abu Dhabi', 'full_time', 'normal')",
+            owner_id=company_id,
+        )
+        del_job_id = sql(
+            "SELECT id FROM jobs WHERE owner_id = :owner_id AND status = 'deleted' LIMIT 1",
+            owner_id=company_id,
+        )[0][0]
+
+        # 4. Job ownership and status validation
+        # Bob cannot start conversation using Alice's company job -> 403 Forbidden
+        r_forbidden = test_client.post(
+            "/api/conversations",
+            json={"peer_user_id": alice_id, "job_id": job_id},
+            headers=bob_h,
+        )
+        assert r_forbidden.status_code == 403
+        assert (
+            r_forbidden.json()["error"]["detail"]
+            == "job_id does not belong to your company or is not active"
+        )
+
+        # Alice cannot start conversation referencing a deleted job -> 403 Forbidden
+        r_del_job = test_client.post(
+            "/api/conversations",
+            json={"peer_user_id": bob_id, "job_id": del_job_id},
+            headers=alice_h,
+        )
+        assert r_del_job.status_code == 403
+
+        # 5. Alice creates direct conversation with Bob referencing her open job -> 201 Created
+        r_conv = test_client.post(
+            "/api/conversations",
+            json={"peer_user_id": bob_id, "job_id": job_id},
+            headers=alice_h,
+        )
+        assert r_conv.status_code == 201
+        conv_id = r_conv.json()["id"]
+        assert r_conv.json()["type"] == "direct"
+        assert r_conv.json()["job_id"] == job_id
+        assert r_conv.json()["job_title"] == "Senior Python Engineer"
+
+        # 6. Idempotency of get-or-create direct:
+        # Bob calls create conversation with Alice -> 201 (returns existing conversation)
+        r_conv_exist = test_client.post(
+            "/api/conversations",
+            json={"peer_user_id": alice_id},
+            headers=bob_h,
+        )
+        assert r_conv_exist.status_code == 201
+        assert r_conv_exist.json()["id"] == conv_id
+
+        # 7. List participants
+        r_parts = test_client.get(f"/api/conversations/{conv_id}/participants", headers=alice_h)
+        assert r_parts.status_code == 200
+        parts = r_parts.json()
+        assert len(parts) == 2
+        p_ids = {p["user_id"] for p in parts}
+        assert p_ids == {alice_id, bob_id}
+        # Check joined_at is populated via alias created_at
+        assert "joined_at" in parts[0]
+        assert parts[0]["joined_at"] is not None
+
+        # 8. Outsider isolation: Charlie cannot view conversation or send messages
+        r_outsider_get = test_client.get(f"/api/conversations/{conv_id}", headers=charlie_h)
+        assert r_outsider_get.status_code == 404
+
+        r_outsider_send = test_client.post(
+            f"/api/conversations/{conv_id}/messages",
+            json={"content": "I am eavesdropping"},
+            headers=charlie_h,
+        )
+        assert r_outsider_send.status_code == 403
+
+        # 9. Send message with idempotency key
+        r_msg = test_client.post(
+            f"/api/conversations/{conv_id}/messages",
+            json={
+                "content": "Hi Bob, interested in the role?",
+                "idempotency_key": "msg-key-1",
+            },
+            headers=alice_h,
+        )
+        assert r_msg.status_code == 200
+        items = r_msg.json()["items"]
+        assert len(items) == 1
+        msg_id = items[0]["id"]
+        assert items[0]["content"] == "Hi Bob, interested in the role?"
+
+        # Duplicate send with same idempotency key returns same message without duplicating
+        r_msg_dup = test_client.post(
+            f"/api/conversations/{conv_id}/messages",
+            json={
+                "content": "Hi Bob, interested in the role?",
+                "idempotency_key": "msg-key-1",
+            },
+            headers=alice_h,
+        )
+        assert r_msg_dup.status_code == 200
+        assert r_msg_dup.json()["items"][0]["id"] == msg_id
+
+        # 10. Unread counts
+        # Alice sent the message, so Alice unread count should be 0
+        r_unread_a = test_client.get("/api/conversations/unread", headers=alice_h)
+        assert r_unread_a.status_code == 200
+        assert r_unread_a.json()["total_unread"] == 0
+
+        # Bob has not read Alice's message, so Bob unread count should be 1
+        r_unread_b = test_client.get("/api/conversations/unread", headers=bob_h)
+        assert r_unread_b.status_code == 200
+        assert r_unread_b.json()["total_unread"] == 1
+
+        # Check Bob's conversation detail
+        r_conv_b = test_client.get(f"/api/conversations/{conv_id}", headers=bob_h)
+        assert r_conv_b.status_code == 200
+        assert r_conv_b.json()["unread_count"] == 1
+
+        # 11. Bob marks message as read
+        r_read = test_client.post(
+            f"/api/conversations/{conv_id}/read",
+            json={"last_message_id": msg_id},
+            headers=bob_h,
+        )
+        assert r_read.status_code == 204
+
+        # Bob's unread count should now be 0
+        r_unread_b_after = test_client.get("/api/conversations/unread", headers=bob_h)
+        assert r_unread_b_after.status_code == 200
+        assert r_unread_b_after.json()["total_unread"] == 0
