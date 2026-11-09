@@ -81,3 +81,31 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:5432/wozu_test py
   set to a `deleted` status. Fixed value lists are PostgreSQL enum types; adding a value needs a
   migration (`ALTER TYPE ... ADD VALUE`). The jobs search trigger exists only in the migration, so
   a database is always built with Alembic, never with `Base.metadata.create_all()`.
+
+
+## Transactional test fixtures (BE-20)
+
+`db` and `async_db_client` require an explicit `TEST_DATABASE_URL` whose database
+name contains `test`. They never fall back to the application's `DATABASE_URL`.
+Use only a disposable test database: the existing schema/auth suites still drop
+or truncate their own data. A skipped database suite is not a successful database check.
+
+`db` binds an AsyncSession to an outer transaction with `join_transaction_mode="create_savepoint"`.
+Services can call real `commit()` and `rollback()`; test teardown rolls back the outer
+transaction. This follows SQLAlchemy's external-transaction testing recipe:
+https://docs.sqlalchemy.org/en/20/orm/session_transaction.html#joining-a-session-into-an-external-transaction-such-as-for-test-suites
+A test needing application tables must run Alembic first; do not use `create_all()`.
+
+`async_client` covers database-free ASGI routes. `async_db_client` overrides `get_session`
+with the test's `db` session, so setup queries and requests share one isolated transaction.
+Route-test apps made with `build_app()` use a recording mailbox via `get_mailer`;
+SMTP/Brevo adapter tests still exercise the real Mailer with their explicit local fakes.
+There are no global MinIO/Celery mocks: those services are not integrated in this slice.
+
+The backend CI job provisions PostgreSQL 15 + PostGIS, runs lint/format checks and the
+complete backend suite, and fails if any test is skipped. This provides BE-20 evidence;
+INF-06 still owns the full stack checks and repository protection settings.
+
+November 9 review integration: Nader's BE-20 branch was merged with current main,
+retaining the existing schema/auth/user tests. Codex assisted Zayid with conflict
+resolution, database isolation corrections, regression tests and the CI job.
