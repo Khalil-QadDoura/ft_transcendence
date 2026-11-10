@@ -3,6 +3,8 @@ import {
   useContext,
   useState,
   useCallback,
+  useRef,
+  useEffect,
   type ReactNode,
 } from "react";
 
@@ -38,8 +40,24 @@ export function useToast() {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+
+  useEffect(() => {
+    const activeTimers = timersRef.current;
+    return () => {
+      activeTimers.forEach((timer) => clearTimeout(timer));
+      activeTimers.clear();
+    };
+  }, []);
 
   const removeToast = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -51,9 +69,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setToasts((prev) => [...prev, newToast]);
 
       if (duration > 0) {
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+          timersRef.current.delete(id);
           removeToast(id);
         }, duration);
+        timersRef.current.set(id, timer);
       }
 
       return id;

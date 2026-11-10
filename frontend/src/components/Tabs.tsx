@@ -52,13 +52,29 @@ export function Tabs({
   ) => {
     let nextIndex: number | null = null;
     if (e.key === "ArrowRight") {
-      nextIndex = (index + 1) % tabs.length;
+      let candidate = (index + 1) % tabs.length;
+      while (candidate !== index && tabs[candidate]?.disabled) {
+        candidate = (candidate + 1) % tabs.length;
+      }
+      if (!tabs[candidate]?.disabled) nextIndex = candidate;
     } else if (e.key === "ArrowLeft") {
-      nextIndex = (index - 1 + tabs.length) % tabs.length;
+      let candidate = (index - 1 + tabs.length) % tabs.length;
+      while (candidate !== index && tabs[candidate]?.disabled) {
+        candidate = (candidate - 1 + tabs.length) % tabs.length;
+      }
+      if (!tabs[candidate]?.disabled) nextIndex = candidate;
     } else if (e.key === "Home") {
-      nextIndex = 0;
+      let candidate = 0;
+      while (candidate < tabs.length && tabs[candidate]?.disabled) {
+        candidate++;
+      }
+      if (candidate < tabs.length) nextIndex = candidate;
     } else if (e.key === "End") {
-      nextIndex = tabs.length - 1;
+      let candidate = tabs.length - 1;
+      while (candidate >= 0 && tabs[candidate]?.disabled) {
+        candidate--;
+      }
+      if (candidate >= 0) nextIndex = candidate;
     }
 
     if (nextIndex !== null) {
