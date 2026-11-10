@@ -3,6 +3,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import {
+  clearTokens,
+  getAccessToken,
+  getStoredRefreshToken,
+  setStoredRefreshToken,
+  setTokens,
+  refreshAccessToken,
+} from "../../api/client";
 import { routes } from "../../app/router";
 import { AuthProvider } from "./AuthProvider";
 import { AuthError, createAuthGateway, type AuthGateway } from "./gateway";
@@ -12,6 +20,8 @@ let root: Root;
 let container: HTMLDivElement;
 let client: AuthGateway;
 beforeEach(() => {
+  clearTokens();
+  localStorage.clear();
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   container = document.createElement("div");
   document.body.append(container);
@@ -22,19 +32,26 @@ beforeEach(() => {
     login: vi.fn().mockResolvedValue(undefined),
     logout: vi.fn().mockResolvedValue(undefined),
     getStatus: () => "anonymous",
+    getSessionVersion: () => 0,
+    restore: vi.fn().mockResolvedValue(undefined),
     subscribe: () => () => {},
   };
 });
 afterEach(async () => {
   await act(() => root.unmount());
   container.remove();
+  clearTokens();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-async function render(path: string) {
+function jsonResponse(body: string) {
+  return new Response(body, {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+async function render(path: string, query = new QueryClient()) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
-  const query = new QueryClient();
   await act(() =>
     root.render(
       <StrictMode>
@@ -180,7 +197,7 @@ test("real gateway drives safe login redirect and sends the refresh token on log
   const fetcher = vi
     .fn()
     .mockResolvedValueOnce(
-      new Response(
+      jsonResponse(
         JSON.stringify({
           access_token: "access-test",
           refresh_token: "refresh-test",
@@ -217,7 +234,7 @@ test("failed logout still clears local state and warns about server revocation",
     vi
       .fn()
       .mockResolvedValueOnce(
-        new Response(
+        jsonResponse(
           JSON.stringify({
             access_token: "access",
             refresh_token: "refresh",
@@ -240,7 +257,7 @@ test("failed logout still clears local state and warns about server revocation",
   expect(container.textContent).toContain("couldn’t revoke");
 });
 test("malformed successful responses never create an authenticated session", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}")));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse("{}")));
   const gateway = createAuthGateway();
   await expect(
     gateway.login({ email: "a@example.com", password: "password" }),
@@ -261,7 +278,7 @@ test("a logout cannot be undone by an older in-flight login", async () => {
   const login = gateway.login({ email: "a@example.com", password: "password" });
   await gateway.logout();
   resolve(
-    new Response(
+    jsonResponse(
       JSON.stringify({
         access_token: "a",
         refresh_token: "r",
@@ -272,12 +289,12 @@ test("a logout cannot be undone by an older in-flight login", async () => {
   await login;
   expect(gateway.getStatus()).toBe("anonymous");
 });
-test("the interim session expires after the backend access lifetime", async () => {
+test("the shared session rotates before expiry and remains authenticated", async () => {
   vi.useFakeTimers();
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
-      new Response(
+    vi.fn().mockImplementation(() =>
+      jsonResponse(
         JSON.stringify({
           access_token: "a",
           refresh_token: "r",
@@ -289,6 +306,127 @@ test("the interim session expires after the backend access lifetime", async () =
   const gateway = createAuthGateway();
   await gateway.login({ email: "a@example.com", password: "password" });
   expect(gateway.getStatus()).toBe("authenticated");
-  vi.advanceTimersByTime(900_000);
-  expect(gateway.getStatus()).toBe("anonymous");
+  await vi.advanceTimersByTimeAsync(840_000);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(gateway.getStatus()).toBe("authenticated");
+});
+
+test("reload holds the protected URL while a stored refresh token is verified once under StrictMode", async () => {
+  setStoredRefreshToken("stored-refresh");
+  let resolve!: (value: Response) => void;
+  const fetcher = vi.fn().mockImplementation(
+    () =>
+      new Promise<Response>((done) => {
+        resolve = done;
+      }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  client = createAuthGateway();
+  const router = await render("/friends?tab=pending#list");
+  expect(container.textContent).toContain("Checking your session");
+  expect(router.state.location.pathname).toBe("/friends");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    resolve(
+      jsonResponse(
+        JSON.stringify({
+          access_token: "restored",
+          refresh_token: "rotated",
+          token_type: "bearer",
+        }),
+      ),
+    );
+  });
+  expect(client.getStatus()).toBe("authenticated");
+  expect(
+    router.state.location.pathname +
+      router.state.location.search +
+      router.state.location.hash,
+  ).toBe("/friends?tab=pending#list");
+  expect(getStoredRefreshToken()).toBe("rotated");
+});
+
+test("rejected restoration clears credentials and preserves the safe return route", async () => {
+  setStoredRefreshToken("revoked-refresh");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response("{}", { status: 401 })),
+  );
+  client = createAuthGateway();
+  const router = await render("/friends?tab=pending");
+  expect(client.getStatus()).toBe("anonymous");
+  expect(router.state.location.pathname).toBe("/login");
+  expect(new URLSearchParams(router.state.location.search).get("next")).toBe(
+    "/friends?tab=pending",
+  );
+  expect(getStoredRefreshToken()).toBeNull();
+});
+
+test("login 401 uses the public endpoint and never triggers refresh or sends confirmation", async () => {
+  setStoredRefreshToken("old-refresh");
+  const fetcher = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        error: { code: "401", detail: "Invalid email or password" },
+      }),
+      { status: 401, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const gateway = createAuthGateway();
+  await expect(
+    gateway.login({ email: "a@example.com", password: "incorrect" }),
+  ).rejects.toMatchObject({ status: 401 });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0][0]).toBe("/api/auth/login");
+  expect(fetcher.mock.calls[0][1].headers.get("Authorization")).toBeNull();
+});
+
+test("shared-client 422 survives the adapter and focuses the email field", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: "422", detail: "body → email: invalid address" },
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  client = createAuthGateway();
+  await render("/login");
+  await fill("email", "ana@example.com");
+  await fill("password", "password");
+  await submit();
+  expect(document.activeElement?.id).toBe("auth-email");
+});
+
+test("private cached queries clear on account replacement but survive ordinary rotation", async () => {
+  setTokens({ accessToken: "account-a", refreshToken: "refresh-a" });
+  client = createAuthGateway();
+  const query = new QueryClient();
+  await render("/profile", query);
+  query.setQueryData(["private-profile"], { name: "Account A" });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      jsonResponse(
+        JSON.stringify({
+          access_token: "access-a-rotated",
+          refresh_token: "refresh-a-rotated",
+        }),
+      ),
+    ),
+  );
+  await act(() => refreshAccessToken());
+  expect(query.getQueryData(["private-profile"])).toEqual({
+    name: "Account A",
+  });
+  await act(() =>
+    setTokens({ accessToken: "account-b", refreshToken: "refresh-b" }),
+  );
+  expect(client.getStatus()).toBe("authenticated");
+  expect(query.getQueryData(["private-profile"])).toBeUndefined();
+  expect(getAccessToken()).toBe("account-b");
 });

@@ -1,44 +1,53 @@
-# FE-04 — auth screens and FE-20 handoff
+# FE-04 — authentication screens with the FE-20 client
 
-Owner: Zayid. [Card](https://trello.com/c/uP8wCVRt). Implemented with Codex assistance on November 8, 2026 (America/Los_Angeles).
+Owner: Zayid. [Card](https://trello.com/c/uP8wCVRt). Integration updated November 10, 2026.
 
-## What this PR demonstrates
+## Behavior and ownership
 
-The old login/register/verify route placeholders become accessible forms and result screens. Registration uses FE-03 validation plus a frontend-only password confirmation. Only email and password go over the wire. A successful registration does not establish a session; verification confirms the email, and a successful backend login establishes the session. Logout clears local state even when server revocation fails, with an explicit warning in that case.
+Registration, verification, login and logout call Ahmad's shared FE-20 client through a thin `AuthGateway`. The old independent HTTP/token store is removed. Login, register, verify and logout use `skipAuth: true`, so a wrong-password 401 never triggers refresh. Only email/password are submitted; confirmation stays in the form. Shared `ApiError` status and detail map to the existing field-error adapter and user-facing messages.
 
-The shared footer and safe `?next=` return route remain available. Inputs have labels, described errors, first-invalid-field focus, autocomplete and pending states. A password visibility control is keyboard operable. Expected 401, 403 and 429 failures have human-readable messages; backend 422 responses use FE-03's allowlisted field mapping. Raw exceptions and tokens are not rendered or logged. Invalid, missing, replaced and temporarily unavailable verification links have distinct recovery paths. Verification is single-flight under React StrictMode and ignores a previous token's late result.
+`AuthProvider` restores a saved session on mount. Protected routes stay in `loading` until the backend accepts or rejects the refresh token; React StrictMode uses the same refresh promise. A successful reload keeps the protected path, query and hash. An invalid refresh clears credentials and preserves the destination in the login return URL. The FE-20 client holds access tokens in memory and refresh tokens in localStorage, with tab-memory fallback if storage is unavailable. Storage failure means reload requires login. Script-readable storage is an XSS exposure; memory-only access tokens do not eliminate XSS risk.
 
-## Merge dependencies — not a completed FE-20
+The client refreshes at 14 minutes for Khalil's 15-minute access lifetime, deduplicates concurrent requests within the document, and retries a protected 401 once. A delayed 401 reuses an already-rotated access token. Login/logout changes a session version; late requests cannot overwrite a newer session or return the previous user's data. Private query data clears before notifying route consumers on session replacement, but ordinary rotation preserves the same user's cache.
 
-FE-02 (#2) and FE-03 (#14) are unmerged prerequisites. `integration/FE-04-prerequisites` combines their existing commits with main solely as a review base. Do not merge this PR into that branch. Once both parent PRs land, transplant only FE-04's commit(s) onto main, retarget this PR and rerun checks.
+Logout clears the browser immediately, then revokes the saved refresh token and any replacement produced by a refresh already in flight. This matters because BE-03 revokes a particular refresh token, not every session. Failed revocation keeps the existing local-sign-out warning. BE-03 access tokens remain valid on the server until expiry; the browser discards its copy. No backend behavior was changed.
 
-Ahmad's FE-20 shared client is not available at this revision. `gateway.ts` is an **interim auth-only HTTP bridge**, behind the injectable `AuthGateway` interface. It retains the refresh token only in this tab's memory for logout. The returned access token is validated but not exposed to domain clients; other data screens are not implemented here. Reload requires login, and the session returns to anonymous after the backend's 15-minute access lifetime. There is no persisted session, automatic refresh, generic API client, bearer injection or 401 retry. Those remain Ahmad's FE-20 scope. This PR is ready for review of the screens, **not final FE-04 acceptance or merge** until that handoff is complete.
+The screen layout, accessible labels, pending states, verification single-flight behavior and safe redirects remain. Privacy/Terms content, post-login feature screens and FE-21 primitive adoption are separate tickets.
 
-Ahmad's adapter should implement `register`, `verify`, `login`, `logout`, `getStatus` and `subscribe`, map shared `ApiError` to `AuthError` without losing the backend payload, and pass it to `AuthProvider client={...}`. Establish `authenticated` only after a successful login/refresh; expose `loading` during restoration; notify on logout or refresh failure. Clear user-specific query data on identity changes, including account replacement when the status stays authenticated. FE-20 owns the access token in memory, documented refresh-token storage, refresh single-flight and retry policy. The intermediate bridge should then be removed, not kept as a competing session store.
+## Dependency and review base
 
-Ahmad's FE-21 primitives are also absent. Styles are local to auth; this does not claim his shared theme/component ticket. Replace local fields/buttons with those primitives when available without changing the form and gateway contracts.
+`integration/FE-04-prerequisites` now combines current main (`07d4f92`), FE-02 #2, FE-03 #14 and Ahmad's FE-20 #22 at `856a4b17eafc9be9625abc21f8c95f40cf50d008`. Ahmad's original commits are retained. Session-lifecycle corrections in the FE-04 diff are included for Khalil to review alongside the adapter.
+
+Do not merge FE-04 into this temporary branch. After #2, #14 and #22 land, transplant the FE-04-only changes onto main, retarget PR #17, resolve any client differences and repeat checks. This integration does not merge or rewrite Ahmad's PR.
 
 ## Verified backend contract
 
-Tested against Khalil's BE-03 commit `80dc3813ff6ad076c53101d620c83aff584885dc`, not the obsolete reference auth implementation. BE-03 merged during review as `56eef6141f6359c133126351ad3661d7d34a512a`; its backend tree is identical (`15c8a0b130f662f15bade70312083e6bcf17d6af`) to the tested revision:
+The November 10 integration runs against Khalil's merged auth/users implementation on main `07d4f92aca3b103cc16435757aeb60371e71682b`, backend tree `f338aca380938a48e0b2620388143b32e64263fc`, PostgreSQL 16 + PostGIS.
 
-| Action   | Request                                       | Expected result                                                       |
-| -------- | --------------------------------------------- | --------------------------------------------------------------------- |
-| Register | `POST /api/auth/register`, `{email,password}` | 202; check-email message                                              |
-| Verify   | `GET /api/auth/verify?token=...`              | 200 with `verified:true`; invalid/replaced link 400                   |
-| Login    | `POST /api/auth/login`, `{email,password}`    | 200 bearer access/refresh pair; 401 wrong credentials; 403 unverified |
-| Logout   | `POST /api/auth/logout`, `{refresh_token}`    | 204; local state cleared even on network failure                      |
+| Action          | Request                                 | Result                                               |
+| --------------- | --------------------------------------- | ---------------------------------------------------- |
+| Register        | POST /api/auth/register, email/password | 202; check-email state, no session                   |
+| Verify          | GET /api/auth/verify?token=...          | 200 verified:true; invalid link 400                  |
+| Login           | POST /api/auth/login, email/password    | 200 bearer pair; 401 bad credentials; 403 unverified |
+| Restore/refresh | POST /api/auth/refresh, refresh_token   | 200 replacement pair; consumed/revoked token 401     |
+| Profile probe   | GET /api/users/me with bearer access    | 200 authenticated profile; invalid access 401        |
+| Logout          | POST /api/auth/logout, refresh_token    | 204; later reuse of that refresh token returns 401   |
 
-The generated reference schema predates BE-03; the small runtime response validators here follow BE-03's actual schemas. No backend endpoint or contract was changed by FE-04.
+The generated schema is still the initial reference snapshot. Runtime login/refresh response checks follow the actual team contract. Requests retain the /api prefix by default; use `API_PROXY_STRIP_PREFIX=true` only for the old reference backend.
 
-## Run and evaluate
+## Automated and browser checks
 
-Use Khalil's fixed BE-03 backend, a disposable PostgreSQL/PostGIS database, and local SMTP/Mailpit. Set backend `FRONTEND_BASE_URL` to your frontend origin. In the frontend `.env`, set `API_PROXY_TARGET` to that backend and `API_PROXY_STRIP_PREFIX=false`; then `npm ci` and `npm run dev`. Production HTTPS and Mailpit routing at `https://localhost/mail` belong to infrastructure. The inbox hint is shown only in development builds.
+Normal commands from frontend: `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`. The 109 unit/component tests cover the existing screens plus restoration under StrictMode, 422 propagation, wrong-password no-refresh, private-cache separation, rotation single-flight, late requests, malformed refresh data, storage restrictions, bounded retries and logout during rotation. These tests use mocked HTTP responses.
 
-Required checks: `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`. The suite has 81 passing tests at delivery, including registration, login, logout and verification failure cases. CI also builds the Docker image.
+The opt-in live test uses the actual gateway/client with a disposable database. It exercises register → unverified rejection → verify → wrong-password rejection → login → bearer profile → fresh-module restoration → three concurrent protected requests with invalid access → one refresh → logout → rejected refresh-token reuse. It creates a synthetic @example.com account. Never use production data.
 
-Observed local browser flow: registration → blocked unverified login → captured verification email → success → wrong password → successful login returning to `/friends` → logout. This used the real backend and database with a **test-only captured-mail dependency**, not actual SMTP delivery. The capture inbox is outside the repository and must never be deployed. Captured console warning/error entries were empty for the tested auth tab; deliberate negative HTTP responses were checked separately from normal success behavior.
+1. Prepare a local disposable PostgreSQL/PostGIS database with `test` in its name; install the backend's requirements-dev.txt into a Python environment.
+2. Set `TEST_DATABASE_URL` to its `postgresql+asyncpg://...` URL in the environment. Run `python frontend/scripts/serve-auth-test-backend.py` from the repository root. The harness applies migrations and listens only on 127.0.0.1:8010. It overrides email delivery only; it must never be deployed. Credentials are not written into source.
+3. In another terminal, from frontend, set `WOZU_TEST_BACKEND_URL=http://127.0.0.1:8010` and run `npx vitest run --config scripts/auth-backend.config.ts`.
+4. For browser checks, set `API_PROXY_TARGET=http://127.0.0.1:8010` and run `npm run dev -- --port 5178`. Captured test messages appear at http://127.0.0.1:8010/__review/inbox. Stop the harness after testing. Test records remain in the disposable database until its owner removes it.
 
-Desktop inspection used the normal 1280px browser viewport. A 360px same-origin iframe was used after the browser viewport override did not take effect; its measured document and scroll widths were both 360px, with error focus on email and accessible footer links. Keyboard Tab moves from email to password. This is responsive layout evidence, not a claim of physical-phone testing.
+Browser verification on November 10: register, captured-email verification, login returning to /friends, loading during reload then restored /friends, and sign-out. The checked normal-flow tab had no captured warnings/errors. This is real local auth/database evidence, not real SMTP or final HTTPS deployment evidence. The prior November 8 responsive/keyboard checks are historical; this integration does not redesign the screens.
 
-Remaining acceptance: FE-20 integration and refresh/reload tests, real SMTP/Mailpit delivery through the final HTTPS stack, fresh human review, green CI on the final main-based head, and Zayid's teach-back. Privacy/Terms contents and post-login feature slots remain separate tickets.
+## Remaining gates
+
+Khalil's review, prerequisite merges, main-based CI and the owner walkthrough remain. Final HTTPS/Mailpit deployment is infrastructure scope. Refresh single-flight is document-local; cross-tab rotation coordination is not implemented here. The opt-in test does not run automatically in CI because it requires the disposable backend; CI runs unit/component tests and the frontend Docker build.

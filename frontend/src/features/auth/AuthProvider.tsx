@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useSyncExternalStore,
@@ -15,11 +16,26 @@ export function AuthProvider({
   children,
   client = gateway,
 }: PropsWithChildren<{ client?: AuthGateway }>) {
-  const status = useSyncExternalStore(client.subscribe, client.getStatus);
   const queries = useQueryClient();
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      let version = client.getSessionVersion();
+      return client.subscribe(() => {
+        const next = client.getSessionVersion();
+        if (next !== version) {
+          // Clear private queries before the new session reaches route consumers.
+          queries.clear();
+          version = next;
+        }
+        listener();
+      });
+    },
+    [client, queries],
+  );
+  const status = useSyncExternalStore(subscribe, client.getStatus);
   useEffect(() => {
-    queries.clear();
-  }, [status, queries]);
+    void client.restore();
+  }, [client]);
   return (
     <AuthContext value={client}>
       <SessionContext value={status}>{children}</SessionContext>

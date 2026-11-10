@@ -3,8 +3,8 @@
  * FE-20: Build the API client with token refresh and error handling
  *
  * Token Storage Architecture & Trade-off:
- * - Access token: Kept strictly in-memory. This prevents XSS attacks from reading
- *   active bearer credentials from localStorage/sessionStorage. The trade-off is
+ * - Access token: Kept strictly in-memory. This avoids persisting access credentials in browser storage; it does not
+ *   protect credentials from JavaScript already executing on this origin. The trade-off is
  *   that the access token is cleared upon page reload.
  * - Refresh token: Stored in localStorage wrapped in try/catch blocks. This allows
  *   session restoration across browser reloads without requiring re-authentication,
@@ -70,163 +70,212 @@ export class ApiError extends Error {
   }
 }
 
-// In-memory token state
+// One shared session for auth screens and domain requests. Version changes invalidate
+// requests from an older login/logout; ordinary refresh keeps the same session.
 let inMemoryAccessToken: string | null = null;
+let inMemoryRefreshToken: string | null = null;
 let accessTokenExpiresAt: number | null = null;
 let refreshTimerId: ReturnType<typeof setTimeout> | null = null;
-let activeRefreshPromise: Promise<string | null> | null = null;
-let authChangeListeners: Array<(hasToken: boolean) => void> = [];
+let sessionVersion = 0;
+const authChangeListeners = new Set<(hasToken: boolean) => void>();
+type TokenPair = { access_token: string; refresh_token: string };
+type RefreshFlight = {
+  version: number;
+  result: Promise<TokenPair | null>;
+  promise: Promise<string | null>;
+};
+let activeRefresh: RefreshFlight | null = null;
 
 export function getStoredRefreshToken(): string | null {
   try {
-    return localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+    return (
+      localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY) || inMemoryRefreshToken
+    );
   } catch {
-    return null;
+    return inMemoryRefreshToken;
   }
 }
 
 export function setStoredRefreshToken(token: string | null): void {
+  inMemoryRefreshToken = token;
   try {
-    if (token) {
-      localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, token);
-    } else {
-      localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
-    }
+    if (token) localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
   } catch {
-    // Ignore storage quota/permission failures in restricted environments
+    // Restricted storage retains a tab-only session; reload requires login.
   }
 }
 
 export function getAccessToken(): string | null {
   return inMemoryAccessToken;
 }
-
 export function getAccessTokenExpiresAt(): number | null {
   return accessTokenExpiresAt;
+}
+export function getSessionVersion(): number {
+  return sessionVersion;
 }
 
 export function onAuthChange(
   listener: (hasToken: boolean) => void,
 ): () => void {
-  authChangeListeners.push(listener);
+  authChangeListeners.add(listener);
   return () => {
-    authChangeListeners = authChangeListeners.filter((l) => l !== listener);
+    authChangeListeners.delete(listener);
   };
 }
-
 function notifyAuthChange(hasToken: boolean) {
-  for (const listener of authChangeListeners) {
-    try {
-      listener(hasToken);
-    } catch (err) {
-      console.error("Auth change listener error:", err);
-    }
-  }
+  for (const listener of authChangeListeners) listener(hasToken);
 }
-
 export function clearTokens(): void {
+  sessionVersion++;
+  activeRefresh = null;
   inMemoryAccessToken = null;
   accessTokenExpiresAt = null;
-  if (refreshTimerId !== null) {
-    clearTimeout(refreshTimerId);
-    refreshTimerId = null;
-  }
+  if (refreshTimerId !== null) clearTimeout(refreshTimerId);
+  refreshTimerId = null;
   setStoredRefreshToken(null);
   notifyAuthChange(false);
 }
 
-export function setTokens(params: {
+type TokenInput = {
   accessToken: string;
   refreshToken?: string;
   expiresInSeconds?: number;
-}): void {
+};
+function installTokens(params: TokenInput): void {
   inMemoryAccessToken = params.accessToken;
-  const lifetimeMs = params.expiresInSeconds
-    ? params.expiresInSeconds * 1000
-    : DEFAULT_ACCESS_TOKEN_LIFETIME_MS;
+  const lifetimeMs =
+    (params.expiresInSeconds ?? DEFAULT_ACCESS_TOKEN_LIFETIME_MS / 1000) * 1000;
   accessTokenExpiresAt = Date.now() + lifetimeMs;
-
-  if (params.refreshToken) {
-    setStoredRefreshToken(params.refreshToken);
-  }
-
+  if (params.refreshToken) setStoredRefreshToken(params.refreshToken);
   scheduleProactiveRefresh(lifetimeMs);
   notifyAuthChange(true);
 }
-
-/**
- * Proactively refreshes the token ~1 minute before expiration
- * to avoid 401 console errors in Chrome during regular user navigation.
- */
+export function setTokens(params: TokenInput): void {
+  sessionVersion++;
+  activeRefresh = null;
+  setStoredRefreshToken(params.refreshToken ?? null);
+  installTokens(params);
+}
 export function scheduleProactiveRefresh(lifetimeMs: number): void {
-  if (refreshTimerId !== null) {
-    clearTimeout(refreshTimerId);
-    refreshTimerId = null;
-  }
-
-  const delayMs = Math.max(1000, lifetimeMs - REFRESH_MARGIN_MS);
-  refreshTimerId = setTimeout(() => {
-    refreshAccessToken().catch((err) => {
-      console.warn("Proactive token refresh failed:", err);
-    });
-  }, delayMs);
+  if (refreshTimerId !== null) clearTimeout(refreshTimerId);
+  refreshTimerId = setTimeout(
+    () => {
+      void refreshAccessToken();
+    },
+    Math.max(1000, lifetimeMs - REFRESH_MARGIN_MS),
+  );
 }
 
-/**
- * Performs token rotation via POST /api/auth/refresh.
- * Deduplicates multiple concurrent refresh requests.
- */
-export async function refreshAccessToken(
-  basePath: string = DEFAULT_BASE_PATH,
+async function rotateToken(
+  refreshToken: string,
+  basePath: string,
+): Promise<TokenPair | null> {
+  const response = await fetch(`${basePath}${REFRESH_PATH}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+    signal: AbortSignal.timeout(15_000),
+    cache: "no-store",
+    referrerPolicy: "no-referrer",
+  });
+  if (!response.ok) return null;
+  const data: unknown = await response.json();
+  if (
+    !data ||
+    typeof data !== "object" ||
+    !("access_token" in data) ||
+    typeof data.access_token !== "string" ||
+    !data.access_token ||
+    !("refresh_token" in data) ||
+    typeof data.refresh_token !== "string" ||
+    !data.refresh_token ||
+    ("token_type" in data && data.token_type !== "bearer")
+  ) {
+    throw new ApiError(
+      502,
+      "invalid_token_response",
+      "Invalid session response",
+    );
+  }
+  return { access_token: data.access_token, refresh_token: data.refresh_token };
+}
+
+/** Single flight per session, including startup restoration and scheduled refresh. */
+export function refreshAccessToken(
+  basePath = DEFAULT_BASE_PATH,
 ): Promise<string | null> {
-  if (activeRefreshPromise) {
-    return activeRefreshPromise;
-  }
-
-  const refreshToken = getStoredRefreshToken();
-  if (!refreshToken) {
+  if (activeRefresh?.version === sessionVersion) return activeRefresh.promise;
+  const token = getStoredRefreshToken();
+  if (!token) {
     clearTokens();
-    return null;
+    return Promise.resolve(null);
   }
-
-  activeRefreshPromise = (async () => {
-    try {
-      const url = `${basePath}${REFRESH_PATH}`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-
-      if (!response.ok) {
+  const flight: RefreshFlight = {
+    version: sessionVersion,
+    result: rotateToken(token, basePath),
+    promise: Promise.resolve(null),
+  };
+  activeRefresh = flight;
+  flight.promise = flight.result
+    .then((pair) => {
+      if (flight.version !== sessionVersion) return null;
+      if (!pair) {
         clearTokens();
         return null;
       }
-
-      const data = (await response.json()) as {
-        access_token: string;
-        refresh_token: string;
-        token_type?: string;
-      };
-
-      setTokens({
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
+      installTokens({
+        accessToken: pair.access_token,
+        refreshToken: pair.refresh_token,
       });
-
-      return data.access_token;
-    } catch {
-      clearTokens();
+      return pair.access_token;
+    })
+    .catch(() => {
+      if (flight.version === sessionVersion) clearTokens();
       return null;
-    } finally {
-      activeRefreshPromise = null;
-    }
-  })();
+    })
+    .finally(() => {
+      if (activeRefresh === flight) activeRefresh = null;
+    });
+  return flight.promise;
+}
 
-  return activeRefreshPromise;
+/** Clear UI state immediately, then revoke both the old token and any in-flight
+ * rotation's replacement. Khalil's logout revokes one refresh token, not all sessions.
+ */
+export async function logoutSession(): Promise<void> {
+  const token = getStoredRefreshToken();
+  const pending = activeRefresh?.result;
+  clearTokens();
+  let rotationFailed = false;
+  const pair = await pending?.catch(() => {
+    rotationFailed = true;
+    return null;
+  });
+  const tokens = new Set(
+    [token, pair?.refresh_token].filter((value): value is string =>
+      Boolean(value),
+    ),
+  );
+  await Promise.all(
+    [...tokens].map((refreshToken) =>
+      apiClient("/auth/logout", {
+        method: "POST",
+        body: { refresh_token: refreshToken },
+        skipAuth: true,
+        signal: AbortSignal.timeout(15_000),
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
+      }),
+    ),
+  );
+  if (rotationFailed)
+    throw new ApiError(
+      0,
+      "logout_unconfirmed",
+      "Session revocation could not be confirmed",
+    );
 }
 
 export interface RequestOptions extends Omit<RequestInit, "body"> {
@@ -271,6 +320,8 @@ export async function apiClient<T = unknown>(
   endpoint: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  const requestVersion = sessionVersion;
+  const requestToken = getAccessToken();
   const basePath = options.basePath ?? DEFAULT_BASE_PATH;
   let url = endpoint.startsWith("http")
     ? endpoint
@@ -333,13 +384,28 @@ export async function apiClient<T = unknown>(
     );
   }
 
+  const assertCurrentSession = () => {
+    if (!options.skipAuth && requestVersion !== sessionVersion)
+      throw new ApiError(
+        401,
+        "session_changed",
+        "Session changed during request",
+      );
+  };
+  assertCurrentSession();
+
   // Handle unexpected 401: attempt single refresh & retry
   if (
     response.status === 401 &&
     !options.skipAuth &&
     endpoint !== REFRESH_PATH
   ) {
-    const newToken = await refreshAccessToken(basePath);
+    // Another request may already have rotated the token while this response was slow.
+    const newToken =
+      getAccessToken() && getAccessToken() !== requestToken
+        ? getAccessToken()
+        : await refreshAccessToken(basePath);
+    assertCurrentSession();
     if (newToken) {
       headers.set("Authorization", `Bearer ${newToken}`);
       try {
@@ -356,12 +422,13 @@ export async function apiClient<T = unknown>(
         );
       }
     } else {
-      clearTokens();
       throw await parseErrorResponse(response);
     }
   }
 
+  assertCurrentSession();
   if (!response.ok) {
+    if (response.status === 401 && !options.skipAuth) clearTokens();
     throw await parseErrorResponse(response);
   }
 
@@ -371,10 +438,14 @@ export async function apiClient<T = unknown>(
 
   const contentType = response.headers.get("content-type");
   if (contentType && contentType.includes("application/json")) {
-    return (await response.json()) as T;
+    const data = (await response.json()) as T;
+    assertCurrentSession();
+    return data;
   }
 
-  return (await response.text()) as unknown as T;
+  const data = await response.text();
+  assertCurrentSession();
+  return data as unknown as T;
 }
 
 /**

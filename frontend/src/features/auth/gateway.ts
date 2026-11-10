@@ -1,4 +1,16 @@
 import { z } from "zod";
+import {
+  ApiError,
+  apiClient,
+  clearTokens,
+  getAccessToken,
+  getSessionVersion,
+  getStoredRefreshToken,
+  logoutSession,
+  onAuthChange,
+  refreshAccessToken,
+  setTokens,
+} from "../../api/client";
 
 export type Credentials = { email: string; password: string };
 export type AuthStatus = "loading" | "anonymous" | "authenticated";
@@ -7,6 +19,8 @@ export interface AuthGateway {
   verify(token: string): Promise<void>;
   login(data: Credentials): Promise<void>;
   logout(): Promise<void>;
+  restore(): Promise<void>;
+  getSessionVersion(): number;
   getStatus(): AuthStatus;
   subscribe(listener: () => void): () => void;
 }
@@ -25,45 +39,52 @@ const pairSchema = z.object({
   token_type: z.literal("bearer"),
 });
 
-/** Auth-only HTTP bridge until FE-20 supplies the shared client. No persistence,
- * refresh/retry policy or general API wrapper: those belong to Ahmad's FE-20.
- * A reload requires login. Only a successful backend login establishes a session.
- */
+// Domain adapter only: FE-20 owns tokens, persistence, rotation and bearer requests.
 export function createAuthGateway(): AuthGateway {
-  let status: AuthStatus = "anonymous";
-  let refresh: string | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let revision = 0;
+  let restoring = !getAccessToken() && Boolean(getStoredRefreshToken());
+  let restoration: Promise<void> | undefined;
   const listeners = new Set<() => void>();
-  const clear = () => {
-    revision++;
-    refresh = undefined;
-    clearTimeout(timer);
-    status = "anonymous";
-    listeners.forEach((listener) => listener());
-  };
+  const notify = () => listeners.forEach((listener) => listener());
   async function request(path: string, data?: unknown) {
-    const response = await fetch(`/api/auth/${path}`, {
-      method: data === undefined ? "GET" : "POST",
-      headers:
-        data === undefined ? undefined : { "Content-Type": "application/json" },
-      body: data === undefined ? undefined : JSON.stringify(data),
-      signal: AbortSignal.timeout(15_000),
-      cache: "no-store",
-      referrerPolicy: "no-referrer",
-    });
-    const payload: unknown =
-      response.status === 204 ? null : await response.json();
-    if (!response.ok) throw new AuthError(response.status, payload);
-    return payload;
+    try {
+      return await apiClient(`/auth/${path}`, {
+        method: data === undefined ? "GET" : "POST",
+        body: data,
+        skipAuth: true,
+        signal: AbortSignal.timeout(15_000),
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
+      });
+    } catch (error) {
+      if (error instanceof ApiError)
+        throw new AuthError(error.status, {
+          error: { code: error.code, detail: error.detail },
+        });
+      throw error;
+    }
   }
   return {
-    getStatus: () => status,
+    getStatus: () =>
+      getAccessToken() ? "authenticated" : restoring ? "loading" : "anonymous",
+    getSessionVersion,
     subscribe(listener) {
       listeners.add(listener);
+      const unsubscribe = onAuthChange(() => {
+        restoring = false;
+        listener();
+      });
       return () => {
         listeners.delete(listener);
+        unsubscribe();
       };
+    },
+    restore() {
+      if (!restoring) return Promise.resolve();
+      restoration ??= refreshAccessToken().then(() => {
+        restoring = false;
+        notify();
+      });
+      return restoration;
     },
     async register({ email, password }) {
       await request("register", { email, password });
@@ -75,22 +96,21 @@ export function createAuthGateway(): AuthGateway {
       if (!result.success) throw new Error("Invalid verification response");
     },
     async login({ email, password }) {
-      const attempt = ++revision;
+      restoring = false;
+      clearTokens();
+      const attempt = getSessionVersion();
       const pair = pairSchema.parse(
         await request("login", { email, password }),
       );
-      if (attempt !== revision) return;
-      refresh = pair.refresh_token;
-      clearTimeout(timer);
-      // BE-03 access TTL is 15 minutes. FE-20 replaces this with refresh rotation.
-      timer = setTimeout(clear, 15 * 60_000);
-      status = "authenticated";
-      listeners.forEach((listener) => listener());
+      if (attempt !== getSessionVersion()) return;
+      setTokens({
+        accessToken: pair.access_token,
+        refreshToken: pair.refresh_token,
+      });
     },
     async logout() {
-      const token = refresh;
-      clear(); // Never retain local authentication when revocation is offline.
-      if (token) await request("logout", { refresh_token: token });
+      restoring = false;
+      await logoutSession();
     },
   };
 }

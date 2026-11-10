@@ -14,9 +14,9 @@ export default defineConfig(({ mode }) => {
           target: env.API_PROXY_TARGET || "http://127.0.0.1:8000",
           changeOrigin: true,
           rewrite: (path) =>
-            env.API_PROXY_STRIP_PREFIX === "false"
-              ? path
-              : path.replace(/^\/api/, ""),
+            env.API_PROXY_STRIP_PREFIX === "true"
+              ? path.replace(/^\/api/, "")
+              : path,
         },
       },
     },
