@@ -27,6 +27,7 @@ fi
 # The storage settings exactly as compose gives them to the API. Exported, and passed to
 # the helper container by name only, so no value appears on a command line or in output.
 while IFS= read -r line; do
+    # shellcheck disable=SC2163 # $line is NAME=value, so this exports NAME
     case "$line" in MINIO_*=*) export "$line" ;; esac
 done < <(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$api")
 network="$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' "$minio")"
