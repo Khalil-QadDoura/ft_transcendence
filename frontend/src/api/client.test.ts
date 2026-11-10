@@ -34,7 +34,9 @@ describe("FE-20 API Client & Token Management", () => {
 
       expect(getAccessToken()).toBe("test_access_token");
       expect(getStoredRefreshToken()).toBe("test_refresh_token");
-      expect(localStorage.getItem("wozu_refresh_token")).toBe("test_refresh_token");
+      expect(localStorage.getItem("wozu_refresh_token")).toBe(
+        "test_refresh_token",
+      );
     });
 
     it("clears both tokens and stops pending refresh on clearTokens", () => {
@@ -91,7 +93,7 @@ describe("FE-20 API Client & Token Management", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ refresh_token: "valid_refresh" }),
-        })
+        }),
       );
 
       vi.useRealTimers();
@@ -117,11 +119,13 @@ describe("FE-20 API Client & Token Management", () => {
         "/api/users/me",
         expect.objectContaining({
           headers: expect.any(Headers),
-        })
+        }),
       );
 
       const calledHeaders = fetchMock.mock.calls[0][1].headers as Headers;
-      expect(calledHeaders.get("Authorization")).toBe("Bearer secret_bearer_token");
+      expect(calledHeaders.get("Authorization")).toBe(
+        "Bearer secret_bearer_token",
+      );
       expect(calledHeaders.get("Accept")).toBe("application/json");
     });
 
@@ -157,7 +161,9 @@ describe("FE-20 API Client & Token Management", () => {
         }),
       });
 
-      await expect(apiClient("/auth/register")).rejects.toThrowError("body → email: invalid email format");
+      await expect(apiClient("/auth/register")).rejects.toThrowError(
+        "body → email: invalid email format",
+      );
 
       try {
         await apiClient("/auth/register");
@@ -291,7 +297,7 @@ describe("FE-20 API Client & Token Management", () => {
       const config = createQueryClientConfig();
       const retryFn = config.defaultOptions?.queries?.retry as (
         failureCount: number,
-        error: unknown
+        error: unknown,
       ) => boolean;
 
       expect(retryFn).toBeDefined();
@@ -316,7 +322,11 @@ describe("FE-20 API Client & Token Management", () => {
     it("defines consistent queryKeys conventions", () => {
       expect(queryKeys.auth.me).toEqual(["auth", "me"]);
       expect(queryKeys.jobs.detail(42)).toEqual(["jobs", "detail", "42"]);
-      expect(queryKeys.applications.forJob(99)).toEqual(["applications", "job", "99"]);
+      expect(queryKeys.applications.forJob(99)).toEqual([
+        "applications",
+        "job",
+        "99",
+      ]);
     });
   });
 });

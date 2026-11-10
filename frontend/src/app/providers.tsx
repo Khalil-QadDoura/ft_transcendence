@@ -5,5 +5,7 @@ import { createQueryClient } from "../api/client";
 export const queryClient = createQueryClient();
 
 export function Providers({ children }: PropsWithChildren) {
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
 }

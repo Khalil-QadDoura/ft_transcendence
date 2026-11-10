@@ -27,7 +27,8 @@ export interface ApplyGuardDetail {
   [key: string]: unknown;
 }
 
-export type ApiErrorDetail = string | ApplyGuardDetail | Record<string, unknown>;
+export type ApiErrorDetail =
+  string | ApplyGuardDetail | Record<string, unknown>;
 
 export interface RawApiErrorPayload {
   error?: {
@@ -50,7 +51,10 @@ export class ApiError extends Error {
     } else if (detail && typeof detail === "object") {
       if ("code" in detail && typeof detail.code === "string") {
         message = detail.code;
-      } else if ("next_step" in detail && typeof detail.next_step === "string") {
+      } else if (
+        "next_step" in detail &&
+        typeof detail.next_step === "string"
+      ) {
         message = `next_step: ${detail.next_step}`;
       }
     }
@@ -101,7 +105,9 @@ export function getAccessTokenExpiresAt(): number | null {
   return accessTokenExpiresAt;
 }
 
-export function onAuthChange(listener: (hasToken: boolean) => void): () => void {
+export function onAuthChange(
+  listener: (hasToken: boolean) => void,
+): () => void {
   authChangeListeners.push(listener);
   return () => {
     authChangeListeners = authChangeListeners.filter((l) => l !== listener);
@@ -170,7 +176,9 @@ export function scheduleProactiveRefresh(lifetimeMs: number): void {
  * Performs token rotation via POST /api/auth/refresh.
  * Deduplicates multiple concurrent refresh requests.
  */
-export async function refreshAccessToken(basePath: string = DEFAULT_BASE_PATH): Promise<string | null> {
+export async function refreshAccessToken(
+  basePath: string = DEFAULT_BASE_PATH,
+): Promise<string | null> {
   if (activeRefreshPromise) {
     return activeRefreshPromise;
   }
@@ -233,7 +241,9 @@ export interface RequestOptions extends Omit<RequestInit, "body"> {
  * {"error": {"code": "<status string>", "detail": <string or object>}}
  * with fallback to FastAPI standard {"detail": ...}.
  */
-export async function parseErrorResponse(response: Response): Promise<ApiError> {
+export async function parseErrorResponse(
+  response: Response,
+): Promise<ApiError> {
   const status = response.status;
   let code = String(status);
   let detail: ApiErrorDetail = response.statusText || "Request failed";
@@ -259,7 +269,7 @@ export async function parseErrorResponse(response: Response): Promise<ApiError> 
  */
 export async function apiClient<T = unknown>(
   endpoint: string,
-  options: RequestOptions = {}
+  options: RequestOptions = {},
 ): Promise<T> {
   const basePath = options.basePath ?? DEFAULT_BASE_PATH;
   let url = endpoint.startsWith("http")
@@ -316,11 +326,19 @@ export async function apiClient<T = unknown>(
       body,
     });
   } catch (networkError) {
-    throw new ApiError(0, "network_error", (networkError as Error).message || "Network request failed");
+    throw new ApiError(
+      0,
+      "network_error",
+      (networkError as Error).message || "Network request failed",
+    );
   }
 
   // Handle unexpected 401: attempt single refresh & retry
-  if (response.status === 401 && !options.skipAuth && endpoint !== REFRESH_PATH) {
+  if (
+    response.status === 401 &&
+    !options.skipAuth &&
+    endpoint !== REFRESH_PATH
+  ) {
     const newToken = await refreshAccessToken(basePath);
     if (newToken) {
       headers.set("Authorization", `Bearer ${newToken}`);
@@ -331,7 +349,11 @@ export async function apiClient<T = unknown>(
           body,
         });
       } catch (networkError) {
-        throw new ApiError(0, "network_error", (networkError as Error).message || "Network request failed on retry");
+        throw new ApiError(
+          0,
+          "network_error",
+          (networkError as Error).message || "Network request failed on retry",
+        );
       }
     } else {
       clearTokens();
@@ -364,13 +386,15 @@ export const queryKeys = {
   },
   jobs: {
     all: ["jobs"] as const,
-    list: (filters: Record<string, unknown> = {}) => ["jobs", "list", filters] as const,
+    list: (filters: Record<string, unknown> = {}) =>
+      ["jobs", "list", filters] as const,
     detail: (id: number | string) => ["jobs", "detail", String(id)] as const,
   },
   applications: {
     all: ["applications"] as const,
     my: ["applications", "my"] as const,
-    forJob: (jobId: number | string) => ["applications", "job", String(jobId)] as const,
+    forJob: (jobId: number | string) =>
+      ["applications", "job", String(jobId)] as const,
   },
   videos: {
     all: ["videos"] as const,
@@ -399,7 +423,11 @@ export function createQueryClientConfig(): QueryClientConfig {
         staleTime: 30_000,
         retry: (failureCount, error) => {
           // Never retry 4xx errors
-          if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+          if (
+            error instanceof ApiError &&
+            error.status >= 400 &&
+            error.status < 500
+          ) {
             return false;
           }
           return failureCount < 2;
