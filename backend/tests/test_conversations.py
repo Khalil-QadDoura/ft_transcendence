@@ -12,14 +12,19 @@ Covers:
 - Standard 401 unauthorized responses across all endpoints.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database, sql
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.auth import security
 from app.auth.deps import get_current_user
+from app.conversations import repo as conversations_repo
+from app.conversations import service as conversations_service
 from app.conversations.models import Conversation, ConversationParticipant, Message
 from app.users.models import User
 
@@ -207,6 +212,52 @@ def test_create_direct_conversation_success(client):
     assert data["id"] == 5
     assert data["type"] == "direct"
     assert data["unread_count"] == 0
+
+
+def test_get_or_create_direct_rechecks_after_pair_lock():
+    """When initial lookup misses, service acquires pair lock and re-checks before insert."""
+    existing_conv = _fake_conv(id=77)
+    mock_session = AsyncMock()
+
+    with (
+        patch(
+            "app.conversations.repo.find_direct_conversation",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as m_find,
+        patch(
+            "app.conversations.repo.lock_direct_pair",
+            new_callable=AsyncMock,
+        ) as m_lock,
+        patch(
+            "app.conversations.repo._query_direct_conversation",
+            new_callable=AsyncMock,
+            return_value=existing_conv,
+        ) as m_recheck,
+        patch(
+            "app.conversations.repo.create_conversation",
+            new_callable=AsyncMock,
+        ) as m_create,
+    ):
+        conv = asyncio.run(
+            conversations_service.get_or_create_direct(mock_session, me_id=20, peer_id=10)
+        )
+
+    assert conv.id == 77
+    m_find.assert_awaited_once_with(mock_session, 20, 10)
+    m_lock.assert_awaited_once_with(mock_session, 20, 10)
+    m_recheck.assert_awaited_once_with(mock_session, 20, 10)
+    m_create.assert_not_awaited()
+
+
+def test_lock_direct_pair_uses_canonical_unordered_key():
+    """lock_direct_pair locks the same advisory key regardless of (me_id, peer_id) order."""
+    session = AsyncMock()
+    asyncio.run(conversations_repo.lock_direct_pair(session, 10, 20))
+    asyncio.run(conversations_repo.lock_direct_pair(session, 20, 10))
+    assert session.execute.await_count == 2
+    assert session.execute.await_args_list[0].args[1] == {"pair_key": "direct:10:20"}
+    assert session.execute.await_args_list[1].args[1] == {"pair_key": "direct:10:20"}
 
 
 def test_create_ai_conversation(client):
@@ -800,3 +851,70 @@ def test_conversations_real_database_lifecycle():
         r_unread_b_after = test_client.get("/api/conversations/unread", headers=bob_h)
         assert r_unread_b_after.status_code == 200
         assert r_unread_b_after.json()["total_unread"] == 0
+
+
+@needs_database
+def test_concurrent_get_or_create_direct_is_atomic():
+    """Concurrent opposite-order get_or_create_direct calls yield one conversation atomically."""
+    alembic("upgrade", "head")
+    sql(
+        "TRUNCATE users, conversations, conversation_participants, messages "
+        "RESTART IDENTITY CASCADE"
+    )
+    _seed_db_user("race_alice@example.com")
+    _seed_db_user("race_bob@example.com")
+    alice_id = sql("SELECT id FROM users WHERE email = 'race_alice@example.com'")[0][0]
+    bob_id = sql("SELECT id FROM users WHERE email = 'race_bob@example.com'")[0][0]
+
+    async def _exercise() -> tuple[int, int]:
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+
+        orig_find = conversations_repo.find_direct_conversation
+        seen = 0
+        both_missed = asyncio.Event()
+
+        async def barrier_find(session, u1: int, u2: int):
+            nonlocal seen
+            res = await orig_find(session, u1, u2)
+            assert res is None
+            seen += 1
+            if seen == 2:
+                both_missed.set()
+            await asyncio.wait_for(both_missed.wait(), timeout=5.0)
+            return res
+
+        async def run_one(me_id: int, peer_id: int) -> int:
+            async with maker() as session:
+                conv = await conversations_service.get_or_create_direct(
+                    session, me_id=me_id, peer_id=peer_id
+                )
+                return conv.id
+
+        try:
+            with patch(
+                "app.conversations.repo.find_direct_conversation",
+                side_effect=barrier_find,
+            ):
+                id_ab, id_ba = await asyncio.gather(
+                    run_one(alice_id, bob_id),
+                    run_one(bob_id, alice_id),
+                )
+
+            assert id_ab == id_ba
+
+            async with maker() as check_session:
+                found = await conversations_repo.find_direct_conversation(
+                    check_session, alice_id, bob_id
+                )
+                assert found is not None
+                assert found.id == id_ab
+
+            return id_ab, id_ba
+        finally:
+            await engine.dispose()
+
+    id_ab, id_ba = asyncio.run(_exercise())
+    assert id_ab == id_ba
+    direct_count = sql("SELECT COUNT(*) FROM conversations WHERE type = 'direct'")[0][0]
+    assert direct_count == 1

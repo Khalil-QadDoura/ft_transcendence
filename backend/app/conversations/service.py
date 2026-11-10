@@ -23,6 +23,13 @@ async def get_or_create_direct(
     if existing:
         return existing
 
+    # Serialize concurrent creation per canonical unordered pair without blocking
+    # external hooks wrapped around repo.find_direct_conversation.
+    await repo.lock_direct_pair(session, me_id, peer_id)
+    existing = await repo._query_direct_conversation(session, me_id, peer_id)
+    if existing:
+        return existing
+
     conv = await repo.create_conversation(session, type="direct", job_id=job_id)
     await repo.add_participant(session, conv.id, me_id)
     await repo.add_participant(session, conv.id, peer_id)

@@ -33,10 +33,10 @@ async def get_conversation(session: AsyncSession, conv_id: int) -> Conversation 
     return await session.get(Conversation, conv_id)
 
 
-async def find_direct_conversation(
+async def _query_direct_conversation(
     session: AsyncSession, user1_id: int, user2_id: int
 ) -> Conversation | None:
-    """Find existing active direct conversation between two users."""
+    """Execute lookup for an active direct conversation between two users."""
     sub = (
         select(ConversationParticipant.conversation_id)
         .where(
@@ -51,6 +51,22 @@ async def find_direct_conversation(
         Conversation.type == "direct",
     )
     return (await session.execute(q)).scalar_one_or_none()
+
+
+async def find_direct_conversation(
+    session: AsyncSession, user1_id: int, user2_id: int
+) -> Conversation | None:
+    """Find existing active direct conversation between two users."""
+    return await _query_direct_conversation(session, user1_id, user2_id)
+
+
+async def lock_direct_pair(session: AsyncSession, user1_id: int, user2_id: int) -> None:
+    """Acquire a transaction-scoped advisory lock for the unordered user pair."""
+    low_id, high_id = sorted((user1_id, user2_id))
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:pair_key AS text), 0))"),
+        {"pair_key": f"direct:{low_id}:{high_id}"},
+    )
 
 
 async def update_last_message(session: AsyncSession, conv_id: int, message_id: int) -> None:
