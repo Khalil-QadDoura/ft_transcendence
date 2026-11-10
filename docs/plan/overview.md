@@ -2,8 +2,6 @@
 
 Oct 27, 2026 · updated Nov 4, 2026 · @byul-byul
 
-PM-01 follow-up: November 8, 2026, @zayidelkhair with Codex assistance. The merged PM-00 plan is preserved below. Historical reference-backend counts are not current team-backend test results. Operational agreements and open items are tracked in the [sprint routine](sprint-routine.md).
-
 ## TL;DR
 
 We build **WOZU Web**: a job platform where candidates apply with a short video instead of a CV, talk to employers in real-time chat, and play a social-deduction mini-game ("Turing Duel"). The WOZU backend is our reference; we write a new backend and a web frontend on top of it.
@@ -220,10 +218,12 @@ Depends on: <CARD-ID>
 - Commit message: `<type>(<scope>): <summary> (<CARD-ID>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (BE-10)`.
 - Small PRs (under \~400 changed lines), one card each. Squash merge keeps one clear commit per card on `main`.
 - Everyone commits their own work from their own account; pair work uses `Co-authored-by:` lines.
-- Weekly sync (30 min, PM leads) + async daily update in the team chat: done, next, blocked. As of November 8, the weekly slot, chat/channel and daily cutoff remain unconfirmed; no calendar invitations or pinned updates are claimed.
-- Sprint closeout rule supplied November 8: every PR receives a review within 24 hours from someone in the other pair. After each merge, the owner practices one small live change and records the outcome; merge alone does not establish understanding.
+- Weekly sync (30 min, PM leads) + async daily update in the team chat: done, next, blocked. Proposed slots and outstanding confirmations are tracked in [sprint-routine.md](sprint-routine.md).
+- Review and live-change rule, set by the PO on 2026-11-08: every PR receives a review within 24 hours from someone in the other pair. After each merge, the owner makes one small live change and records what changed and how it was checked.
 
 ## Related documents and decisions
+
+- [Sprint routine](sprint-routine.md): weekly sync, daily update, open team agreements (PM-01).
 
 - ft\_transcendence — Backend Reference (WOZU) — for the backend pair: architecture, schema, business rules, 25 issues, port order.
 - ft\_transcendence — API Contract — for both pairs: every endpoint, WebSocket events, planned contract changes.
@@ -249,10 +249,16 @@ Depends on: <CARD-ID>
 | 2026-11-04 | Front proxy: nginx + ModSecurity CRS (INF-01) | Final card plan | Decided |
 | 2026-11-04 | Languages (M10): AR, EN, AZ, TR, RU; RTL (M11) on AR | Final card plan | Decided |
 | 2026-11-04 | Turing Duel rules: rooms of up to 5 with at least 1 human; hidden random bots (none, or 1–4); anonymous "Player 1…N"; one 3-minute room timer; start on the 5th join, "Start now" or timer expiry with 2+; +1 / −1 / 0 per guess. Full text in "Turing Duel rules"; input for DOC-08 | byul-byul | Decided |
-| 2026-11-04 | Schedule: S1 Nov 4–10, S2 Nov 11–17, S3 Nov 18–24, S4 Nov 25–28; card due date = sprint end 18:00 Asia/Baku; code freeze Nov 26; first defense Sunday Nov 29; max score has priority over the date | Final card plan | Decided |
+| 2026-11-04 | Schedule: S1 Nov 4–10, S2 Nov 11–17, S3 Nov 18–24, S4 Nov 25–28; card due date = sprint end 18:00 Asia/Dubai (Abu Dhabi); code freeze Nov 26; first defense Sunday Nov 29; max score has priority over the date | Final card plan | Decided |
 | 2026-11-04 | Trello board E3788fBx replaces 6Pob02M6; lists Backlog / To Do / In Progress / Review / Done; card ID as title prefix; branch `feat/<CARD-ID>-<short-name>` ([board.md](board.md)) | Final card plan | Decided |
 | 2026-11-04 | Root README placeholder is replaced by DOC-03; its author agreed | Final card plan | Decided |
-| 2026-11-08 | BE-02 clean schema and the corrected BE-03 authentication are merged on main; integrate against main rather than the obsolete auth feature tip | PR #7 and PR #8 | Verified |
-| 2026-11-08 | PM-01: GitHub Power-Up enabled but repository authorization/linking pending; all 23 original S1 card memberships audited; weekly meeting and daily chat details still awaiting team agreement | PM-01 audit and sprint-routine.md | Operational items open |
+| 2026-11-05 | Front proxy: nginx + ModSecurity v3 + OWASP CRS from day one (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-01 PR |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
+
+**Front proxy, 2026-11-05**
+
+- **Decision:** nginx + ModSecurity v3 + OWASP Core Rule Set, using the `owasp/modsecurity-crs` nginx-alpine image at a pinned tag, as the only front door from day one. A script-generated self-signed certificate for `localhost` replaces Caddy's `tls internal`. The rule engine stays in `DetectionOnly` until card INF-11 switches it to blocking.
+- **Reason:** module M13 needs ModSecurity as the only front door, and switching proxies late costs more than choosing now. Running the WAF from the first route also shows false positives while the app is being built, not on the eve of the defense.
+- **Alternatives considered:** Caddy, the reference's proxy, has the simplest configuration and automatic TLS, but no ModSecurity image from the CRS project; a WAF would mean a custom build with a third-party module. Traefik has convenient Docker label routing, but a WAF is only available through a plugin, and it adds a second routing model to explain at the defense.
+- **Owner:** byul-byul. **Approval:** Tech Lead, through review of the INF-01 PR.
