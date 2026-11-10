@@ -37,7 +37,8 @@ function PreviewDemo() {
           Design System & Component Preview
         </h1>
         <p className="text-sm text-ink-muted">
-          FE-21: Accessible, RTL-ready reusable UI components built on design tokens.
+          FE-21: Accessible, RTL-ready reusable UI components built on design
+          tokens.
         </p>
       </div>
 
@@ -45,7 +46,9 @@ function PreviewDemo() {
       <Card>
         <CardHeader>
           <CardTitle>Buttons & Badges</CardTitle>
-          <CardDescription>Various styles, loading states, and size variants.</CardDescription>
+          <CardDescription>
+            Various styles, loading states, and size variants.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -55,8 +58,12 @@ function PreviewDemo() {
             <Button variant="outline">Outline</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="ghost">Ghost</Button>
-            <Button variant="primary" isLoading>Loading</Button>
-            <Button variant="primary" disabled>Disabled</Button>
+            <Button variant="primary" isLoading>
+              Loading
+            </Button>
+            <Button variant="primary" disabled>
+              Disabled
+            </Button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pt-2">
@@ -75,7 +82,9 @@ function PreviewDemo() {
       <Card>
         <CardHeader>
           <CardTitle>Form Controls</CardTitle>
-          <CardDescription>Input, Select, Textarea, and Checkbox with ARIA labels and errors.</CardDescription>
+          <CardDescription>
+            Input, Select, Textarea, and Checkbox with ARIA labels and errors.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 max-w-xl">
           <Input
@@ -123,7 +132,9 @@ function PreviewDemo() {
       <Card>
         <CardHeader>
           <CardTitle>Avatars & Status Indicators</CardTitle>
-          <CardDescription>Different sizes, fallbacks, and live status dots.</CardDescription>
+          <CardDescription>
+            Different sizes, fallbacks, and live status dots.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-4">
           <Avatar alt="Ahmad Radwan" size="lg" status="online" />
@@ -142,7 +153,9 @@ function PreviewDemo() {
       <Card>
         <CardHeader>
           <CardTitle>Feedback & Overlays</CardTitle>
-          <CardDescription>Accessible focus-trapping modal and toast notification system.</CardDescription>
+          <CardDescription>
+            Accessible focus-trapping modal and toast notification system.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
           <Button variant="outline" onClick={() => setModalOpen(true)}>
@@ -150,13 +163,17 @@ function PreviewDemo() {
           </Button>
           <Button
             variant="secondary"
-            onClick={() => toast.success("Your changes have been saved!", "Success")}
+            onClick={() =>
+              toast.success("Your changes have been saved!", "Success")
+            }
           >
             Trigger Success Toast
           </Button>
           <Button
             variant="danger"
-            onClick={() => toast.error("Could not upload video.", "Upload Failed")}
+            onClick={() =>
+              toast.error("Could not upload video.", "Upload Failed")
+            }
           >
             Trigger Error Toast
           </Button>
@@ -167,7 +184,9 @@ function PreviewDemo() {
       <Card>
         <CardHeader>
           <CardTitle>Navigation & Pagination</CardTitle>
-          <CardDescription>Tabs with keyboard support and page navigation.</CardDescription>
+          <CardDescription>
+            Tabs with keyboard support and page navigation.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <Tabs
@@ -175,19 +194,40 @@ function PreviewDemo() {
               {
                 id: "tab1",
                 label: "All Jobs",
-                badge: <Badge size="sm" variant="lime">24</Badge>,
-                content: <p className="text-sm text-ink-muted">List of active open job positions.</p>,
+                badge: (
+                  <Badge size="sm" variant="lime">
+                    24
+                  </Badge>
+                ),
+                content: (
+                  <p className="text-sm text-ink-muted">
+                    List of active open job positions.
+                  </p>
+                ),
               },
               {
                 id: "tab2",
                 label: "My Applications",
-                badge: <Badge size="sm" variant="default">3</Badge>,
-                content: <p className="text-sm text-ink-muted">Overview of your submitted video applications.</p>,
+                badge: (
+                  <Badge size="sm" variant="default">
+                    3
+                  </Badge>
+                ),
+                content: (
+                  <p className="text-sm text-ink-muted">
+                    Overview of your submitted video applications.
+                  </p>
+                ),
               },
               {
                 id: "tab3",
                 label: "Archived",
-                content: <EmptyState title="No archived items" description="Archived applications will appear here." />,
+                content: (
+                  <EmptyState
+                    title="No archived items"
+                    description="Archived applications will appear here."
+                  />
+                ),
               },
             ]}
           />
@@ -213,7 +253,8 @@ function PreviewDemo() {
         description="Are you sure you want to apply with your primary video resume?"
       >
         <p className="text-sm text-ink">
-          The employer will be able to review your 30-second video and contact you directly via chat.
+          The employer will be able to review your 30-second video and contact
+          you directly via chat.
         </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setModalOpen(false)}>

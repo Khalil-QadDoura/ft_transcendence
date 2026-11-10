@@ -32,9 +32,10 @@ export function Tabs({
   className = "",
 }: TabsProps) {
   const [internalActiveId, setInternalActiveId] = useState(
-    defaultTabId || (tabs[0] ? tabs[0].id : "")
+    defaultTabId || (tabs[0] ? tabs[0].id : ""),
   );
-  const activeId = controlledActiveId !== undefined ? controlledActiveId : internalActiveId;
+  const activeId =
+    controlledActiveId !== undefined ? controlledActiveId : internalActiveId;
   const baseId = useId();
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -45,7 +46,10 @@ export function Tabs({
     onTabChange?.(tabId);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+  const handleKeyDown = (
+    e: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
     let nextIndex: number | null = null;
     if (e.key === "ArrowRight") {
       nextIndex = (index + 1) % tabs.length;
@@ -133,4 +137,3 @@ export function Tabs({
     </div>
   );
 }
-

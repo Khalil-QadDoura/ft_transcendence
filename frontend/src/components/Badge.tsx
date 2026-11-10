@@ -1,13 +1,7 @@
 import type { HTMLAttributes, ReactNode } from "react";
 
 export type BadgeVariant =
-  | "default"
-  | "lime"
-  | "success"
-  | "danger"
-  | "warning"
-  | "info"
-  | "outline";
+  "default" | "lime" | "success" | "danger" | "warning" | "info" | "outline";
 
 export type BadgeSize = "sm" | "md";
 
@@ -49,4 +43,3 @@ export function Badge({
     </span>
   );
 }
-

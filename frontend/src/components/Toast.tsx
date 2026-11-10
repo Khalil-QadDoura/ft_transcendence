@@ -58,24 +58,28 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
       return id;
     },
-    [removeToast]
+    [removeToast],
   );
 
   const success = useCallback(
-    (message: string, title?: string) => addToast({ type: "success", title, message }),
-    [addToast]
+    (message: string, title?: string) =>
+      addToast({ type: "success", title, message }),
+    [addToast],
   );
   const error = useCallback(
-    (message: string, title?: string) => addToast({ type: "error", title, message }),
-    [addToast]
+    (message: string, title?: string) =>
+      addToast({ type: "error", title, message }),
+    [addToast],
   );
   const warning = useCallback(
-    (message: string, title?: string) => addToast({ type: "warning", title, message }),
-    [addToast]
+    (message: string, title?: string) =>
+      addToast({ type: "warning", title, message }),
+    [addToast],
   );
   const info = useCallback(
-    (message: string, title?: string) => addToast({ type: "info", title, message }),
-    [addToast]
+    (message: string, title?: string) =>
+      addToast({ type: "info", title, message }),
+    [addToast],
   );
 
   return (
@@ -105,13 +109,23 @@ export function ToastContainer({
       className="fixed bottom-4 end-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"
     >
       {toasts.map((toast) => (
-        <ToastCard key={toast.id} toast={toast} onDismiss={() => onRemove(toast.id)} />
+        <ToastCard
+          key={toast.id}
+          toast={toast}
+          onDismiss={() => onRemove(toast.id)}
+        />
       ))}
     </div>
   );
 }
 
-function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => void }) {
+function ToastCard({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastItem;
+  onDismiss: () => void;
+}) {
   const typeStyles = {
     success: "border-success bg-success-subtle text-success",
     error: "border-danger bg-danger-subtle text-danger",
@@ -137,11 +151,20 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => vo
         aria-label="Dismiss notification"
         className="shrink-0 p-1 rounded-md text-ink-muted hover:text-ink hover:bg-black/5 transition-colors cursor-pointer"
       >
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        <svg
+          className="w-3.5 h-3.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M6 18L18 6M6 6l12 12"
+          />
         </svg>
       </button>
     </div>
   );
 }
-

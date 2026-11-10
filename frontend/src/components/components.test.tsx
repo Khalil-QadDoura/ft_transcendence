@@ -17,16 +17,16 @@ import {
 describe("FE-21 Reusable UI Components", () => {
   describe("Button Component", () => {
     it("renders with variant classes and text", () => {
-      const html = renderToStaticMarkup(<Button variant="lime">Click Me</Button>);
+      const html = renderToStaticMarkup(
+        <Button variant="lime">Click Me</Button>,
+      );
       expect(html).toContain("Click Me");
       expect(html).toContain("bg-lime");
       expect(html).toContain("text-ink");
     });
 
     it("displays spinner and aria-busy when isLoading", () => {
-      const html = renderToStaticMarkup(
-        <Button isLoading>Submitting</Button>
-      );
+      const html = renderToStaticMarkup(<Button isLoading>Submitting</Button>);
       expect(html).toContain('aria-busy="true"');
       expect(html).toContain('role="status"');
     });
@@ -45,12 +45,14 @@ describe("FE-21 Reusable UI Components", () => {
           label="Email Address"
           error="Invalid email"
           helperText="We will never share your email"
-        />
+        />,
       );
       expect(html).toContain('for="email-input"');
       expect(html).toContain('id="email-input"');
       expect(html).toContain('aria-invalid="true"');
-      expect(html).toContain('aria-describedby="email-input-error email-input-helper"');
+      expect(html).toContain(
+        'aria-describedby="email-input-error email-input-helper"',
+      );
       expect(html).toContain('role="alert"');
       expect(html).toContain("Invalid email");
     });
@@ -64,7 +66,7 @@ describe("FE-21 Reusable UI Components", () => {
             { value: "fe", label: "Frontend" },
             { value: "be", label: "Backend" },
           ]}
-        />
+        />,
       );
       expect(html).toContain('for="role-select"');
       expect(html).toContain('<option value="fe">Frontend</option>');
@@ -80,7 +82,7 @@ describe("FE-21 Reusable UI Components", () => {
           readOnly
           maxLength={100}
           showCount
-        />
+        />,
       );
       expect(html).toContain("5/100");
       expect(html).toContain("<textarea");
@@ -88,11 +90,7 @@ describe("FE-21 Reusable UI Components", () => {
 
     it("Checkbox renders label and description", () => {
       const html = renderToStaticMarkup(
-        <Checkbox
-          id="terms"
-          label="I agree"
-          description="Read terms"
-        />
+        <Checkbox id="terms" label="I agree" description="Read terms" />,
       );
       expect(html).toContain('type="checkbox"');
       expect(html).toContain("I agree");
@@ -105,7 +103,7 @@ describe("FE-21 Reusable UI Components", () => {
       const html = renderToStaticMarkup(
         <Modal isOpen={true} onClose={() => {}} title="Delete Item">
           <p>Are you sure?</p>
-        </Modal>
+        </Modal>,
       );
       expect(html).toContain('role="dialog"');
       expect(html).toContain('aria-modal="true"');
@@ -117,7 +115,7 @@ describe("FE-21 Reusable UI Components", () => {
       const html = renderToStaticMarkup(
         <Modal isOpen={false} onClose={() => {}} title="Hidden">
           <p>Hidden content</p>
-        </Modal>
+        </Modal>,
       );
       expect(html).toBe("");
     });
@@ -126,7 +124,7 @@ describe("FE-21 Reusable UI Components", () => {
   describe("Avatar & Status", () => {
     it("renders fallback initials when src is missing", () => {
       const html = renderToStaticMarkup(
-        <Avatar alt="Ahmad Radwan" size="md" status="online" />
+        <Avatar alt="Ahmad Radwan" size="md" status="online" />,
       );
       expect(html).toContain("AR");
       expect(html).toContain('title="Status: online"');
@@ -136,13 +134,17 @@ describe("FE-21 Reusable UI Components", () => {
 
   describe("Badges & Spinners", () => {
     it("Badge renders variant styles", () => {
-      const html = renderToStaticMarkup(<Badge variant="success">Active</Badge>);
+      const html = renderToStaticMarkup(
+        <Badge variant="success">Active</Badge>,
+      );
       expect(html).toContain("Active");
       expect(html).toContain("text-success");
     });
 
     it("Spinner has accessible role and label", () => {
-      const html = renderToStaticMarkup(<Spinner size="md" label="Loading data" />);
+      const html = renderToStaticMarkup(
+        <Spinner size="md" label="Loading data" />,
+      );
       expect(html).toContain('role="status"');
       expect(html).toContain('aria-label="Loading data"');
     });
@@ -151,7 +153,10 @@ describe("FE-21 Reusable UI Components", () => {
   describe("EmptyState & Tabs", () => {
     it("EmptyState renders title and description", () => {
       const html = renderToStaticMarkup(
-        <EmptyState title="No items found" description="Try broadening your search" />
+        <EmptyState
+          title="No items found"
+          description="Try broadening your search"
+        />,
       );
       expect(html).toContain("No items found");
       expect(html).toContain("Try broadening your search");
@@ -164,7 +169,7 @@ describe("FE-21 Reusable UI Components", () => {
             { id: "tab1", label: "Tab 1", content: <p>Panel 1</p> },
             { id: "tab2", label: "Tab 2", content: <p>Panel 2</p> },
           ]}
-        />
+        />,
       );
       expect(html).toContain('role="tablist"');
       expect(html).toContain('role="tab"');

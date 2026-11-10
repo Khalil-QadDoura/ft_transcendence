@@ -25,7 +25,12 @@ export function EmptyState({
         </div>
       ) : (
         <div className="w-12 h-12 mb-3 rounded-full bg-paper-subtle flex items-center justify-center text-ink-muted">
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -47,4 +52,3 @@ export function EmptyState({
     </div>
   );
 }
-

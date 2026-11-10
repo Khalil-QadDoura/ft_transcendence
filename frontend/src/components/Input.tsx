@@ -1,4 +1,9 @@
-import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from "react";
+import {
+  forwardRef,
+  useId,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from "react";
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -21,7 +26,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     className = "",
     ...props
   },
-  ref
+  ref,
 ) {
   const generatedId = useId();
   const inputId = externalId || generatedId;
@@ -40,7 +45,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           className="block text-sm font-medium text-ink mb-1 select-none"
         >
           {label}
-          {required ? <span className="text-danger ms-1" aria-hidden="true">*</span> : null}
+          {required ? (
+            <span className="text-danger ms-1" aria-hidden="true">
+              *
+            </span>
+          ) : null}
         </label>
       ) : null}
 
@@ -77,7 +86,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       </div>
 
       {error ? (
-        <p id={errorId} role="alert" className="mt-1 text-xs text-danger font-medium">
+        <p
+          id={errorId}
+          role="alert"
+          className="mt-1 text-xs text-danger font-medium"
+        >
           {error}
         </p>
       ) : helperText ? (
@@ -88,4 +101,3 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     </div>
   );
 });
-

@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useId,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useId, type ReactNode } from "react";
 
 export interface ModalProps {
   isOpen: boolean;
@@ -42,9 +37,10 @@ export function Modal({
       }
 
       if (e.key === "Tab" && dialogRef.current) {
-        const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
+        const focusableElements =
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+          );
         if (focusableElements.length === 0) return;
 
         const first = focusableElements[0];
@@ -70,7 +66,7 @@ export function Modal({
     requestAnimationFrame(() => {
       if (dialogRef.current) {
         const firstFocusable = dialogRef.current.querySelector<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
         );
         if (firstFocusable) {
           firstFocusable.focus();
@@ -132,8 +128,18 @@ export function Modal({
               aria-label="Close modal"
               className="rounded-md p-1.5 text-ink-muted hover:text-ink hover:bg-paper-subtle transition-colors focus-visible:ring-2 focus-visible:ring-ink focus-visible:outline-hidden cursor-pointer"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -145,9 +151,17 @@ export function Modal({
   );
 }
 
-export function ModalFooter({ children, className = "" }: { children: ReactNode; className?: string }) {
+export function ModalFooter({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={`flex items-center justify-end gap-2 pt-4 border-t border-border mt-4 ${className}`}>
+    <div
+      className={`flex items-center justify-end gap-2 pt-4 border-t border-border mt-4 ${className}`}
+    >
       {children}
     </div>
   );
