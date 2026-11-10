@@ -58,3 +58,4 @@ export function CardFooter({ children, className = "", ...props }: CardProps) {
     </div>
   );
 }
+
