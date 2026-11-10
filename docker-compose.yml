@@ -16,8 +16,17 @@ x-backend-env: &backend-env
   SMTP_HOST: ${SMTP_HOST}
   SMTP_PORT: ${SMTP_PORT}
   MAIL_FROM: ${MAIL_FROM}
-  MINIO_BUCKET: ${MINIO_BUCKET}
+  # Object storage (INF-04). Server-side reads and writes use the internal endpoint over
+  # plain HTTP; presigned URLs are signed for the external one, so the browser reaches
+  # them through the proxy at /files. The region is given so the SDK never asks the
+  # endpoint for it (https://localhost inside a container is the container itself).
+  # Root credentials until INF-13 moves a dedicated service account to Vault.
+  MINIO_ENDPOINT: minio:9000
   MINIO_EXTERNAL_ENDPOINT: ${MINIO_EXTERNAL_ENDPOINT}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+  MINIO_REGION: ${MINIO_REGION:-us-east-1}
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
 
 # The official minio/minio and minio/mc images left Docker Hub on 2025-10-23; pgsty/minio
 # rebuilds the upstream releases (amd64 + arm64) and ships mc too, so the server and
