@@ -341,6 +341,7 @@ def test_confirm_refuses_another_users_key(client, ana, ben):
         "users/1/intro/not-a-uuid.mp4",
         "users/1/intro/{uuid}.mov",
         "users/1/intro/{uuid}.mp4\n",  # a line break after the key
+        "users/1/intro/{uuid}.mp4.exe",
         "/users/1/intro/{uuid}.mp4",
         "users/1/intro/../2/intro/{uuid}.mp4",
         "users/12/intro/{uuid}.mp4",  # starts like user 1's prefix, but is user 12's
@@ -350,7 +351,7 @@ def test_confirm_refuses_another_users_key(client, ana, ben):
 )
 def test_confirm_refuses_keys_that_upload_url_never_makes(client, ana, object_key):
     response = confirm(client, ana, object_key.format(uuid=uuid4()))
-    assert response.status_code == 400
+    assert response.json() == error(400, "Invalid object_key: use the one upload-url gave you")
 
 
 def test_confirm_refuses_a_key_with_no_uploaded_file(client, ana):
