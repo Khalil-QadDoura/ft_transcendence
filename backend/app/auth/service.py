@@ -15,7 +15,7 @@ from app.auth.constants import (
     REFRESH_SCOPE,
     REFRESH_TOKEN_LIFETIME,
 )
-from app.auth.schemas import LoginIn, RegisterIn, TokenPairOut, VerifyOut
+from app.auth.schemas import ChangePasswordIn, LoginIn, RegisterIn, TokenPairOut, VerifyOut
 from app.core.config import Settings
 from app.core.mailer import Mailer
 from app.users.models import User
@@ -25,6 +25,7 @@ INVALID_LINK = "Invalid or expired link"
 INVALID_CREDENTIALS = "Invalid email or password"
 EMAIL_NOT_VERIFIED = "Email not verified"
 INVALID_TOKEN = "Invalid or expired token"
+WRONG_CURRENT_PASSWORD = "Wrong current password"
 
 VERIFY_SUBJECT = "Verify your WOZU account"
 VERIFY_BODY = """\
@@ -158,3 +159,16 @@ async def issue_token_pair(session: AsyncSession, settings: Settings, user: User
     )
     await session.commit()
     return TokenPairOut(access_token=access_token, refresh_token=refresh_token)
+
+
+async def change_password(session: AsyncSession, user: User, data: ChangePasswordIn) -> None:
+    """The logged-in user picks a new password, after proving they know the current one.
+    Every token of the user stops working, this request's too: the user logs in again."""
+    # 400, not 401: a 401 would make the frontend refresh the token and log the user out.
+    if not await asyncio.to_thread(
+        security.verify_password, data.current_password, user.password_hash
+    ):
+        raise HTTPException(status_code=400, detail=WRONG_CURRENT_PASSWORD)
+    password_hash = await asyncio.to_thread(security.hash_password, data.new_password)
+    await repo.set_password(session, user.id, password_hash)
+    await session.commit()

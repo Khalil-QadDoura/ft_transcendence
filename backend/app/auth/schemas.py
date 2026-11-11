@@ -9,6 +9,9 @@ from app.auth.constants import PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH
 # A valid email address, in lower case: Ana@Example.com and ana@example.com are one account.
 Email = Annotated[EmailStr, AfterValidator(str.lower)]
 
+# A new password, on a change or a reset: the same rule as at sign-up (RegisterIn).
+NewPassword = Annotated[str, Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)]
+
 
 class RegisterIn(BaseModel):
     email: Email
@@ -45,3 +48,9 @@ class RefreshIn(BaseModel):
 class LogoutIn(BaseModel):
     # Optional: logout always answers 204, even with no token or a bad one.
     refresh_token: str | None = None
+
+
+class ChangePasswordIn(BaseModel):
+    # No minimum, as at login: a wrong current password simply fails.
+    current_password: str = Field(max_length=PASSWORD_MAX_LENGTH)
+    new_password: NewPassword

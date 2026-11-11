@@ -6,8 +6,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import service
-from app.auth.constants import LOGIN_RATE_LIMIT, REFRESH_RATE_LIMIT, REGISTER_RATE_LIMIT
+from app.auth.constants import (
+    CHANGE_PASSWORD_RATE_LIMIT,
+    LOGIN_RATE_LIMIT,
+    REFRESH_RATE_LIMIT,
+    REGISTER_RATE_LIMIT,
+)
+from app.auth.deps import CurrentUser
 from app.auth.schemas import (
+    ChangePasswordIn,
     LoginIn,
     LogoutIn,
     MessageOut,
@@ -64,3 +71,12 @@ async def logout(request: Request, session: Session, data: LogoutIn | None = Non
     """Log out this session: its refresh token stops working. Always 204."""
     refresh_token = data.refresh_token if data else None
     await service.logout(session, request.app.state.settings, refresh_token)
+
+
+@router.post("/change-password", status_code=204)
+@limiter.limit(CHANGE_PASSWORD_RATE_LIMIT)
+async def change_password(
+    request: Request, data: ChangePasswordIn, user: CurrentUser, session: Session
+) -> None:
+    """Change my password. All my tokens stop working, on every device: I log in again."""
+    await service.change_password(session, user, data)

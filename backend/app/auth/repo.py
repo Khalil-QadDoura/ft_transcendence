@@ -80,3 +80,15 @@ async def revoke_refresh_token(session: AsyncSession, jti: str) -> RefreshToken 
         .values(revoked=True)
         .returning(RefreshToken)
     )
+
+
+async def set_password(session: AsyncSession, user_id: int, password_hash: str) -> User | None:
+    """Store the new password and raise token_version by 1, as one database step. Every token
+    made before (access and refresh, on every device) carries the old version and stops
+    working. Returns None, and changes nothing, when the account is deleted."""
+    return await session.scalar(
+        update(User)
+        .where(User.id == user_id, User.status == "active")
+        .values(password_hash=password_hash, token_version=User.token_version + 1)
+        .returning(User)
+    )
