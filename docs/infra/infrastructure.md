@@ -1,6 +1,6 @@
 # ft\_transcendence — Infrastructure
 
-Oct 27, 2026 · updated Nov 10, 2026 · @byul-byul
+Oct 27, 2026 · updated Nov 11, 2026 · @byul-byul
 
 ## TL;DR
 
@@ -45,16 +45,24 @@ Everything the browser touches goes through one host and one certificate. Locall
 
 | Path | Upstream | Notes |
 | --- | --- | --- |
-| `/` | `frontend:80` | The frontend container does the SPA fallback to `index.html` for client routes |
+| `/` | `frontend:80` | The frontend container does the SPA fallback to `index.html` for client routes; a missing `/assets/*` file is a 404, not `index.html` |
 | `/api/*` | `api:8000` | FastAPI includes all routers under the `/api` prefix; the proxy does not strip paths |
 | `/ws`, `/ws/game` | `api:8000` | WebSocket upgrade: HTTP/1.1, `Upgrade` and `Connection` headers, long read timeout |
 | `/files/*` | `minio:9000` | Bucket `files`; URI and Host header passed through unchanged so presigned signatures match; 60 MB body limit |
 | `/grafana/*` | `grafana:3000` | `GF_SERVER_ROOT_URL=https://localhost/grafana/`, `serve_from_sub_path=true`, login required |
 | `/mail/*` | `mailpit:8025` | `MP_WEBROOT=/mail/` |
-| `/_internal/*`, `/metrics` | blocked | Prometheus scrapes them inside the Docker network only |
-| `http://` any | redirect to `https://` |  |
+| `/_internal*`, `/metrics*`, `/api/_internal*`, `/api/metrics*` | blocked (404) | Prometheus scrapes them inside the Docker network only |
+| `http://` any | redirect to `https://` | 301, path and query kept |
 
 The table translates one-to-one to the `location` blocks in `infra/proxy/templates/conf.d/default.conf.template`. ModSecurity covers all of them and runs in `DetectionOnly` until INF-11 switches it to blocking. The image runs unprivileged and listens on 8080 and 8443 inside the container, so compose publishes `443:8443` and `80:8080`. `HTTPS_PORT` and `HTTP_PORT` in `.env` change the host side; the redirect then carries the HTTPS port (`http://localhost:8080/` → `https://localhost:8443/`). `infra/proxy/README.md` lists which files are ours and which come from the image.
+
+**Internal routes stay inside (INF-03).** The API mounts `/_internal/*` at the root, next to `/api`, behind the `X-Internal-Key` header (`backend/app/core/internal.py`); `/metrics` (BE-30) is planned at the root too. The proxy answers 404 itself for `/_internal` and `/metrics` and everything below them, and also for `/api/_internal` and `/api/metrics`: no route lives there today, but a router mounted under `/api` by mistake would otherwise be public. The match runs on the path after nginx decodes and normalizes it, so `/api/../_internal`, `//_internal` and `/%5Finternal` are 404 too. Inside the Docker network the routes work as before (`http://api:8000/_internal/health/db` with the key → 200). The rule for backend cards: internal routes go under `/_internal`, never in the `/api` router.
+
+**Redirects keep the host port.** nginx's own trailing-slash redirects (`/mail` → `/mail/`, also `/files`, `/api`, `/grafana`, and the frontend container's `/assets` → `/assets/`) send a relative `Location` (`absolute_redirect off` in both nginx configs). An absolute one would drop a non-default `HTTPS_PORT`, and the frontend container, which sees plain HTTP behind the proxy, would even send the browser to `http://`. Checked with `HTTPS_PORT=18443`: `/mail` lands on `https://localhost:18443/mail/`.
+
+**WebSockets.** `location /ws` covers `/ws` and `/ws/game`: HTTP/1.1 to the API with the `Upgrade` and `Connection` headers, no buffering, one-hour read and send timeouts. Until BE-06 adds the `/ws` route, an upgrade request gets the API's own 403 (uvicorn refuses a WebSocket with no route), which shows that it passed the proxy; an nginx error would be a 400 or 502 page.
+
+**Check:** `make https-check` (`infra/proxy/smoke-test.sh`) runs against the running stack, from the host over HTTPS with the proxy certificate, on the host ports compose published: deep links (`/friends`, `/login`, `/game/rules`) → `index.html`, a missing asset → 404, a real asset → 200 JavaScript; `/api/health` → 200; a WebSocket handshake on `/ws` (101 with a matching `Sec-WebSocket-Accept`; `SKIP` while the API answers 403 or 404, so it turns green by itself once BE-06 lands); the HTTP → HTTPS redirect with path and query; the trailing-slash redirects with the host port; the internal routes above, sent with the real `X-Internal-Key`, → 404 from the proxy, and the same route inside the network → 200; only the proxy publishes host ports. INF-06 CI runs it.
 
 ## File storage over HTTPS
 
@@ -141,6 +149,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `make down` | stops and removes the containers, keeps volumes |
 | `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
 | `make test` | starts `db` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db` and `redis` running |
+| `make https-check` | smoke test of the routes of the one HTTPS origin against the running stack (see One origin over HTTPS) |
 | `make files-check` | smoke test of `/files` against the running stack, ends with a Chrome console snippet (see File storage over HTTPS) |
 | `make mail-check` | sign-up email end to end through the proxy against the running stack (see Email without a paid service) |
 | `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
