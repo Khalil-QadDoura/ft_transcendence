@@ -91,8 +91,6 @@ async def confirm_upload(
     # 1. The key must be one of mine: nobody can confirm another user's file.
     if not is_my_object_key(user.id, data.object_key):
         raise HTTPException(status_code=400, detail=NOT_YOUR_KEY)
-    if await repo.count_active_videos(session, user.id) >= MAX_ACTIVE_VIDEOS:
-        raise HTTPException(status_code=409, detail=TOO_MANY_VIDEOS)
 
     # 2. Look at the file in storage instead of trusting what the browser says about it.
     # The MinIO calls wait for the network, so they run in a worker thread.
@@ -109,7 +107,15 @@ async def confirm_upload(
     if not looks_like_mp4(first_bytes):
         raise HTTPException(status_code=415, detail=NOT_AN_MP4)
 
-    # 3. Save it with the real size: moderation "pending", lifecycle "loaded" (not shown yet).
+    # 3. At most 3 videos. Two confirms of mine at the same time must not both count 2 and
+    # both save: so I lock my row in users first. The second confirm waits at the lock until
+    # the first is saved (commit), then counts 3 and gets 409. Other users never wait.
+    await repo.lock_user(session, user.id)
+    if await repo.count_active_videos(session, user.id) >= MAX_ACTIVE_VIDEOS:
+        raise HTTPException(status_code=409, detail=TOO_MANY_VIDEOS)
+
+    # 4. Save it with the real size: moderation "pending", lifecycle "loaded" (not shown yet).
+    # The commit also lets go of the lock.
     video = repo.add_video(session, user.id, data.object_key, data.duration_sec, size)
     try:
         await session.commit()
@@ -117,7 +123,7 @@ async def confirm_upload(
         await session.rollback()
         raise HTTPException(status_code=409, detail=ALREADY_CONFIRMED) from None
 
-    # 4. Queue the moderation, after the answer has gone out, so the user never waits for it.
+    # 5. Queue the moderation, after the answer has gone out, so the user never waits for it.
     background.add_task(queue.moderate_video, video.id, video.object_key)
     return video
 

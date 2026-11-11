@@ -21,8 +21,10 @@ import logging
 import os
 import re
 import socket
+import threading
 import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import timedelta
 from typing import NamedTuple
@@ -40,7 +42,7 @@ from app.auth import security
 from app.core.config import Settings
 from app.core.logging import json_handler
 from app.core.queue import MODERATION_TASK
-from app.core.storage import Storage
+from app.core.storage import Storage, get_storage
 from app.media.constants import MAX_SIZE_BYTES
 
 TEST_MINIO_ENDPOINT = os.environ.get("TEST_MINIO_ENDPOINT", "")  # host:port, plain HTTP
@@ -420,6 +422,40 @@ def test_a_fourth_video_is_refused_until_one_is_deleted(client, ana):
     assert action(client, ana, first, "delete").status_code == 200
     assert confirm(client, ana, upload(client, ana)).status_code == 201
     assert sorted(lifecycles(ana.id).values()) == ["deleted", "loaded", "loaded", "loaded"]
+
+
+class StorageForTwo:
+    """A stand-in for MinIO in the race test: every file exists and starts like an MP4. Its
+    size() lets nobody go on until both confirmations are inside it (a barrier), so the two
+    really run at the same time, each with its own database session."""
+
+    def __init__(self):
+        self.both_here = threading.Barrier(2, timeout=10)
+
+    def size(self, object_key: str) -> int:
+        self.both_here.wait()
+        return 2048
+
+    def first_bytes(self, object_key: str, count: int) -> bytes:
+        return MP4_START[:count]
+
+
+def test_two_confirms_at_the_same_time_cannot_make_a_fourth_video(client, ana):
+    new_video(client, ana)
+    new_video(client, ana)
+    take_queued_tasks()
+    keys = [ask_upload_url(client, ana).json()["object_key"] for _ in range(2)]
+    storage = StorageForTwo()
+    client.app.dependency_overrides[get_storage] = lambda: storage
+    # Two requests at once, from two threads: the API serves them side by side.
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        answers = list(threads.map(lambda key: confirm(client, ana, key), keys))
+    # Both counted 2 before either saved, so both were saved (4 videos) before the lock.
+    # Now the second waits for the first, counts 3 and is refused.
+    assert sorted(answer.status_code for answer in answers) == [201, 409]
+    assert sorted(lifecycles(ana.id).values()) == ["loaded", "loaded", "loaded"]
+    [saved] = [answer.json()["id"] for answer in answers if answer.status_code == 201]
+    assert [arguments[0] for _task, arguments in take_queued_tasks()] == [saved]
 
 
 def test_the_same_file_cannot_be_confirmed_twice_even_after_a_delete(client, ana):
