@@ -16,30 +16,30 @@ The screen layout, accessible labels, pending states, verification single-flight
 
 ## Dependency and review base
 
-`integration/FE-04-prerequisites` now combines current main (`07d4f92`), FE-02 #2, FE-03 #14 and Ahmad's FE-20 #22 at `856a4b17eafc9be9625abc21f8c95f40cf50d008`. Ahmad's original commits are retained. Session-lifecycle corrections in the FE-04 diff are included for Khalil to review alongside the adapter.
+FE-03 #14, FE-20 #22 and FE-21 #21 are merged on main. FE-04 now includes main `5e00da5` and the corrected FE-02 shell at `763df62`; Ahmad's original client/component commits are retained. PR #17 is stacked on `feat/FE-02-app-shell` (#2) so its diff contains only authentication changes.
 
-Do not merge FE-04 into this temporary branch. After #2, #14 and #22 land, transplant the FE-04-only changes onto main, retarget PR #17, resolve any client differences and repeat checks. This integration does not merge or rewrite Ahmad's PR.
+Do not merge FE-04 into the FE-02 branch. After #2 is approved and merged, update FE-04 onto main, retarget #17 and repeat checks. Khalil reviews the backend contract; Ahmad reviews the shared-client lifecycle changes. In particular, `setTokens` without a refresh token now removes any saved refresh token, and auth-change subscribers must not throw.
 
 ## Verified backend contract
 
 The November 10 integration runs against Khalil's merged auth/users implementation on main `07d4f92aca3b103cc16435757aeb60371e71682b`, backend tree `f338aca380938a48e0b2620388143b32e64263fc`, PostgreSQL 16 + PostGIS.
 
-| Action          | Request                                 | Result                                               |
-| --------------- | --------------------------------------- | ---------------------------------------------------- |
-| Register        | POST /api/auth/register, email/password | 202; check-email state, no session                   |
-| Verify          | GET /api/auth/verify?token=...          | 200 verified:true; invalid link 400                  |
-| Login           | POST /api/auth/login, email/password    | 200 bearer pair; 401 bad credentials; 403 unverified |
-| Restore/refresh | POST /api/auth/refresh, refresh_token   | 200 replacement pair; consumed/revoked token 401     |
-| Profile probe   | GET /api/users/me with bearer access    | 200 authenticated profile; invalid access 401        |
-| Logout          | POST /api/auth/logout, refresh_token    | 204; later reuse of that refresh token returns 401   |
+| Action          | Request                                 | Result                                                             |
+| --------------- | --------------------------------------- | ------------------------------------------------------------------ |
+| Register        | POST /api/auth/register, email/password | 202 for new/unverified email; 409 for an existing verified account |
+| Verify          | GET /api/auth/verify?token=...          | 200 verified:true; invalid link 400                                |
+| Login           | POST /api/auth/login, email/password    | 200 bearer pair; 401 bad credentials; 403 unverified               |
+| Restore/refresh | POST /api/auth/refresh, refresh_token   | 200 replacement pair; consumed/revoked token 401                   |
+| Profile probe   | GET /api/users/me with bearer access    | 200 authenticated profile; invalid access 401                      |
+| Logout          | POST /api/auth/logout, refresh_token    | 204; later reuse of that refresh token returns 401                 |
 
 The generated schema is still the initial reference snapshot. Runtime login/refresh response checks follow the actual team contract. Requests retain the /api prefix by default; use `API_PROXY_STRIP_PREFIX=true` only for the old reference backend.
 
 ## Automated and browser checks
 
-Normal commands from frontend: `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`. The 109 unit/component tests cover the existing screens plus restoration under StrictMode, 422 propagation, wrong-password no-refresh, private-cache separation, rotation single-flight, late requests, malformed refresh data, storage restrictions, bounded retries and logout during rotation. These tests use mocked HTTP responses.
+Normal commands from frontend: `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`. The initial integration had 109 unit/component tests covering the existing screens plus restoration under StrictMode, 422 propagation, wrong-password no-refresh, private-cache separation, rotation single-flight, late requests, malformed refresh data, storage restrictions, bounded retries and logout during rotation. These tests use mocked HTTP responses. The review follow-up adds the verified-email 409 message, empty-password prevention, server field-detail rendering and the merged shared-component tests.
 
-The opt-in live test uses the actual gateway/client with a disposable database. It exercises register → unverified rejection → verify → wrong-password rejection → login → bearer profile → fresh-module restoration → three concurrent protected requests with invalid access → one refresh → logout → rejected refresh-token reuse. It creates a synthetic @example.com account. Never use production data.
+The live integration test uses the actual gateway/client with a disposable database. It exercises register → repeat unverified registration → unverified login rejection → verify → verified-email 409 → wrong-password rejection → login → bearer profile → fresh-module restoration → three concurrent protected requests with invalid access → one refresh → logout → rejected refresh-token reuse. It creates a synthetic @example.com account. Never use production data.
 
 1. Prepare a local disposable PostgreSQL/PostGIS database with `test` in its name; install the backend's requirements-dev.txt into a Python environment.
 2. Set `TEST_DATABASE_URL` to its `postgresql+asyncpg://...` URL in the environment. Run `python frontend/scripts/serve-auth-test-backend.py` from the repository root. The harness applies migrations and listens only on 127.0.0.1:8010. It overrides email delivery only; it must never be deployed. Credentials are not written into source.
@@ -50,4 +50,10 @@ Browser verification on November 10: register, captured-email verification, logi
 
 ## Remaining gates
 
-Khalil's review, prerequisite merges, main-based CI and the owner walkthrough remain. Final HTTPS/Mailpit deployment is infrastructure scope. Refresh single-flight is document-local; cross-tab rotation coordination is not implemented here. The opt-in test does not run automatically in CI because it requires the disposable backend; CI runs unit/component tests and the frontend Docker build.
+Khalil's review, prerequisite merges, main-based CI and the owner walkthrough remain. Final HTTPS/Mailpit deployment is infrastructure scope. Refresh single-flight is document-local; cross-tab rotation coordination is not implemented here. The frontend workflow now runs this integration test against the actual backend with a disposable PostGIS service and captured email. Frontend and backend changes trigger it. CI also runs unit/component tests and the frontend Docker build. The capture-mail harness is loopback-only and must never be deployed.
+
+## Review follow-up — November 10
+
+A verified email that returns HTTP 409 shows “This email already has an account. Try signing in.” The existing sign-in link preserves `next`; a repeated unverified registration still follows the 202 check-inbox flow. Empty login passwords are rejected locally while short nonempty passwords still reach the backend. Backend 422 field explanations render as ordinary React text and retain field focus.
+
+Transient refresh failures (429, 5xx or offline), cross-tab rotation coordination and shared UI primitive adoption remain follow-up work discussed in review; they are not claimed fixed by this message-handling change. A new browser pass is pending because browser access was unavailable in the review-fix session; the earlier browser evidence above is historical.
