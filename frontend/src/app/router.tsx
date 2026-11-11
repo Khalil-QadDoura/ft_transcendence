@@ -1,3 +1,8 @@
+import {
+  ForgotPassword,
+  ResetPassword,
+  AccountSettings,
+} from "../features/account/AccountPages";
 import { Link, type RouteObject } from "react-router-dom";
 import { AuthForm, VerifyEmail } from "../features/auth/AuthScreens";
 import { Layout } from "./Layout";
@@ -66,23 +71,23 @@ export const routes: RouteObject[] = [
         ],
       },
       { path: "verify-email", element: <VerifyEmail /> },
-      ...pages([
-        ["forgot-password", "Let’s get you back in."],
-        ["reset-password", "A fresh start."],
-      ]),
+      { path: "forgot-password", element: <ForgotPassword /> },
+      { path: "reset-password", element: <ResetPassword /> },
       {
         element: <RequireSession />,
-        children: pages([
-          ["profile", "Your story."],
-          ["friends", "Good company."],
-          ["chat", "Start a conversation."],
-          ["chat/:id", "Keep the conversation going."],
-          ["videos", "More than a résumé."],
-          ["employer/*", "Build your next team."],
-          ["game", "Trust your instincts."],
-          ["game/rooms/:id", "Who’s really human?"],
-          ["settings", "Make yourself at home."],
-        ]),
+        children: [
+          { path: "settings", element: <AccountSettings /> },
+          ...pages([
+            ["profile", "Your story."],
+            ["friends", "Good company."],
+            ["chat", "Start a conversation."],
+            ["chat/:id", "Keep the conversation going."],
+            ["videos", "More than a résumé."],
+            ["employer/*", "Build your next team."],
+            ["game", "Trust your instincts."],
+            ["game/rooms/:id", "Who’s really human?"],
+          ]),
+        ],
       },
       { path: "*", element: <Missing /> },
     ],

@@ -187,6 +187,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           : "Your people. Your possibilities. Pick up where you left off."
       }
     >
+      {!signup && params.get("password") === "updated" && (
+        <p role="status">
+          Your password was updated. Sign in with your new password.
+        </p>
+      )}
+      {!signup && params.get("account") === "deleted" && (
+        <p role="status">Your account has been deactivated.</p>
+      )}
       {params.get("logout") === "local" && (
         <p className="auth-alert" role="alert">
           You’re signed out here, but we couldn’t revoke the server session.
