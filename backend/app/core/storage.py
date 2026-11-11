@@ -1,5 +1,6 @@
-"""File storage: the MinIO bucket where the videos are kept. Files never pass through the API:
-the browser sends them straight to MinIO with a signed link, and the API checks them there."""
+"""File storage: the MinIO bucket where the videos, avatars and logos are kept. Files never pass
+through the API: the browser sends them straight to MinIO with a signed link, and the API checks
+them there."""
 
 from datetime import timedelta
 from urllib.parse import urlparse
@@ -39,6 +40,24 @@ class Storage:
         # signing is only a calculation with the secret key.
         public = urlparse(settings.minio_external_endpoint)
         self.external = Minio(public.netloc, secure=public.scheme == "https", **keys)
+        # 3. Avatars and logos need no signed link at all: anyone may download the files under
+        # avatars/ and logos/ (the bucket's anonymous policy, INF-04), at the same address the
+        # signed links use, e.g. https://localhost/files/avatars/12/<uuid>.png.
+        self.public_base = f"{public.scheme}://{public.netloc}/{self.bucket}"
+        self.default_avatar_url = settings.default_avatar_url
+
+    def public_url(self, key: str) -> str:
+        """The plain address of a file under avatars/ or logos/: no signature, never expires."""
+        return f"{self.public_base}/{key}"
+
+    def avatar_url(self, key: str | None) -> str:
+        """What the frontend shows for a user: their picture, or the default one if they have
+        none. For UserOut now, and later for the public profile and the friends list."""
+        return self.public_url(key) if key else self.default_avatar_url
+
+    def logo_url(self, key: str | None) -> str | None:
+        """A company's logo, or None if it has none. For CompanyOut (BE-21)."""
+        return self.public_url(key) if key else None
 
     def upload_url(self, key: str, expires: timedelta) -> str:
         """A link that lets whoever has it PUT one file at this key, until it expires."""
