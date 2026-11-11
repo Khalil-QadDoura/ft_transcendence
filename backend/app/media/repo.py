@@ -1,10 +1,18 @@
 """Database queries of /api/media: the intro_videos table. No HTTP, no rules."""
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, case, exists, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.media.constants import MP4_CONTENT_TYPE
+from app.applications.models import Application
+from app.companies.models import Company
+from app.jobs.models import Job
+from app.media.constants import (
+    EMPLOYER_FEED_RATINGS,
+    MP4_CONTENT_TYPE,
+    WAITING_APPLICATION_STATUSES,
+)
 from app.media.models import IntroVideo
+from app.users.models import User
 
 
 async def count_active_videos(session: AsyncSession, user_id: int) -> int:
@@ -61,3 +69,67 @@ async def unpost_posted_video(session: AsyncSession, user_id: int) -> None:
         .where(IntroVideo.user_id == user_id, IntroVideo.lifecycle_status == "posted")
         .values(lifecycle_status="unposted")
     )
+
+
+async def owns_active_company(session: AsyncSession, user_id: int) -> bool:
+    """True for an employer: a user who owns a company that is not deleted."""
+    return await session.scalar(
+        select(exists().where(Company.owner_user_id == user_id, Company.status == "active"))
+    )
+
+
+def feed_group(job_id: int | None):
+    """The feed's groups, as an SQL expression; group 1 is shown first. For a job:
+    1 = applied to it and still waiting for an answer, 2 = position contains the job's title
+    (ILIKE: big and small letters alike), 3 = everyone else. Without a job: all in group 3."""
+    if job_id is None:
+        return literal(3)
+    applied = exists().where(
+        Application.job_id == job_id,
+        Application.applicant_id == IntroVideo.user_id,
+        Application.status.in_(WAITING_APPLICATION_STATUSES),
+    )
+    job_title = select(Job.title).where(Job.id == job_id).scalar_subquery()
+    return case((applied, 1), (User.position.ilike("%" + job_title + "%"), 2), else_=3)
+
+
+async def feed_group_of(session: AsyncSession, video_id: int, job_id: int | None) -> int | None:
+    """The group of one video (the last one of the page before), None if there is no such video."""
+    return await session.scalar(
+        select(feed_group(job_id))
+        .select_from(IntroVideo)
+        .join(User, User.id == IntroVideo.user_id)
+        .where(IntroVideo.id == video_id)
+    )
+
+
+async def list_feed(
+    session: AsyncSession,
+    job_id: int | None,
+    employer: bool,
+    after: tuple[int | None, int] | None,
+    limit: int,
+) -> list:
+    """Approved and posted videos of active accounts, with their author: by group, then newest
+    first. after = (group, id) of the last video already shown; the list goes on after it."""
+    group = feed_group(job_id)
+    query = (
+        select(IntroVideo, User.first_name, User.last_name, User.position)
+        .join(User, User.id == IntroVideo.user_id)
+        .where(
+            IntroVideo.moderation_status == "approved",
+            IntroVideo.lifecycle_status == "posted",
+            User.status == "active",  # a deleted account's video is never shown
+        )
+        .order_by(group, IntroVideo.id.desc())
+        .limit(limit)
+    )
+    if employer:
+        query = query.where(IntroVideo.video_rating.in_(EMPLOYER_FEED_RATINGS))
+    if after is not None:
+        # What comes after the last video shown: a later group, or the same group, older.
+        after_group, after_id = after
+        query = query.where(
+            or_(group > after_group, and_(group == after_group, IntroVideo.id < after_id))
+        )
+    return list(await session.execute(query))

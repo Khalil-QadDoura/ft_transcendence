@@ -10,8 +10,21 @@ from app.core.queue import TaskQueue, get_queue
 from app.core.storage import Storage, get_storage
 from app.db.session import get_session
 from app.media import service
-from app.media.constants import MAX_URL_EXPIRES_SEC, MIN_URL_EXPIRES_SEC, VIEW_URL_EXPIRES_SEC
-from app.media.schemas import ConfirmIn, MyVideosOut, UploadUrlIn, UploadUrlOut, VideoStatusOut
+from app.media.constants import (
+    FEED_DEFAULT_LIMIT,
+    FEED_MAX_LIMIT,
+    MAX_URL_EXPIRES_SEC,
+    MIN_URL_EXPIRES_SEC,
+    VIEW_URL_EXPIRES_SEC,
+)
+from app.media.schemas import (
+    ConfirmIn,
+    FeedOut,
+    MyVideosOut,
+    UploadUrlIn,
+    UploadUrlOut,
+    VideoStatusOut,
+)
 
 router = APIRouter(prefix="/media", tags=["media"])  # mounted under /api
 
@@ -69,3 +82,18 @@ async def unpost_video(user: CurrentUser, video_id: int, session: Session) -> Vi
 async def delete_video(user: CurrentUser, video_id: int, session: Session) -> VideoStatusOut:
     """Delete my video (a soft delete): the row stays, marked "deleted"."""
     return VideoStatusOut.model_validate(await service.delete_video(session, user, video_id))
+
+
+@router.get("/feed")
+async def get_feed(
+    user: CurrentUser,
+    session: Session,
+    storage: Files,
+    limit: Annotated[int, Query(ge=1, le=FEED_MAX_LIMIT)] = FEED_DEFAULT_LIMIT,
+    cursor: int | None = None,
+    job_id: int | None = None,
+    expires_sec: ExpiresSec = VIEW_URL_EXPIRES_SEC,
+) -> FeedOut:
+    """The posted videos. ?cursor=<next_cursor> gives the next page; ?job_id= orders it for
+    that job (its applicants first, then matching positions)."""
+    return await service.get_feed(session, storage, user, limit, cursor, job_id, expires_sec)

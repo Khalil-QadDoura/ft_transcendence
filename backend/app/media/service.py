@@ -23,7 +23,15 @@ from app.media.constants import (
     UUID_PATTERN,
 )
 from app.media.models import IntroVideo
-from app.media.schemas import ConfirmIn, MyVideoOut, MyVideosOut, UploadUrlIn, UploadUrlOut
+from app.media.schemas import (
+    ConfirmIn,
+    FeedOut,
+    FeedVideoOut,
+    MyVideoOut,
+    MyVideosOut,
+    UploadUrlIn,
+    UploadUrlOut,
+)
 from app.users.models import User
 
 ONLY_MP4 = "Only MP4 videos (video/mp4) are accepted"
@@ -177,3 +185,48 @@ async def delete_video(session: AsyncSession, user: User, video_id: int) -> Intr
     video.lifecycle_status = "deleted"
     await session.commit()
     return video
+
+
+def author_name(first_name: str | None, last_name: str | None) -> str | None:
+    """The name to show, e.g. "Ana Silva" or "Ana"; None when the profile has no name yet."""
+    return " ".join(name for name in (first_name, last_name) if name) or None
+
+
+async def get_feed(
+    session: AsyncSession,
+    storage: Storage,
+    user: User,
+    limit: int,
+    cursor: int | None,
+    job_id: int | None,
+    expires_sec: int,
+) -> FeedOut:
+    """One page of the feed. With job_id, that job's waiting applicants come first, then the
+    candidates whose position matches its title, then everyone else (newest first in each)."""
+    employer = await repo.owns_active_company(session, user.id)
+    # cursor = the id of the last video of the page before. The page goes on after it, so we
+    # need its group too: by id alone, a page would skip the newer videos of later groups.
+    after = None
+    if cursor is not None:
+        after = (await repo.feed_group_of(session, cursor, job_id), cursor)
+    # One video more than asked for, only to know whether there is a next page.
+    rows = await repo.list_feed(session, job_id, employer, after, limit + 1)
+    page = rows[:limit]
+    expires = timedelta(seconds=expires_sec)
+    items = [
+        FeedVideoOut(
+            id=video.id,
+            user_id=video.user_id,
+            duration_sec=video.duration_sec,
+            size_bytes=video.size_bytes,
+            content_type=video.content_type,
+            signed_url=storage.download_url(video.object_key, expires),
+            expires_sec=expires_sec,
+            created_at=video.created_at,
+            author_name=author_name(first_name, last_name),
+            author_position=position,
+        )
+        for video, first_name, last_name, position in page
+    ]
+    next_cursor = items[-1].id if len(rows) > limit else None
+    return FeedOut(items=items, next_cursor=next_cursor)

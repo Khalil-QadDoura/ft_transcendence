@@ -72,3 +72,24 @@ class MyVideoOut(BaseModel):
 
 class MyVideosOut(BaseModel):
     items: list[MyVideoOut]
+
+
+class FeedVideoOut(BaseModel):
+    """A video in the feed, with its author and a signed link to watch it."""
+
+    id: int
+    user_id: int
+    duration_sec: int
+    size_bytes: int
+    content_type: str
+    signed_url: str
+    expires_sec: int
+    created_at: datetime
+    author_name: str | None  # "first last", or null when the profile has neither
+    author_position: str | None
+
+
+class FeedOut(BaseModel):
+    items: list[FeedVideoOut]
+    # The id to send as ?cursor= for the next page; null on the last page.
+    next_cursor: int | None
