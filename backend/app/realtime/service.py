@@ -3,6 +3,7 @@
 import asyncio
 import json
 import secrets
+import uuid
 from contextlib import suppress
 from typing import Any
 
@@ -14,8 +15,8 @@ from redis.exceptions import RedisError
 
 from app.auth import repo as auth_repo
 from app.realtime import repo
-from app.realtime.constants import TICKET_LIFETIME_SECONDS
-from app.realtime.schemas import Event
+from app.realtime.constants import PRESENCE_TTL_SECONDS, TICKET_LIFETIME_SECONDS
+from app.realtime.schemas import Event, PresenceOut
 from app.users.models import User
 
 INVALID_TICKET = "Invalid or expired ticket"
@@ -68,7 +69,7 @@ async def user_for_ticket(app: FastAPI, ticket: str) -> User | None:
 async def send_to_user(redis: Redis, user_id: int, event_type: str, payload: Any = None) -> None:
     """Send one event to every socket the user has open, whichever API process holds them.
 
-    This is how other cards push a live update, for example after saving a message (BE-22):
+    This is how other cards push a live update, for example after saving a message (BE-24):
         await send_to_user(redis, peer_id, "message", MessageOut.model_validate(message))
     A user with no open socket gets nothing; the client reloads what it shows when it reconnects.
     """
@@ -84,19 +85,28 @@ async def serve_socket(websocket: WebSocket, user: User) -> None:
     """The life of one open socket, until the client goes away.
 
     The socket listens on its user's Redis channel, and a second task copies whatever arrives
-    there to the browser, while this one reads what the browser sends.
+    there to the browser, while this one reads what the browser sends. The socket is also
+    written into the user's presence key: the user's friends hear when the first socket opens
+    (online) and when the last one closes (offline).
     """
-    pubsub = websocket.app.state.redis.pubsub()  # a Redis connection only for listening
+    app = websocket.app
+    redis = app.state.redis
+    socket_id = uuid.uuid4().hex  # this socket's own name in the presence key
+    pubsub = redis.pubsub()  # a Redis connection only for listening
     await pubsub.subscribe(repo.user_channel(user.id))
     forwarding = asyncio.create_task(forward_events(pubsub, websocket))
     log.info("socket open", user_id=user.id)
     try:
-        await read_frames(websocket)
+        if await repo.add_socket(redis, user.id, socket_id, PRESENCE_TTL_SECONDS) == 1:
+            await tell_friends(app, user.id, is_online=True)  # the first socket: now online
+        await read_frames(websocket, redis, user.id, socket_id)
     finally:
         forwarding.cancel()
         await asyncio.wait({forwarding})  # until it has really stopped
         await pubsub.aclose()  # stop listening and give the connection back
         log.info("socket closed", user_id=user.id)
+        if await repo.remove_socket(redis, user.id, socket_id) == 0:
+            await tell_friends(app, user.id, is_online=False)  # the last socket: now offline
 
 
 async def forward_events(pubsub: PubSub, websocket: WebSocket) -> None:
@@ -113,14 +123,16 @@ async def forward_events(pubsub: PubSub, websocket: WebSocket) -> None:
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
 
 
-async def read_frames(websocket: WebSocket) -> None:
-    """Answer the client's frames until it disconnects. Only "ping" so far; frames of a type
-    this layer does not know (or not JSON at all) are ignored."""
+async def read_frames(websocket: WebSocket, redis: Redis, user_id: int, socket_id: str) -> None:
+    """Answer the client's frames until it disconnects. Only "ping" so far: it keeps the user
+    online for PRESENCE_TTL_SECONDS more and gets "pong". Frames of a type this layer does not
+    know (or not JSON at all) are ignored."""
     while True:
         message = await websocket.receive()
         if message["type"] == "websocket.disconnect":
             return
         if frame_type(message.get("text")) == "ping":
+            await repo.refresh_socket(redis, user_id, socket_id, PRESENCE_TTL_SECONDS)
             await websocket.send_text(Event(type="pong").model_dump_json())
 
 
@@ -131,3 +143,18 @@ def frame_type(text: str | None) -> str | None:
     except ValueError:  # not JSON, or a binary frame (no text)
         return None
     return frame.get("type") if isinstance(frame, dict) else None
+
+
+async def tell_friends(app: FastAPI, user_id: int, is_online: bool) -> None:
+    """Send a "presence" event {user_id, is_online} to each of the user's friends."""
+    async with app.state.session_factory() as session:
+        friend_ids = await repo.friend_ids(session, user_id)
+    presence = PresenceOut(user_id=user_id, is_online=is_online)
+    for friend_id in friend_ids:
+        await send_to_user(app.state.redis, friend_id, "presence", presence)
+
+
+async def is_online(redis: Redis, user_id: int) -> bool:
+    """Whether the user has a socket open right now, on any API process. For the is_online
+    field of the friends list and the public profile (BE-22)."""
+    return await repo.count_live_sockets(redis, user_id) > 0

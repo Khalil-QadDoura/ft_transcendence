@@ -20,3 +20,11 @@ class Event(BaseModel):
 
     type: str
     payload: Any = None
+
+
+class PresenceOut(BaseModel):
+    """Payload of a "presence" event, sent to a user's friends when the user's first socket
+    opens (is_online true) and when the last one closes (is_online false)."""
+
+    user_id: int
+    is_online: bool

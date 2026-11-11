@@ -1,5 +1,6 @@
 """The WebSocket layer on a real server, a real database and a real Redis: tickets, the socket's
-login check (close code 1008), ping / pong and events for a user on every socket and worker.
+login check (close code 1008), ping / pong, events for a user on every socket and worker, and
+presence for friends.
 
 The server is uvicorn, started by the test on a free port (conftest.running_server), and the
 client is a real WebSocket client, like the browser's. These tests use TEST_DATABASE_URL and
@@ -32,7 +33,7 @@ from websockets.sync.client import ClientConnection, connect
 
 from app.auth import security
 from app.realtime import service
-from app.realtime.constants import TICKET_LIFETIME_SECONDS
+from app.realtime.constants import PRESENCE_TTL_SECONDS, TICKET_LIFETIME_SECONDS
 
 pytestmark = [needs_database, needs_redis]
 
@@ -150,16 +151,43 @@ def wait_for_listeners(redis_db: redis.Redis, user_id: int, count: int) -> None:
         time.sleep(0.01)
 
 
-def send_event(user_id: int, event_type: str, payload: object, redis_url: str = TEST_REDIS_URL):
-    """What another card does after a change: call send_to_user(). Any process can, so this
-    one runs outside both test servers."""
+def with_redis(work, redis_url: str = TEST_REDIS_URL):
+    """Run `work(client)` with an async Redis client, as code inside an API process does. Any
+    process can, so this runs outside the test servers."""
 
-    async def send() -> None:
+    async def run():
         client = redis.asyncio.Redis.from_url(redis_url, decode_responses=True)
-        await service.send_to_user(client, user_id, event_type, payload)
-        await client.aclose()
+        try:
+            return await work(client)
+        finally:
+            await client.aclose()
 
-    asyncio.run(send())
+    return asyncio.run(run())
+
+
+def send_event(user_id: int, event_type: str, payload: object, redis_url: str = TEST_REDIS_URL):
+    """What another card does after a change: call send_to_user()."""
+    with_redis(lambda client: service.send_to_user(client, user_id, event_type, payload), redis_url)
+
+
+def online(user_id: int) -> bool:
+    """What the friends list (BE-22) will ask: service.is_online()."""
+    return with_redis(lambda client: service.is_online(client, user_id))
+
+
+def make_friends(requester_id: int, addressee_id: int, status: str = "accepted") -> None:
+    """A friendship row, as the friends endpoints (BE-22) will write it."""
+    sql(
+        "INSERT INTO friendships (requester_id, addressee_id, status)"
+        " VALUES (:requester_id, :addressee_id, :status)",
+        requester_id=requester_id,
+        addressee_id=addressee_id,
+        status=status,
+    )
+
+
+def presence(user_id: int, is_online: bool) -> dict:
+    return {"type": "presence", "payload": {"user_id": user_id, "is_online": is_online}}
 
 
 # --- The ticket -------------------------------------------------------------------------------
@@ -292,3 +320,85 @@ def test_a_socket_that_loses_its_redis_connection_is_closed_with_1011(server, re
         redis_db.client_kill_filter(_type="pubsub")  # cut every listening connection
         # It would get no more events: the server closes it, and the client reconnects.
         assert close_code(ws) == 1011
+
+
+# --- Presence ---------------------------------------------------------------------------------
+
+
+def test_friends_hear_when_the_first_socket_opens_and_the_last_one_closes(server, redis_db):
+    ana_id, ana = sign_in(server, "ana@example.com")
+    ben_id, ben = sign_in(server, "ben@example.com")
+    make_friends(ana_id, ben_id)  # Ana asked, Ben accepted
+    with open_user_socket(server, ben) as ben_tab:
+        wait_for_listeners(redis_db, ben_id, 1)
+        with open_user_socket(server, ana):
+            assert next_frame(ben_tab) == presence(ana_id, True)
+            with open_user_socket(server, ana) as ana_tab_2:
+                assert ping(ana_tab_2) == PONG  # a second tab; Ana was online already
+                assert nothing_arrives(ben_tab)
+            assert nothing_arrives(ben_tab)  # the first tab is still open: still online
+        assert next_frame(ben_tab) == presence(ana_id, False)  # the last tab closed
+
+
+def test_presence_reaches_a_friend_on_another_api_worker(server, redis_db):
+    ana_id, ana = sign_in(server, "ana@example.com")
+    ben_id, ben = sign_in(server, "ben@example.com")
+    make_friends(ana_id, ben_id)  # Ana asked: here Ben is the one who accepted
+    with running_server(new_app()) as second_server, open_user_socket(server, ana) as ana_tab:
+        wait_for_listeners(redis_db, ana_id, 1)
+        with open_user_socket(second_server, ben):
+            assert next_frame(ana_tab) == presence(ben_id, True)
+        assert next_frame(ana_tab) == presence(ben_id, False)
+
+
+def test_no_presence_for_strangers_or_requests_not_accepted(server, redis_db):
+    ana_id, ana = sign_in(server, "ana@example.com")
+    cleo_id, cleo = sign_in(server, "cleo@example.com")  # no friendship at all
+    dan_id, dan = sign_in(server, "dan@example.com")
+    eve_id, eve = sign_in(server, "eve@example.com")
+    make_friends(dan_id, ana_id, status="pending")  # Dan asked; Ana has not answered
+    make_friends(eve_id, ana_id, status="declined")
+    with (
+        open_user_socket(server, cleo) as cleo_tab,
+        open_user_socket(server, dan) as dan_tab,
+        open_user_socket(server, eve) as eve_tab,
+    ):
+        for user_id in (cleo_id, dan_id, eve_id):
+            wait_for_listeners(redis_db, user_id, 1)
+        with open_user_socket(server, ana) as ana_tab:
+            assert ping(ana_tab) == PONG  # Ana's socket is open and counted
+            assert online(ana_id)
+            assert nothing_arrives(cleo_tab)
+            assert nothing_arrives(dan_tab)
+            assert nothing_arrives(eve_tab)
+
+
+def test_presence_is_a_key_in_redis_with_a_ttl(server, redis_db):
+    ana_id, ana = sign_in(server, "ana@example.com")
+    key = f"ws:presence:{ana_id}"
+    assert not online(ana_id)
+    with open_user_socket(server, ana) as ws:
+        assert ping(ws) == PONG
+        assert online(ana_id)
+        assert redis_db.zcard(key) == 1  # one open socket
+        assert 0 < redis_db.ttl(key) <= PRESENCE_TTL_SECONDS
+    deadline = time.monotonic() + WAIT
+    while redis_db.exists(key):  # the server cleans up just after the socket closes
+        assert time.monotonic() < deadline, "the presence key was never removed"
+        time.sleep(0.01)
+    assert not online(ana_id)
+
+
+def test_without_pings_the_user_stops_counting_as_online(server, redis_db, monkeypatch):
+    monkeypatch.setattr(service, "PRESENCE_TTL_SECONDS", 1)  # 1 s instead of 60
+    ana_id, ana = sign_in(server, "ana@example.com")
+    with open_user_socket(server, ana) as ws:
+        for _ in range(4):  # a ping every 0.5 s keeps Ana online past the 1 s limit
+            time.sleep(0.5)
+            assert ping(ws) == PONG
+        assert online(ana_id)
+        # No ping for longer than the limit, as when an API process crashes: Ana stops
+        # counting as online, and Redis deletes the key by itself.
+        time.sleep(1.5)
+        assert not online(ana_id)
+        assert not redis_db.exists(f"ws:presence:{ana_id}")
