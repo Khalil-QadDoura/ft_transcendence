@@ -9,16 +9,18 @@ app/
   main.py        app factory: settings, logging, middleware, error handlers, routers, lifespan
   core/          config (env), errors, logging (JSON), limiter, request_id, internal (/_internal guard),
                  mailer (SMTP, or Brevo's API when BREVO_API_KEY is set),
-                 storage (MinIO: signed links, file checks), queue (Celery tasks on Redis)
+                 storage (MinIO: signed links, file checks, public picture addresses),
+                 queue (Celery tasks on Redis)
   db/            base (Base + naming convention), session (each app's engine, get_session),
                  mixins (TimestampMixin, AuditMixin), models (imports every table model)
   health/        GET /api/health and the internal database check
   auth/          /api/auth: register, verify, login, refresh, logout (BE-03), plus
                  constants (lifetimes, rate limits), security (Argon2id, JWT), deps (get_current_user)
-  users/         /api/users/me: read, partial update, soft delete (BE-05), plus
-                 constants (minimum age, field lengths)
+  users/         /api/users/me: read, partial update, soft delete (BE-05), avatar_url (BE-08),
+                 plus constants (minimum age, field lengths)
   media/         /api/media: intro video upload-url, confirm, mine, post, unpost, delete,
-                 feed (BE-07), plus constants (video limits, link lifetimes)
+                 feed (BE-07); avatar and company logo upload-url and confirm, the default
+                 avatar picture (BE-08); plus constants (video and picture limits, link lifetimes)
   worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
   friends/ companies/ jobs/ conversations/ applications/ game/
                  only models.py so far (BE-02); each feature card adds its other four files
@@ -55,7 +57,7 @@ docker build -t wozu-backend .     # runtime image only: no tests, no test tools
 ```
 
 The database tests (`tests/test_schema.py`, `tests/test_auth.py`, `tests/test_users.py`,
-`tests/test_media.py`) need an empty PostgreSQL with PostGIS. They delete every table (schema) or every user (auth, users), so
+`tests/test_media.py`, `tests/test_pictures.py`) need an empty PostgreSQL with PostGIS. They delete every table (schema) or every user (auth, users), so
 they only use `TEST_DATABASE_URL`, and only if its database name contains `test`:
 
 ```sh
@@ -67,7 +69,10 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:5432/wozu_test py
 The media tests also need a MinIO and a Redis, again only through `TEST_*` variables (they empty
 the `media-test` bucket and the `celery` queue); the docstring of `tests/test_media.py` shows the
 two `docker run` lines. Without `TEST_MINIO_ENDPOINT`, `TEST_MINIO_ACCESS_KEY`,
-`TEST_MINIO_SECRET_KEY` and `TEST_REDIS_URL` they are skipped.
+`TEST_MINIO_SECRET_KEY` and `TEST_REDIS_URL` they are skipped. The avatar and logo tests
+(`tests/test_pictures.py`) need the same MinIO but no Redis; they empty the `pictures-test`
+bucket and give it the anonymous policy of `minio-init` (download under `avatars/` and
+`logos/`).
 
 ## Conventions
 
@@ -75,10 +80,11 @@ two `docker run` lines. Without `TEST_MINIO_ENDPOINT`, `TEST_MINIO_ACCESS_KEY`,
 - **Request id**: every response has an `x-request-id` header, and every log line of that request carries the same `request_id`.
 - **Rate limits** are opt-in per route: `@limiter.limit("5/minute")` from `app.core.limiter`, with a `request: Request` argument on the route. Limits count per client IP, taken from the `X-Real-IP` header the proxy sets (the direct connection's IP when there is no proxy). Over the limit → 429 with the error body.
 - **Login check**: a route that needs a logged-in user takes `user: CurrentUser` (from `app.auth.deps`). It answers 401 when the `Authorization: Bearer` token is missing, wrong, expired, or older than the user's `token_version`. Token lifetimes and the auth rate limits are in `app/auth/constants.py`.
-- **Answers**: a route returns its `...Out` schema, e.g. `UserOut.model_validate(user)`, never the table model, so only the fields listed in the schema leave the server (never `password_hash` or `token_version`).
+- **Answers**: a route returns its `...Out` schema, e.g. `VideoStatusOut.model_validate(video)` or `users.service.to_user_out(storage, user)`, never the table model, so only the fields listed in the schema leave the server (never `password_hash` or `token_version`).
 - **Partial updates (PATCH)**: every field of the request schema has a default and the schema has `extra="forbid"`; the service applies only `data.model_dump(exclude_unset=True)`. A field that is not sent keeps its value, and an unknown field gets 422 (see `app/users/`).
 - **Email**: a route takes `mailer: Annotated[Mailer, Depends(get_mailer)]` and sends with `background.add_task(mailer.send, to, subject, body)`, so the answer does not wait for the mail server; a failed send is logged. Tests replace `get_mailer` with a fake. Locally, emails land in Mailpit (INF-05) at `https://localhost/mail`.
-- **Files** never pass through the API: a route returns a link signed for `MINIO_EXTERNAL_ENDPOINT`, the browser PUTs the file there, then a `confirm` route checks the file in storage itself (`Storage.size`, `Storage.first_bytes` from `app.core.storage`). MinIO calls wait for the network, so routes run them with `asyncio.to_thread`.
+- **Files** never pass through the API: a route returns a link signed for `MINIO_EXTERNAL_ENDPOINT`, the browser PUTs the file there, then a `confirm` route checks the file in storage itself (`Storage.stat`, `Storage.first_bytes` from `app.core.storage`). MinIO calls wait for the network, so routes run them with `asyncio.to_thread`.
+- **Pictures are public, videos are not**: anyone may download the files under `avatars/` and `logos/` (the bucket policy of `minio-init`, INF-04), so a response gives their plain address, `Storage.avatar_url(key)` (the default picture when the key is empty) or `Storage.logo_url(key)`, never a signed link. Every other file (intro videos) is private and only reached with a signed link. A route that replaces or forgets a picture deletes its old file (`service.remove_files`).
 - **Background tasks for the worker**: a route takes `queue: Annotated[TaskQueue, Depends(get_queue)]` and runs `background.add_task(queue.moderate_video, ...)`: the task lands on the Redis queue after the answer, and a failure is logged (like the emails).
 - **Internal routes** go under `/_internal`. They are left out of the OpenAPI spec and answer 404 unless the `X-Internal-Key` header matches `INTERNAL_API_KEY`; the proxy also blocks them.
 - **OpenAPI** is at `/api/openapi.json` (the frontend generates its types from it); Swagger UI is at `/api/docs` only when `ENV=dev`.
@@ -111,7 +117,8 @@ A test needing application tables must run Alembic first; do not use `create_all
 with the test's `db` session, so setup queries and requests share one isolated transaction.
 Route-test apps made with `build_app()` use a recording mailbox via `get_mailer`;
 SMTP/Brevo adapter tests still exercise the real Mailer with their explicit local fakes.
-There are no MinIO or Celery mocks: `tests/test_media.py` uses a real MinIO and Redis.
+There are no MinIO or Celery mocks: `tests/test_media.py` uses a real MinIO and Redis, and
+`tests/test_pictures.py` a real MinIO (one test makes its delete fail on purpose).
 
 The backend CI job provisions PostgreSQL 15 + PostGIS, Redis and MinIO, runs lint/format checks and the
 complete backend suite, and fails if any test is skipped. This provides BE-20 evidence;
