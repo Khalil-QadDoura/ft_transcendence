@@ -8,7 +8,8 @@ FastAPI + SQLAlchemy 2 (async) + Alembic, Python 3.11. Every route lives under `
 app/
   main.py        app factory: settings, logging, middleware, error handlers, routers, lifespan
   core/          config (env), errors, logging (JSON), limiter, request_id, internal (/_internal guard),
-                 mailer (SMTP, or Brevo's API when BREVO_API_KEY is set)
+                 mailer (SMTP, or Brevo's API when BREVO_API_KEY is set),
+                 storage (MinIO: signed links, file checks), queue (Celery tasks on Redis)
   db/            base (Base + naming convention), session (each app's engine, get_session),
                  mixins (TimestampMixin, AuditMixin), models (imports every table model)
   health/        GET /api/health and the internal database check
@@ -16,7 +17,10 @@ app/
                  constants (lifetimes, rate limits), security (Argon2id, JWT), deps (get_current_user)
   users/         /api/users/me: read, partial update, soft delete (BE-05), plus
                  constants (minimum age, field lengths)
-  friends/ companies/ jobs/ media/ conversations/ applications/ game/
+  media/         /api/media: intro video upload-url, confirm, mine, post, unpost, delete,
+                 feed (BE-07), plus constants (video limits, link lifetimes)
+  worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
+  friends/ companies/ jobs/ conversations/ applications/ game/
                  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
@@ -50,8 +54,8 @@ ruff check . && ruff format --check .
 docker build -t wozu-backend .     # runtime image only: no tests, no test tools
 ```
 
-The database tests (`tests/test_schema.py`, `tests/test_auth.py`, `tests/test_users.py`) need an
-empty PostgreSQL with PostGIS. They delete every table (schema) or every user (auth, users), so
+The database tests (`tests/test_schema.py`, `tests/test_auth.py`, `tests/test_users.py`,
+`tests/test_media.py`) need an empty PostgreSQL with PostGIS. They delete every table (schema) or every user (auth, users), so
 they only use `TEST_DATABASE_URL`, and only if its database name contains `test`:
 
 ```sh
@@ -59,6 +63,11 @@ docker run -d --name wozu-test-db -p 5432:5432 -e POSTGRES_PASSWORD=test \
     -e POSTGRES_DB=wozu_test postgis/postgis:15-3.4
 TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:5432/wozu_test pytest -q
 ```
+
+The media tests also need a MinIO and a Redis, again only through `TEST_*` variables (they empty
+the `media-test` bucket and the `celery` queue); the docstring of `tests/test_media.py` shows the
+two `docker run` lines. Without `TEST_MINIO_ENDPOINT`, `TEST_MINIO_ACCESS_KEY`,
+`TEST_MINIO_SECRET_KEY` and `TEST_REDIS_URL` they are skipped.
 
 ## Conventions
 
@@ -69,6 +78,8 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:5432/wozu_test py
 - **Answers**: a route returns its `...Out` schema, e.g. `UserOut.model_validate(user)`, never the table model, so only the fields listed in the schema leave the server (never `password_hash` or `token_version`).
 - **Partial updates (PATCH)**: every field of the request schema has a default and the schema has `extra="forbid"`; the service applies only `data.model_dump(exclude_unset=True)`. A field that is not sent keeps its value, and an unknown field gets 422 (see `app/users/`).
 - **Email**: a route takes `mailer: Annotated[Mailer, Depends(get_mailer)]` and sends with `background.add_task(mailer.send, to, subject, body)`, so the answer does not wait for the mail server; a failed send is logged. Tests replace `get_mailer` with a fake. Locally, emails land in Mailpit (INF-05) at `https://localhost/mail`.
+- **Files** never pass through the API: a route returns a link signed for `MINIO_EXTERNAL_ENDPOINT`, the browser PUTs the file there, then a `confirm` route checks the file in storage itself (`Storage.size`, `Storage.first_bytes` from `app.core.storage`). MinIO calls wait for the network, so routes run them with `asyncio.to_thread`.
+- **Background tasks for the worker**: a route takes `queue: Annotated[TaskQueue, Depends(get_queue)]` and runs `background.add_task(queue.moderate_video, ...)`: the task lands on the Redis queue after the answer, and a failure is logged (like the emails).
 - **Internal routes** go under `/_internal`. They are left out of the OpenAPI spec and answer 404 unless the `X-Internal-Key` header matches `INTERNAL_API_KEY`; the proxy also blocks them.
 - **OpenAPI** is at `/api/openapi.json` (the frontend generates its types from it); Swagger UI is at `/api/docs` only when `ENV=dev`.
 - **Migrations** run on container start (`alembic upgrade head` in `docker-entrypoint.sh`).
@@ -100,9 +111,9 @@ A test needing application tables must run Alembic first; do not use `create_all
 with the test's `db` session, so setup queries and requests share one isolated transaction.
 Route-test apps made with `build_app()` use a recording mailbox via `get_mailer`;
 SMTP/Brevo adapter tests still exercise the real Mailer with their explicit local fakes.
-There are no global MinIO/Celery mocks: those services are not integrated in this slice.
+There are no MinIO or Celery mocks: `tests/test_media.py` uses a real MinIO and Redis.
 
-The backend CI job provisions PostgreSQL 15 + PostGIS, runs lint/format checks and the
+The backend CI job provisions PostgreSQL 15 + PostGIS, Redis and MinIO, runs lint/format checks and the
 complete backend suite, and fails if any test is skipped. This provides BE-20 evidence;
 INF-06 still owns the full stack checks and repository protection settings.
 
