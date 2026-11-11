@@ -367,3 +367,16 @@ async def confirm_logo(session: AsyncSession, storage: Storage, user: User, key:
     await session.commit()
     if old_key and old_key != key:
         await remove_files(storage, [old_key])
+
+
+async def forget_pictures(session: AsyncSession, user: User) -> list[str]:
+    """For an account being deleted: empty its avatar and its company's logo (saved with the
+    caller's commit). Returns the keys of their files, for remove_files once that is saved."""
+    keys = [user.avatar_object_key]
+    user.avatar_object_key = None
+    company = await repo.get_active_company(session, user.id)
+    if company is not None:
+        # Nobody can change or remove this logo any more once its only owner is gone.
+        keys.append(company.logo_object_key)
+        company.logo_object_key = None
+    return [key for key in keys if key]

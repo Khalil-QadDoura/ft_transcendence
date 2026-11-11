@@ -3,6 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.storage import Storage
+from app.media import service as media
 from app.users.models import User
 from app.users.schemas import UserOut, UserUpdate
 
@@ -35,12 +36,18 @@ async def update_profile(session: AsyncSession, user: User, data: UserUpdate) ->
     return user
 
 
-async def delete_account(session: AsyncSession, user: User) -> None:
+async def delete_account(session: AsyncSession, storage: Storage, user: User) -> None:
     """Soft delete: the row stays, only its status becomes "deleted".
 
     That one change is enough to lock the account: login (auth/service.py) and every
     protected request and refresh (auth/deps.py, auth/service.py) check that the status is
     "active", so the user's tokens stop working at once and logging in again gets 401.
+
+    The pictures cannot just be hidden: anyone who kept the address of a file under avatars/
+    or logos/ could still download it. So the avatar and the logo of my company are emptied,
+    and once that is saved, their files are deleted from storage at once (BE-08).
     """
+    old_files = await media.forget_pictures(session, user)
     user.status = "deleted"
     await session.commit()
+    await media.remove_files(storage, old_files)
