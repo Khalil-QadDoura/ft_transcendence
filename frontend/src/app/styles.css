@@ -564,3 +564,25 @@
     }
   }
 }
+
+@layer base {
+  .language-picker select {
+    max-width: 9rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 0.6rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .language-picker select:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 3px;
+  }
+  @media (max-width: 600px) {
+    .language-picker select {
+      max-width: 6.5rem;
+    }
+  }
+}

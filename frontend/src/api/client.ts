@@ -1,3 +1,4 @@
+import { activeLanguage } from "../i18n";
 /**
  * API Client for WOZU Web (ft_transcendence)
  * FE-20: Build the API client with token refresh and error handling
@@ -197,6 +198,7 @@ export async function refreshAccessToken(
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          "Accept-Language": activeLanguage(),
         },
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
@@ -290,6 +292,8 @@ export async function apiClient<T = unknown>(
   }
 
   const headers = new Headers(options.headers || {});
+  if (!headers.has("Accept-Language"))
+    headers.set("Accept-Language", activeLanguage());
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
   }
