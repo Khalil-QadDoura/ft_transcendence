@@ -110,7 +110,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 
 **`GET /jobs/open` query:** `lat`, `lng`, `radius_km` (≤ 500; all three for radius), `schedule` (`full_time`, `part_time`, `internship`), `salary_min`, `salary_max`, `urgency` (`normal`, `urgent`, `hot`), `keyword` (full-text), `position` (title contains), `sort_by` (`newest` default, `nearest` needs lat/lng), `cursor`, `limit` 1–100 (default 20).
 
-- `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (active or open, default active), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
+- `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
 - `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, views_count, applications_count, new_applications_count, created_by_id, updated_by_id, created_at, updated_at}`.
 - `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at}`.
 - `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, status, country, city, district, country_code, created_at, updated_at}`.
