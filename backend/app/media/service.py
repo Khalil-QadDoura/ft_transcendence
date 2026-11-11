@@ -357,7 +357,9 @@ async def confirm_avatar(
     """Publish the checked picture as my avatar. The file of my old avatar is deleted: its
     public link must not keep working once I have changed my picture."""
     # Lock my row until the commit (SELECT ... FOR UPDATE): two confirms of mine at the same
-    # time run one after the other, and the second finds the upload already gone.
+    # time run one after the other, and the second finds the upload already gone. The same
+    # lock as the video limit's (repo.lock_user), but refresh also reads my row again: while
+    # I waited, another confirm may have changed my avatar, whose file I delete below.
     await session.refresh(user, with_for_update=True)
     new_key = await publish_picture(storage, AVATARS_FOLDER, user.id, staging_key)
     old_key = user.avatar_object_key
