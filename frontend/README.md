@@ -32,4 +32,6 @@ Open http://127.0.0.1:5174. Port 5174 allows the separate visual prototype on 51
 
 ## Scope and review
 
+FE-03 adds [shared form validation](docs/form-validation.md): per-domain Zod schemas, React Hook Form resolver setup, and safe mapping of backend 422 errors. The guide records pending backend contracts, translation keys and consumer responsibilities.
+
 Routing, auth guards and the responsive shell follow in FE-02; API auth belongs to FE-20/FE-04. AI assistance (Codex) was used for this scaffold, documentation and checks. Zayid must review and be able to explain the changes before defense. Human cross-pair review and green CI are required before merge, per PM-00.

@@ -11,6 +11,7 @@ from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.companies import service as companies
 from app.companies.models import Company
 from app.core.queue import TaskQueue
 from app.core.storage import Storage
@@ -342,8 +343,8 @@ async def confirm_avatar(session: AsyncSession, storage: Storage, user: User, ke
 
 
 async def find_my_company(session: AsyncSession, user: User) -> Company:
-    """My company that is not deleted, or 404: only an employer has a logo."""
-    company = await repo.get_active_company(session, user.id)
+    """My company that is not deleted (BE-21 finds it), or 404: only an employer has a logo."""
+    company = await companies.get_my_company(session, user.id)
     if company is None:
         raise HTTPException(status_code=404, detail=NO_COMPANY)
     return company
@@ -374,7 +375,7 @@ async def forget_pictures(session: AsyncSession, user: User) -> list[str]:
     caller's commit). Returns the keys of their files, for remove_files once that is saved."""
     keys = [user.avatar_object_key]
     user.avatar_object_key = None
-    company = await repo.get_active_company(session, user.id)
+    company = await companies.get_my_company(session, user.id)
     if company is not None:
         # Nobody can change or remove this logo any more once its only owner is gone.
         keys.append(company.logo_object_key)
