@@ -67,5 +67,6 @@
   "yourSessionCouldNotBeRestoredRightNowYourSaved": "Your session could not be restored right now. Your saved sign-in has been kept.",
   "tryAgain": "Try again",
   "yourPasswordWasUpdatedSignInWithYourNewPassword": "Your password was updated. Sign in with your new password.",
-  "yourAccountHasBeenDeactivated": "Your account has been deactivated."
+  "yourAccountHasBeenDeactivated": "Your account has been deactivated.",
+  "forgotPassword": "Forgot password?"
 }
