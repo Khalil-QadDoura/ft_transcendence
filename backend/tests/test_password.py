@@ -8,13 +8,16 @@ straight to the database, already verified, and log in through the real /api/aut
 import hashlib
 import re
 from datetime import timedelta
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database, sql
 from fastapi.testclient import TestClient
 
 from app.auth import security
+from app.core import mailer as mailer_module
 from app.core.limiter import limiter
+from app.core.mailer import get_mailer
 
 pytestmark = needs_database
 
@@ -390,3 +393,74 @@ def test_a_password_change_closes_open_reset_links(client, ana):
     assert response.status_code == 400
     assert response.json() == INVALID_LINK
     assert login(client, password=NEW_PASSWORD).status_code == 200
+
+
+# --- Regression tests: issues #4 and #5 of the reference (docs/reference/wozu-backend.md) ---
+
+
+def register(client, email: str):
+    return client.post("/api/auth/register", json={"email": email, "password": PASSWORD})
+
+
+def test_issue_4_email_links_open_frontend_pages_not_api_routes():
+    """Issue #4: the reference's reset link pointed at its POST-only API route, so opening it
+    in a browser (a GET) showed 405, and the verify link showed raw JSON. Both links must
+    open pages of the frontend, at FRONTEND_BASE_URL; those pages then call the API."""
+    sql("TRUNCATE users RESTART IDENTITY CASCADE")
+    frontend = "https://wozu.example:8443"
+    # A trailing slash in the setting must not give "//reset-password".
+    app = build_app(database_url=TEST_DATABASE_URL, frontend_base_url=frontend + "/")
+    with TestClient(app) as client:
+        make_user("ana@example.com")
+        forgot_password(client, "ana@example.com")
+        register(client, "ben@example.com")
+        reset_email, verify_email = sent_emails(client)
+
+        reset_link = re.search(r"https://\S+", reset_email["body"]).group()
+        verify_link = re.search(r"https://\S+", verify_email["body"]).group()
+        assert reset_link.startswith(f"{frontend}/reset-password?token=")
+        assert verify_link.startswith(f"{frontend}/verify-email?token=")
+        # What the reference's link did: a GET on the API's POST-only route.
+        assert client.get("/api/auth/reset-password").status_code == 405
+        # Ours opens the frontend page /reset-password (not under /api). The page reads the
+        # token from the link and posts it with the new password: that works.
+        address = urlsplit(reset_link)
+        assert address.path == "/reset-password"
+        token = parse_qs(address.query)["token"][0]
+        assert reset_password(client, token).status_code == 204
+
+
+def test_issue_5_without_a_brevo_key_the_emails_go_out_over_smtp(smtp_server, monkeypatch):
+    """Issue #5: the reference sent email only through Brevo's paid API; without a key the
+    link was only printed in the log. With no BREVO_API_KEY, the one shared mailer now sends
+    the reset and the verify email over SMTP: to Mailpit in Docker, to a test server here."""
+    port, inbox = smtp_server
+    brevo_calls = []
+    monkeypatch.setattr(
+        mailer_module.urllib.request, "urlopen", lambda *args, **kwargs: brevo_calls.append(args)
+    )
+    sql("TRUNCATE users RESTART IDENTITY CASCADE")
+    app = build_app(
+        database_url=TEST_DATABASE_URL,
+        smtp_host="127.0.0.1",
+        smtp_port=port,
+        mail_from="no-reply@wozu.local",
+        brevo_api_key="",
+    )
+    del app.dependency_overrides[get_mailer]  # the real mailer, not the test mailbox
+    with TestClient(app) as client:
+        make_user("ana@example.com")
+        assert forgot_password(client, "ana@example.com").status_code == 202
+        assert register(client, "ben@example.com").status_code == 202
+
+        reset_email, verify_email = inbox.emails
+        assert reset_email["From"] == "no-reply@wozu.local"
+        assert reset_email["To"] == "ana@example.com"
+        assert reset_email["Subject"] == "Reset your WOZU password"
+        assert verify_email["To"] == "ben@example.com"
+        assert verify_email["Subject"] == "Verify your WOZU account"
+        assert "https://localhost/verify-email?token=" in verify_email.get_content()
+        # The link in the delivered email works.
+        token = reset_token_in({"body": reset_email.get_content()})
+        assert reset_password(client, token).status_code == 204
+    assert brevo_calls == []
