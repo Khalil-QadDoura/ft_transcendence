@@ -91,7 +91,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
 | POST | `/companies` | Bearer | `{name, description?, country?, city?, district?}` | 201 `CompanyOut` | 409 already has one |
-| GET | `/companies/me` | Bearer | — | 200 `CompanyOut` | 404 none (to change: 200 `null`) |
+| GET | `/companies/me` | Bearer | — | 200 `CompanyOut` or `null` | — |
 | PATCH | `/companies/me` | Bearer | `{name, country, city, district?, country_code?}` | 200 `CompanyOut` | 404, 422 |
 | DELETE | `/companies` | Bearer | — | 204 (soft, idempotent) | — |
 | POST | `/jobs` | Bearer (employer) | `JobCreate` | 201 `JobOut` | 404 no company, 422 |
@@ -134,7 +134,7 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 | POST | `/media/company-logo/confirm` | Bearer (employer) | `{object_key}` | 204 | 404 |
 
 - Statuses: moderation `pending → approved | rejected` (+ `moderation_error` once fixed); lifecycle `loaded → posted ⇄ unposted`, any → `deleted`. Poll `/media/intro-video/mine` while a video is `pending` (or listen for a WS event once added).
-- The browser PUT to `put_url` is a plain PUT of the file bytes. It works from a browser only once MinIO is reachable over HTTPS with CORS for our origin (Infrastructure doc). Use XHR or fetch with upload progress for the progress bar.
+- The browser PUT to `put_url` is a plain PUT of the file bytes to `https://<host>/files/<object_key>?X-Amz-…`. That is the frontend's own origin, so no CORS is involved (INF-04, Infrastructure doc). Use XHR or fetch with upload progress for the progress bar.
 - With `job_id`, the employer feed lists that job's applicants first, then candidates whose position matches the job title, then everyone else.
 - Avatar and logo are returned only as `avatar_object_key` / `logo_object_key` today; the frontend cannot turn a key into a URL. See planned changes.
 
@@ -206,7 +206,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | Done | Change | Why |
 | --- | --- | --- |
 | \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through Caddy: no CORS, no mixed content |
-| \[ \] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
+| [x] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
 | \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
