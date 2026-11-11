@@ -110,3 +110,69 @@ test("Khalil backend: register, verify, login, bearer profile, reload, concurren
   });
   expect(reuse.status).toBe(401);
 });
+
+test("Khalil backend: recovery, one-use reset, password change and account deletion", async () => {
+  const client = await import("../src/api/client");
+  activeClient = client;
+  const { accountApi } = await import("../src/features/account/api");
+  const gateway = (
+    await import("../src/features/auth/gateway")
+  ).createAuthGateway();
+  const credentials = {
+    email: `fe05-${crypto.randomUUID()}@example.com`,
+    password: `Test-${crypto.randomUUID()}`,
+  };
+  await gateway.register(credentials);
+  const verifyMail = await realFetch(
+    `${origin}/__review/mail?email=${encodeURIComponent(credentials.email)}`,
+  );
+  await gateway.verify(
+    new URL(
+      ((await verifyMail.json()) as { link: string }).link,
+    ).searchParams.get("token")!,
+  );
+  await gateway.login(credentials);
+  const oldAccess = client.getAccessToken()!;
+  const known = await accountApi.forgot(credentials.email);
+  const unknown = await accountApi.forgot(
+    `unknown-${crypto.randomUUID()}@example.com`,
+  );
+  expect(known).toEqual(unknown);
+  const resetMail = await realFetch(
+    `${origin}/__review/mail?email=${encodeURIComponent(credentials.email)}`,
+  );
+  const resetLink = new URL(
+    ((await resetMail.json()) as { link: string }).link,
+  );
+  expect(resetLink.pathname).toBe("/reset-password");
+  const token = resetLink.searchParams.get("token")!;
+  const resetPassword = `Reset-${crypto.randomUUID()}`;
+  await accountApi.reset(token, resetPassword);
+  expect(client.getAccessToken()).toBeNull();
+  expect(
+    (
+      await realFetch(`${origin}/api/users/me`, {
+        headers: { Authorization: `Bearer ${oldAccess}` },
+      })
+    ).status,
+  ).toBe(401);
+  await expect(accountApi.reset(token, resetPassword)).rejects.toMatchObject({
+    status: 400,
+  });
+  await gateway.login({ ...credentials, password: resetPassword });
+  await expect(
+    accountApi.change("wrong-current-password", "another-password"),
+  ).rejects.toMatchObject({ status: 400 });
+  expect(client.getAccessToken()).not.toBeNull();
+  await accountApi.change(resetPassword, "a-new-password-for-testing");
+  expect(client.getStoredRefreshToken()).toBeNull();
+  await gateway.login({
+    ...credentials,
+    password: "a-new-password-for-testing",
+  });
+  await accountApi.remove();
+  expect(client.getAccessToken()).toBeNull();
+  await expect(
+    gateway.login({ ...credentials, password: "a-new-password-for-testing" }),
+  ).rejects.toMatchObject({ status: 401 });
+});
