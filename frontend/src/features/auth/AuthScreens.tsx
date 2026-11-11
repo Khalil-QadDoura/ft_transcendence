@@ -278,8 +278,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       </p>
       <p className="auth-hint">
         {copy.learnHowWeHandleYourInformationInOur}{" "}
-        <Link to="/privacy">{copy.privacyPolicy}</Link>{" "}
-        {copy.and} <Link to="/terms">{copy.termsOfService}</Link>.
+        <Link to="/privacy">{copy.privacyPolicy}</Link> {copy.and}{" "}
+        <Link to="/terms">{copy.termsOfService}</Link>.
       </p>
     </AuthFrame>
   );
