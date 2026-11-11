@@ -4,6 +4,7 @@ import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
+import { JobsPage } from "../features/jobs/JobsPage";
 function ComingSoon({ title }: { title: string }) {
   return (
     <section className="empty-page">
@@ -48,8 +49,8 @@ export const routes: RouteObject[] = [
       { index: true, element: <Welcome /> },
       { path: "privacy", element: <LegalPage kind="privacy" /> },
       { path: "terms", element: <LegalPage kind="terms" /> },
+      { path: "jobs", element: <JobsPage /> },
       ...pages([
-        ["jobs", "Find your next chapter."],
         ["jobs/:id", "A closer look."],
         ["users/:id", "Meet the person."],
         ["game/rules", "How to play."],
