@@ -45,6 +45,8 @@ VIDEO_NOT_FOUND = "Video not found"
 NOT_APPROVED = "Only a video approved by moderation can be posted"
 ALREADY_POSTED = "This video is already posted"
 NOT_POSTED = "This video is not posted"
+# Written like the other 422s of the API ("<where> → <field>: <message>").
+UNKNOWN_CURSOR = "query → cursor: No video has this id: use the next_cursor of the page before"
 
 
 def object_key_for(user_id: int) -> str:
@@ -218,7 +220,12 @@ async def get_feed(
     # need its group too: by id alone, a page would skip the newer videos of later groups.
     after = None
     if cursor is not None:
-        after = (await repo.feed_group_of(session, cursor, job_id), cursor)
+        group = await repo.feed_group_of(session, cursor, job_id)
+        # No video has this id, so it is no next_cursor of ours. A video that has only left
+        # the feed since (unposted, deleted) still has its row, so its next page still comes.
+        if group is None:
+            raise HTTPException(status_code=422, detail=UNKNOWN_CURSOR)
+        after = (group, cursor)
     # One video more than asked for, only to know whether there is a next page.
     rows = await repo.list_feed(session, job_id, employer, after, limit + 1)
     page = rows[:limit]

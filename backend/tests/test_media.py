@@ -763,6 +763,43 @@ def test_the_feed_refuses_a_bad_limit_or_lifetime(client, ana, query):
     assert response.status_code == 422
 
 
+UNKNOWN_CURSOR = "query → cursor: No video has this id: use the next_cursor of the page before"
+
+
+@pytest.mark.parametrize("for_a_job", [False, True])
+@pytest.mark.parametrize(
+    ("cursor", "detail"),
+    [
+        (999999, UNKNOWN_CURSOR),  # a positive id that no video has
+        (0, "query → cursor: Input should be greater than or equal to 1"),
+        (-5, "query → cursor: Input should be greater than or equal to 1"),
+        # One more than the largest id the database can hold (BIGINT).
+        (2**63, "query → cursor: Input should be less than or equal to 9223372036854775807"),
+        (
+            "abc",
+            "query → cursor: Input should be a valid integer, unable to parse string as an integer",
+        ),
+    ],
+)
+def test_the_feed_refuses_a_cursor_that_is_no_video_with_422(
+    client, ana, for_a_job, cursor, detail
+):
+    add_video(ana.id)
+    query = {"job_id": make_company_with_job(ana)} if for_a_job else {}
+    response = client.get(
+        "/api/media/feed", params={**query, "cursor": cursor}, headers=ana.headers
+    )
+    assert response.json() == error(422, detail)
+
+
+def test_a_cursor_still_works_after_its_video_has_left_the_feed(client, ana):
+    ids = [add_video(add_user(f"user{number}@example.com")) for number in range(3)]
+    first_page = feed(client, ana, limit=1)
+    # Unposted between two pages: its id is still a video, so the next page still comes.
+    sql("UPDATE intro_videos SET lifecycle_status = 'unposted' WHERE id = :id", id=ids[2])
+    assert feed_ids(client, ana, cursor=first_page["next_cursor"]) == [ids[1], ids[0]]
+
+
 def test_employers_see_only_videos_rated_a_or_b(client, ana):
     graded = {
         rating: add_video(add_user(f"{rating}@example.com"), rating=rating)

@@ -114,7 +114,7 @@ async def list_feed(
     session: AsyncSession,
     job_id: int | None,
     employer: bool,
-    after: tuple[int | None, int] | None,
+    after: tuple[int, int] | None,
     limit: int,
 ) -> list:
     """Approved and posted videos of active accounts, with their author: by group, then newest

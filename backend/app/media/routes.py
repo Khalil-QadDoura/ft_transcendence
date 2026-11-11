@@ -13,6 +13,7 @@ from app.media import service
 from app.media.constants import (
     FEED_DEFAULT_LIMIT,
     FEED_MAX_LIMIT,
+    MAX_ID,
     MAX_URL_EXPIRES_SEC,
     MIN_URL_EXPIRES_SEC,
     VIEW_URL_EXPIRES_SEC,
@@ -90,7 +91,8 @@ async def get_feed(
     session: Session,
     storage: Files,
     limit: Annotated[int, Query(ge=1, le=FEED_MAX_LIMIT)] = FEED_DEFAULT_LIMIT,
-    cursor: int | None = None,
+    # 1 or more and small enough to be an id, else 422 before the database is asked.
+    cursor: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
     job_id: int | None = None,
     expires_sec: ExpiresSec = VIEW_URL_EXPIRES_SEC,
 ) -> FeedOut:
