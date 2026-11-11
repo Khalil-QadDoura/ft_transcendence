@@ -27,6 +27,8 @@ MAX_URL_EXPIRES_SEC = 3600
 # Videos per page of the feed.
 FEED_DEFAULT_LIMIT = 20
 FEED_MAX_LIMIT = 50
+# The largest id the database can hold (BIGINT): a bigger cursor can be no video's id.
+MAX_ID = 2**63 - 1
 # An employer (a user with an active company) sees only videos graded A or B.
 EMPLOYER_FEED_RATINGS = ("A", "B")
 # With job_id: the applicants still waiting for an answer come first.

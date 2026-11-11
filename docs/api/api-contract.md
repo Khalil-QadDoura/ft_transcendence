@@ -32,9 +32,9 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials (same answer for an unknown email), 403 email not verified, 429 |
 | POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
 | POST | `/auth/logout` | — | `{refresh_token}` (optional) | 204 always, even with no token or a bad one | — |
-| POST | `/auth/change-password` | Bearer | `{current_password, new_password}` | 204; all tokens revoked | 400 `wrong_current_password` |
-| POST | `/auth/forgot-password` | — | `{email}` | 202 always | — |
-| POST | `/auth/reset-password` | — | `{token, new_password}` | 204; all tokens revoked | 400 invalid / expired |
+| POST | `/auth/change-password` | Bearer | `{current_password, new_password}` new password 8–128 | 204; all tokens revoked | 400 wrong current password, 401, 422, 429 |
+| POST | `/auth/forgot-password` | — | `{email}` | 202 `{message}` always, whether the email has an account or not | 422 not an email, 429 |
+| POST | `/auth/reset-password` | — | `{token, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
 | PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
 | DELETE | `/users/me` | Bearer | — | 204 (soft delete) | 401 |
@@ -47,6 +47,14 @@ Sign-up and login in the new backend (BE-03):
 - The verification email links to the frontend page `<FRONTEND_BASE_URL>/verify-email?token=…` (valid 24 h); that page calls `GET /api/auth/verify?token=…`. The link carries `ver` (`users.token_version`), so **only the newest link is valid**: it verifies the account with the newest password, and every older link answers 400. Opening the newest link twice answers 200 with `updated: false`. A link and a sign-up arriving together are handled one after the other by the database, so a sign-up never changes an account that has just been verified (that sign-up gets 409).
 - Access token: JWT (HS256), 15 min, claims `sub` (user id), `scope` (`access`), `ver` (`users.token_version`), `jti`, `iat`, `exp`. Refresh token: JWT, 30 days, stored by its `jti` in `refresh_tokens`; each refresh revokes it and returns a new pair (rotation), and a reused one gets 401.
 - A deleted account gets the same 401 as a wrong password at login, and 401 on every protected route.
+
+Passwords in the new backend (BE-04):
+
+- `POST /auth/change-password` needs the right current password, else 400 `"Wrong current password"` (400, not 401, so the client does not refresh and log out). The new password follows the sign-up rule (8–128). On success `users.token_version` goes up by 1: from then on every access and refresh token of the user gets 401, the one that made the request too, so the frontend sends the user to log in again.
+- `POST /auth/forgot-password` answers the same 202 `{"message": "If this email has an account, a reset link is on its way"}` for any well-formed email (no account enumeration). Only an active account with a verified email gets the email, which links to the frontend page `<FRONTEND_BASE_URL>/reset-password?token=…`. The token is 64 random URL-safe characters, valid 1 h, single use; the database keeps only its SHA-256 (`password_reset_tokens.token`).
+- `POST /auth/reset-password` is called by that page with `{token, new_password}`. 204: the password is replaced and `token_version` goes up, as for a change. A wrong, expired or already used token gets 400 `"Invalid or expired link"`; a 422 (a bad new password) does not use up the link.
+- After a change or a reset, every other reset link of the user that still works is closed too: all of the user's tokens (access, refresh, reset) stop working together.
+- Both emails (verify and reset) go through one sender: SMTP to Mailpit by default (`SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM`), Brevo's API only when `BREVO_API_KEY` is set.
 
 The profile in the new backend (BE-05):
 
@@ -127,7 +135,7 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 | POST | `/media/intro-video/{id}/post` | Bearer | — | 200 `{id, moderation_status, lifecycle_status}`; previous posted video becomes `unposted` | 404 not mine / deleted, 409 not approved / already posted |
 | POST | `/media/intro-video/{id}/unpost` | Bearer | — | 200 same shape | 404, 409 not posted |
 | POST | `/media/intro-video/{id}/delete` | Bearer | — | 200 same shape (soft delete) | 404 not mine / already deleted |
-| GET | `/media/feed` | Bearer | query `limit` ≤ 50, `cursor`, `expires_sec`, `job_id?` | 200 `{items: [{id, user_id, duration_sec, size_bytes, content_type, signed_url, expires_sec, created_at, author_name, author_position}], next_cursor}` | 422 `limit` 1–50, `expires_sec` |
+| GET | `/media/feed` | Bearer | query `limit` ≤ 50, `cursor`, `expires_sec`, `job_id?` | 200 `{items: [{id, user_id, duration_sec, size_bytes, content_type, signed_url, expires_sec, created_at, author_name, author_position}], next_cursor}` | 422 `limit` 1–50, `expires_sec`, `cursor` that is no video's id |
 | POST | `/media/avatar/upload-url` | Bearer | query `ext` (`jpg` default, `png`, `webp`), `expires_sec` 60–3600 (default 900) | 200 `{object_key, put_url, expires_sec, max_bytes}`, `object_key` in the private `staging/` folder | 415 other extension, 422 `expires_sec` |
 | POST | `/media/avatar/confirm` | Bearer | `{object_key}` | 204; `GET /users/me` then gives the new `avatar_url` | 400 key not yours, no file uploaded there or already confirmed, 413 the stored file is over 5 MiB or the picture over 25 million pixels, 415 extension, or the file is not a real jpg / png / webp picture, 422 |
 | GET | `/media/avatar/default.svg` | — | — | 200 `image/svg+xml`, the default avatar picture | — |
@@ -146,6 +154,7 @@ Intro videos in the new backend (BE-07); every route needs the access token (401
 - After answering, `confirm` puts one Celery task on the Redis queue `celery`: `app.worker.tasks.moderation.run_moderation_task` with the arguments `[video_id, object_key]`, for the worker (`celery -A app.worker.celery_app worker`, BE-29). If Redis cannot be reached, `confirm` still answers 201 and the video stays `pending`; the error is logged, and the worker's check for stuck pending videos (BE-29) queues it again.
 - `post`: only an `approved` video that is not posted yet (409); my previously posted video becomes `unposted` (one posted video per user, also a unique index in the database). `unpost`: only a posted video (409). `delete` sets `lifecycle_status = deleted`; the row and the file stay. A deleted video is gone for its owner: not in `mine` or the feed, `post` / `unpost` / `delete` answer 404, and it no longer counts in the 3. Someone else's video gets the same 404 as a missing one.
 - The feed shows approved, posted videos of active accounts, newest first. An employer (a user with an active company) sees only `video_rating` A and B. With `job_id`, three groups, newest first in each: 1. that job's applicants still `submitted` or `viewed`, 2. users whose position contains the job title (any case), 3. everyone else; an unknown job gives the plain order. `cursor` is the `next_cursor` of the page before (the id of its last video; pages keep the group order); `next_cursor` is `null` on the last page. `limit` 1–50, default 20.
+- A `cursor` that is no video's id gets 422 `"query → cursor: No video has this id: use the next_cursor of the page before"` (with or without `job_id`); a cursor under 1, too large for an id, or not a whole number gets the usual 422 of a bad query field (`"query → cursor: …"`). A `next_cursor` the API gave keeps working even if its video has left the feed since (unposted or deleted): the next page still comes.
 
 Avatars and company logos in the new backend (BE-08):
 
@@ -187,15 +196,26 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 
 One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is per user, not per socket: an event for a user reaches every socket that user has open, including `/game/ws`, so the client must route by `type` and ignore what it does not know.
 
-**Connect:** `wss://<host>/ws?token=<access_token>` (reference). Bad token, unknown or deleted user, or old `token_version` → closed with code 1008. Game room socket: `wss://<host>/game/ws?token=<access_token>&room_id=<id>`, closed 1008 if not a participant.
+**Connect (new backend, BE-06):** the access token never goes into the socket's URL, where proxy logs would keep it. First ask for a one-time ticket over HTTP, then open the socket with it:
+
+| Method | Path | Auth | Request | Success | Errors |
+| --- | --- | --- | --- | --- | --- |
+| POST | `/api/ws/ticket` | Bearer | — | 200 `{ticket}`: opens one socket, once, within 30 s | 401 |
+| WS | `/ws?ticket=<ticket>` | the ticket | — | the socket stays open | closed with code 1008 |
+
+- Every connect and reconnect needs a new ticket. A ticket works on any API worker (tickets live in Redis).
+- **1008** (reason `"Invalid or expired ticket"`): no ticket, an unknown, expired or already used ticket, a deleted user, or a password changed since the ticket was made (`token_version`). The server accepts the socket and then closes it, so the browser sees 1008, not a failed handshake. Get a new ticket (refreshing the access token first if it is old) and connect again.
+- **1011**: the server lost its link to Redis and can no longer deliver events to this socket. Reconnect with backoff, as below.
+- The reference connected with `?token=<access_token>`; the new backend does not accept it. The game room socket moves to `wss://<host>/ws/game?ticket=<ticket>&room_id=<id>` with the same ticket check (BE-09), closed 1008 if not a participant.
 
 | Direction | `type` | Payload | When |
 | --- | --- | --- | --- |
-| client → server | `ping` | — | Keep-alive; send every 25–30 s |
+| client → server | `ping` | — | Keep-alive; send every 25–30 s. It also keeps you online: a socket that has not pinged for 60 s stops counting as online |
 | client → server | `delivered` | `{message_id}` at top level | Message shown on this device |
 | client → server | `read` | `{conversation_id, last_message_id}` at top level | Conversation opened / scrolled to bottom |
 | client → server (`/game/ws`) | `chat_message` | `{text}` at top level | Player sends a room message during discussion |
-| server → client | `pong` | — | Reply to ping |
+| server → client | `pong` | `null` | Reply to ping |
+| server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
 | server → client | `message` | `MessageOut` | New message in any of my conversations (mine too) |
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
@@ -204,7 +224,9 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `game_phase_voting` | `{room_id}` | Discussion ended |
 | server → client | `game_phase_finished` | `{room_id}` | Voting ended, results ready |
 
-**Client rules:** reconnect with backoff (1 s, 2 s, 5 s, then every 10 s) and after reconnecting reload what you show (conversation list, open messages, room state), because events sent while offline are lost. Refresh the access token before reconnecting.
+**Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
+
+**Client rules:** reconnect with backoff (1 s, 2 s, 5 s, then every 10 s) and after reconnecting reload what you show (conversation list, open messages, room state, who is online), because events sent while offline are lost. Refresh the access token before reconnecting, and get a new ticket for every connect.
 
 ## Planned changes for the new backend
 
@@ -217,9 +239,9 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
-| \[ \] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
-| \[ \] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` | Access tokens no longer in URLs and logs |
-| \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` | Live edits, online dots, no polling for moderation |
+| \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
+| \[x\] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` (BE-06) | Access tokens no longer in URLs and logs |
+| \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` (`presence` is sent since BE-06) | Live edits, online dots, no polling for moderation |
 | \[ \] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
 | \[ \] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |

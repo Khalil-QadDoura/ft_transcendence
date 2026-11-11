@@ -58,6 +58,8 @@ VIDEO_NOT_FOUND = "Video not found"
 NOT_APPROVED = "Only a video approved by moderation can be posted"
 ALREADY_POSTED = "This video is already posted"
 NOT_POSTED = "This video is not posted"
+# Written like the other 422s of the API ("<where> → <field>: <message>").
+UNKNOWN_CURSOR = "query → cursor: No video has this id: use the next_cursor of the page before"
 ONLY_PICTURES = "Only jpg, png or webp pictures are accepted"
 NO_PICTURE = "No uploaded file at this object_key: PUT the picture to put_url first"
 PICTURE_TOO_BIG = f"The picture is larger than {MAX_PICTURE_BYTES // (1024 * 1024)} MiB"
@@ -110,8 +112,6 @@ async def confirm_upload(
     # 1. The key must be one of mine: nobody can confirm another user's file.
     if not is_my_object_key(user.id, data.object_key):
         raise HTTPException(status_code=400, detail=NOT_YOUR_KEY)
-    if await repo.count_active_videos(session, user.id) >= MAX_ACTIVE_VIDEOS:
-        raise HTTPException(status_code=409, detail=TOO_MANY_VIDEOS)
 
     # 2. Look at the file in storage instead of trusting what the browser says about it.
     # The MinIO calls wait for the network, so they run in a worker thread.
@@ -128,7 +128,15 @@ async def confirm_upload(
     if not looks_like_mp4(first_bytes):
         raise HTTPException(status_code=415, detail=NOT_AN_MP4)
 
-    # 3. Save it with the real size: moderation "pending", lifecycle "loaded" (not shown yet).
+    # 3. At most 3 videos. Two confirms of mine at the same time must not both count 2 and
+    # both save: so I lock my row in users first. The second confirm waits at the lock until
+    # the first is saved (commit), then counts 3 and gets 409. Other users never wait.
+    await repo.lock_user(session, user.id)
+    if await repo.count_active_videos(session, user.id) >= MAX_ACTIVE_VIDEOS:
+        raise HTTPException(status_code=409, detail=TOO_MANY_VIDEOS)
+
+    # 4. Save it with the real size: moderation "pending", lifecycle "loaded" (not shown yet).
+    # The commit also lets go of the lock.
     video = repo.add_video(session, user.id, data.object_key, data.duration_sec, size)
     try:
         await session.commit()
@@ -136,7 +144,7 @@ async def confirm_upload(
         await session.rollback()
         raise HTTPException(status_code=409, detail=ALREADY_CONFIRMED) from None
 
-    # 4. Queue the moderation, after the answer has gone out, so the user never waits for it.
+    # 5. Queue the moderation, after the answer has gone out, so the user never waits for it.
     background.add_task(queue.moderate_video, video.id, video.object_key)
     return video
 
@@ -231,7 +239,12 @@ async def get_feed(
     # need its group too: by id alone, a page would skip the newer videos of later groups.
     after = None
     if cursor is not None:
-        after = (await repo.feed_group_of(session, cursor, job_id), cursor)
+        group = await repo.feed_group_of(session, cursor, job_id)
+        # No video has this id, so it is no next_cursor of ours. A video that has only left
+        # the feed since (unposted, deleted) still has its row, so its next page still comes.
+        if group is None:
+            raise HTTPException(status_code=422, detail=UNKNOWN_CURSOR)
+        after = (group, cursor)
     # One video more than asked for, only to know whether there is a next page.
     rows = await repo.list_feed(session, job_id, employer, after, limit + 1)
     page = rows[:limit]

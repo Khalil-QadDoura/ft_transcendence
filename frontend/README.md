@@ -32,6 +32,16 @@ Open http://127.0.0.1:5174. Port 5174 allows the separate visual prototype on 51
 
 ## Scope and review
 
-FE-03 adds [shared form validation](docs/form-validation.md): per-domain Zod schemas, React Hook Form resolver setup, and safe mapping of backend 422 errors. The guide records pending backend contracts, translation keys and consumer responsibilities.
+FE-02 adds the responsive shell, all planned route slots, legal navigation, 404, route focus management and the auth guard. The home artwork is original SVG; typography is bundled locally. Reduced-motion preferences stop the animation.
 
-Routing, auth guards and the responsive shell follow in FE-02; API auth belongs to FE-20/FE-04. AI assistance (Codex) was used for this scaffold, documentation and checks. Zayid must review and be able to explain the changes before defense. Human cross-pair review and green CI are required before merge, per PM-00.
+`SessionContext` is the integration boundary: FE-04/FE-20 must provide `loading`, `anonymous` or `authenticated` from a verified backend session. Protected routes preserve the path, query and hash in `/login?next=`. Once the provider changes to `authenticated`, `GuestOnly` restores a safe internal destination. No fake login or persistent browser flag is used. Route tests inject session states; real login is still FE-04 work.
+
+Other route slots explicitly display a coming-soon state. Privacy/Terms content is merged in DOC-01/DOC-02 and awaits FE-13 rendering; the empty slots do not satisfy the subject's final legal-content requirement. Language and unread header slots await FE-06/FE-22. The nginx preview config falls back to `index.html` for client routes while missing compiled assets correctly return 404. INF-03 must preserve this behavior in the production HTTPS proxy.
+
+Validation: lint, formatting, strict TypeScript, 31 route/redirect tests, Vite production build, Docker build, browser checks at 360 px and desktop, and reloads of protected/public routes. Reproduce with the commands above; production deep-link checks use the Docker preview on port 8080.
+
+AI assistance (Codex) was used for the scaffold, shell, artwork, documentation and checks. Zayid must review and be able to explain the changes before defense. Human cross-pair review and green CI are required before merge, per PM-00. FE-02 now includes current main, including FE-03 validation, FE-20 API client and FE-21 components. Review it against main.
+
+FE-03 adds [shared form validation](docs/form-validation.md): per-domain Zod schemas, React Hook Form resolver setup, and safe mapping of backend 422 errors. FE-20 supplies the shared API client, and FE-21 supplies shared UI primitives and design tokens. The `/dev/components` preview exists only in development builds.
+
+Shell styles are in `@layer base`, below Tailwind utilities, so shared components retain their own sizes, colors and focus styles.

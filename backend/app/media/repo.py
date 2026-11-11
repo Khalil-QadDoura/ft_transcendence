@@ -16,6 +16,12 @@ from app.media.models import IntroVideo
 from app.users.models import User
 
 
+async def lock_user(session: AsyncSession, user_id: int) -> None:
+    """Lock the user's row in users (SELECT ... FOR UPDATE) until this transaction ends, at
+    commit or rollback. Another request that asks for the same lock waits here until then."""
+    await session.execute(select(User.id).where(User.id == user_id).with_for_update())
+
+
 async def count_active_videos(session: AsyncSession, user_id: int) -> int:
     """How many videos the user has that are not deleted."""
     return await session.scalar(
@@ -108,7 +114,7 @@ async def list_feed(
     session: AsyncSession,
     job_id: int | None,
     employer: bool,
-    after: tuple[int | None, int] | None,
+    after: tuple[int, int] | None,
     limit: int,
 ) -> list:
     """Approved and posted videos of active accounts, with their author: by group, then newest

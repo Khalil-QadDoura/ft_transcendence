@@ -32,8 +32,10 @@ class Settings(BaseSettings):
     # Optional: when set, emails go out through Brevo's API (real inboxes) instead of SMTP.
     brevo_api_key: str = ""
 
-    # Redis, the "redis" container. The background queue lives there: confirming a video puts
-    # a moderation task on it, and the Celery worker takes it off (BE-07, BE-29).
+    # Redis: WebSocket tickets, live events between API processes (pub/sub) and who is online.
+    # The default is the "redis" service of the team's Docker Compose (no password, database 0).
+    # The background queue lives there too: confirming a video puts a moderation task on it,
+    # and the Celery worker takes it off (BE-07, BE-29).
     redis_url: str = "redis://redis:6379/0"
 
     # File storage: MinIO, the "minio" container (INF-04). The API itself talks to MinIO inside

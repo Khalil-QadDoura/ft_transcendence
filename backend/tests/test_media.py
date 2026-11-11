@@ -15,14 +15,17 @@ containers:
         TEST_DATABASE_URL=... pytest tests/test_media.py
 """
 
+import asyncio
 import io
 import json
 import logging
 import os
 import re
 import socket
+import threading
 import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import timedelta
 from typing import NamedTuple
@@ -40,7 +43,8 @@ from app.auth import security
 from app.core.config import Settings
 from app.core.logging import json_handler
 from app.core.queue import MODERATION_TASK
-from app.core.storage import Storage
+from app.core.storage import Storage, get_storage
+from app.media import repo
 from app.media.constants import MAX_SIZE_BYTES
 
 TEST_MINIO_ENDPOINT = os.environ.get("TEST_MINIO_ENDPOINT", "")  # host:port, plain HTTP
@@ -422,6 +426,50 @@ def test_a_fourth_video_is_refused_until_one_is_deleted(client, ana):
     assert sorted(lifecycles(ana.id).values()) == ["deleted", "loaded", "loaded", "loaded"]
 
 
+class StorageForTwo:
+    """A stand-in for MinIO in the race test: every file exists and starts like an MP4. Its
+    size() lets nobody go on until both confirmations are inside it (a barrier), so the two
+    really run at the same time, each with its own database session."""
+
+    def __init__(self):
+        self.both_here = threading.Barrier(2, timeout=10)
+
+    def size(self, object_key: str) -> int:
+        self.both_here.wait()
+        return 2048
+
+    def first_bytes(self, object_key: str, count: int) -> bytes:
+        return MP4_START[:count]
+
+
+def test_two_confirms_at_the_same_time_cannot_make_a_fourth_video(client, ana, monkeypatch):
+    new_video(client, ana)
+    new_video(client, ana)
+    take_queued_tasks()
+    keys = [ask_upload_url(client, ana).json()["object_key"] for _ in range(2)]
+    storage = StorageForTwo()
+    client.app.dependency_overrides[get_storage] = lambda: storage
+    count_videos = repo.count_active_videos
+
+    async def count_then_pause(session, user_id: int) -> int:
+        # A slow moment between counting and saving. Without the lock, the other confirm
+        # counts during it and sees 2 as well; with the lock, it is still waiting for it.
+        count = await count_videos(session, user_id)
+        await asyncio.sleep(0.5)
+        return count
+
+    monkeypatch.setattr(repo, "count_active_videos", count_then_pause)
+    # Two requests at once, from two threads: the API serves them side by side.
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        answers = list(threads.map(lambda key: confirm(client, ana, key), keys))
+    # Without the lock both counted 2 and both were saved: 4 videos. With it, the second
+    # waits until the first is saved, counts 3 and is refused.
+    assert sorted(answer.status_code for answer in answers) == [201, 409]
+    assert sorted(lifecycles(ana.id).values()) == ["loaded", "loaded", "loaded"]
+    [saved] = [answer.json()["id"] for answer in answers if answer.status_code == 201]
+    assert [arguments[0] for _task, arguments in take_queued_tasks()] == [saved]
+
+
 def test_the_same_file_cannot_be_confirmed_twice_even_after_a_delete(client, ana):
     object_key = upload(client, ana)
     video_id = confirm(client, ana, object_key).json()["id"]
@@ -725,6 +773,43 @@ def test_the_feed_is_newest_first_and_pages_follow_next_cursor(client, ana):
 def test_the_feed_refuses_a_bad_limit_or_lifetime(client, ana, query):
     response = client.get("/api/media/feed", params=query, headers=ana.headers)
     assert response.status_code == 422
+
+
+UNKNOWN_CURSOR = "query → cursor: No video has this id: use the next_cursor of the page before"
+
+
+@pytest.mark.parametrize("for_a_job", [False, True])
+@pytest.mark.parametrize(
+    ("cursor", "detail"),
+    [
+        (999999, UNKNOWN_CURSOR),  # a positive id that no video has
+        (0, "query → cursor: Input should be greater than or equal to 1"),
+        (-5, "query → cursor: Input should be greater than or equal to 1"),
+        # One more than the largest id the database can hold (BIGINT).
+        (2**63, "query → cursor: Input should be less than or equal to 9223372036854775807"),
+        (
+            "abc",
+            "query → cursor: Input should be a valid integer, unable to parse string as an integer",
+        ),
+    ],
+)
+def test_the_feed_refuses_a_cursor_that_is_no_video_with_422(
+    client, ana, for_a_job, cursor, detail
+):
+    add_video(ana.id)
+    query = {"job_id": make_company_with_job(ana)} if for_a_job else {}
+    response = client.get(
+        "/api/media/feed", params={**query, "cursor": cursor}, headers=ana.headers
+    )
+    assert response.json() == error(422, detail)
+
+
+def test_a_cursor_still_works_after_its_video_has_left_the_feed(client, ana):
+    ids = [add_video(add_user(f"user{number}@example.com")) for number in range(3)]
+    first_page = feed(client, ana, limit=1)
+    # Unposted between two pages: its id is still a video, so the next page still comes.
+    sql("UPDATE intro_videos SET lifecycle_status = 'unposted' WHERE id = :id", id=ids[2])
+    assert feed_ids(client, ana, cursor=first_page["next_cursor"]) == [ids[1], ids[0]]
 
 
 def test_employers_see_only_videos_rated_a_or_b(client, ana):
