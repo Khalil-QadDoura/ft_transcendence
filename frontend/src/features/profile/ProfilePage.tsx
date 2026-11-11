@@ -1,4 +1,5 @@
 import "../../i18n";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -222,6 +223,9 @@ function ProfileEditor({ profile }: { profile: Profile }) {
           <h3>{t(complete ? "ready" : "incomplete")}</h3>
           <p>{t(complete ? "readyHint" : "incompleteHint")}</p>
         </div>
+        <Link className="profile-settings" to="/settings">
+          {t("settings")}
+        </Link>
         <ProfilePhoto
           profile={profile}
           refresh={async () => {

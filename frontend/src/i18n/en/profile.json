@@ -47,5 +47,6 @@
     "date": "Enter a valid date.",
     "adult": "You must be at least 18 years old.",
     "invalid": "Please check this value."
-  }
+  },
+  "settings": "Account settings"
 }

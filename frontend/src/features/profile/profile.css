@@ -158,3 +158,11 @@
     font-size: 48px;
   }
 }
+
+.profile-settings {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-block-start: 12px;
+  text-decoration: underline;
+}

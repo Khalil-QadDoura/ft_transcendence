@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -39,7 +40,9 @@ async function render() {
   await act(async () => {
     root.render(
       <QueryClientProvider client={cache}>
-        <ProfilePage />
+        <MemoryRouter>
+          <ProfilePage />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
   });
@@ -77,6 +80,9 @@ test("incomplete profiles send only changed fields and show success after the re
     "Photo uploads will be available soon",
   );
   expect(container.querySelector('[type="file"]')).toBeNull();
+  expect(container.querySelector('a[href="/settings"]')?.textContent).toBe(
+    "Account settings",
+  );
   await fill("position", " Engineer ");
   await submit();
   expect(patch).toHaveBeenCalledExactlyOnceWith({ position: "Engineer" });
