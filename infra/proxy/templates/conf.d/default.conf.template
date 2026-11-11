@@ -121,7 +121,10 @@ server {
     }
 
     # A regex wins over prefix locations, so this also hides the image's /metrics/nginx.
-    location ~ ^/(_internal|metrics)(/|$) {
+    # The API mounts /_internal at the root and BE-30 plans /metrics there too; the /api/
+    # variants are closed as well, so a router mounted under /api by mistake stays inside.
+    # Matched after nginx decodes and normalizes the path (/api/../_internal, /%5Finternal).
+    location ~ ^/(api/)?(_internal|metrics)(/|$) {
         return 404;
     }
 
