@@ -785,6 +785,50 @@ def test_a_new_logo_deletes_the_old_file(client, ana):
     assert httpx2.get(public_address(first)).status_code == 404
 
 
+# --- The logo in the company's own routes (companies/, BE-21) -------------------------------
+
+
+def test_company_out_gives_the_logo_url_that_anyone_can_download(client, ana):
+    response = client.post("/api/companies", json={"name": "Cafe Ana"}, headers=ana.headers)
+    assert response.status_code == 201
+    assert response.json()["logo_url"] is None  # no logo yet: null, not a default picture
+    public_key = publish(client, ana, "company-logo")
+    details = {"name": "Cafe Ana", "country": "United Arab Emirates", "city": "Abu Dhabi"}
+    for response in (
+        client.get("/api/companies/me", headers=ana.headers),
+        client.patch("/api/companies/me", json=details, headers=ana.headers),
+    ):
+        assert response.status_code == 200
+        assert response.json()["logo_object_key"] == public_key
+        assert response.json()["logo_url"] == public_address(public_key)
+    download = httpx2.get(public_address(public_key))  # no login
+    assert (download.status_code, download.content) == (200, made_up_picture("png"))
+
+
+def test_deleting_the_company_deletes_its_logo_file_at_once(client, ana, ben):
+    company_id = make_company(ana)
+    bens_company = make_company(ben)
+    logo = publish(client, ana, "company-logo")
+    bens_logo = publish(client, ben, "company-logo")
+    assert client.delete("/api/companies", headers=ana.headers).status_code == 204
+    assert httpx2.get(public_address(logo)).status_code == 404
+    assert not is_stored(logo)
+    assert sql("SELECT status, logo_object_key FROM companies WHERE id = :id", id=company_id) == [
+        ("deleted", None)
+    ]
+    assert client.get("/api/companies/me", headers=ana.headers).json() is None
+    # Ben's company and its logo are untouched.
+    assert logo_in_db(bens_company) == bens_logo and is_stored(bens_logo)
+
+
+def test_deleting_a_company_without_a_logo_touches_no_file(client, ana, ben):
+    make_company(ana)
+    make_company(ben)
+    bens_logo = publish(client, ben, "company-logo")
+    assert client.delete("/api/companies", headers=ana.headers).status_code == 204
+    assert is_stored(bens_logo)
+
+
 # --- Deleting the account ------------------------------------------------------------------
 
 

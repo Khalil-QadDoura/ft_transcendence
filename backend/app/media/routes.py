@@ -159,5 +159,5 @@ async def confirm_logo(
     user: CurrentUser, data: PictureConfirmIn, session: Session, storage: Files
 ) -> None:
     """Check the picture, publish a copy of it in logos/ and make it my company's logo (the
-    old file is deleted)."""
+    old file is deleted). GET /api/companies/me then gives its logo_url."""
     await service.confirm_logo(session, storage, user, data.object_key)

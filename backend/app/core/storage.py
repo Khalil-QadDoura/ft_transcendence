@@ -63,7 +63,7 @@ class Storage:
         return self.public_url(key) if key else self.default_avatar_url
 
     def logo_url(self, key: str | None) -> str | None:
-        """A company's logo, or None if it has none. For CompanyOut (BE-21)."""
+        """A company's logo, or None if it has none. For CompanyOut's logo_url."""
         return self.public_url(key) if key else None
 
     def upload_url(self, key: str, expires: timedelta) -> str:
