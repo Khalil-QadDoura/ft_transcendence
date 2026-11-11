@@ -7,7 +7,6 @@ import re
 from datetime import timedelta
 from uuid import uuid4
 
-import structlog
 from fastapi import BackgroundTasks, HTTPException
 from PIL import Image
 from sqlalchemy.exc import IntegrityError
@@ -16,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.companies import service as companies
 from app.companies.models import Company
 from app.core.queue import TaskQueue
-from app.core.storage import Storage
+from app.core.storage import Storage, remove_files
 from app.media import repo
 from app.media.constants import (
     AVATARS_FOLDER,
@@ -47,8 +46,6 @@ from app.media.schemas import (
     UploadUrlOut,
 )
 from app.users.models import User
-
-log = structlog.get_logger(__name__)
 
 ONLY_MP4 = "Only MP4 videos (video/mp4) are accepted"
 NOT_YOUR_KEY = "Invalid object_key: use the one upload-url gave you"
@@ -339,16 +336,6 @@ async def publish_picture(storage: Storage, folder: str, owner_id: int, staging_
     public_key = f"{folder}/{owner_id}/{uuid4()}.{ext}"
     await asyncio.to_thread(storage.put, public_key, data, PICTURE_TYPES[ext])
     return public_key
-
-
-async def remove_files(storage: Storage, keys: list[str]) -> None:
-    """Delete files that nothing needs any more (an old picture, an upload already checked).
-    If MinIO fails here the request still goes on: the file left behind is logged instead."""
-    for key in keys:
-        try:
-            await asyncio.to_thread(storage.remove, key)
-        except Exception:  # MinIO down or unreachable: log it with the traceback
-            log.exception("file not removed from storage", object_key=key)
 
 
 async def confirm_avatar(

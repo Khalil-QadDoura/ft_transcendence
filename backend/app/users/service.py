@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.storage import Storage
+from app.core.storage import Storage, remove_files
 from app.media import service as media
 from app.users.models import User
 from app.users.schemas import UserOut, UserUpdate
@@ -50,4 +50,4 @@ async def delete_account(session: AsyncSession, storage: Storage, user: User) ->
     old_files = await media.forget_pictures(session, user)
     user.status = "deleted"
     await session.commit()
-    await media.remove_files(storage, old_files)
+    await remove_files(storage, old_files)

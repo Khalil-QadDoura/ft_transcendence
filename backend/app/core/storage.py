@@ -2,10 +2,12 @@
 through the API: the browser sends them straight to MinIO with a signed link, and the API checks
 them there."""
 
+import asyncio
 import io
 from datetime import timedelta
 from urllib.parse import urlparse
 
+import structlog
 import urllib3
 from fastapi import Request
 from minio import Minio
@@ -13,6 +15,8 @@ from minio.datatypes import Object
 from minio.error import S3Error
 
 from app.core.config import Settings
+
+log = structlog.get_logger(__name__)
 
 # How long the API waits for MinIO before giving up, in seconds.
 CONNECT_TIMEOUT_SEC = 2
@@ -123,3 +127,14 @@ class Storage:
 def get_storage(request: Request) -> Storage:
     """FastAPI dependency: this app's storage, made once in create_app()."""
     return request.app.state.storage
+
+
+async def remove_files(storage: Storage, keys: list[str]) -> None:
+    """Delete files that nothing needs any more (an old picture, an upload already checked).
+    If MinIO fails here the request still goes on: the file left behind is logged instead.
+    For avatars, logos (BE-08) and anything else that deletes its files."""
+    for key in keys:
+        try:
+            await asyncio.to_thread(storage.remove, key)
+        except Exception:  # MinIO down or unreachable: log it with the traceback
+            log.exception("file not removed from storage", object_key=key)
