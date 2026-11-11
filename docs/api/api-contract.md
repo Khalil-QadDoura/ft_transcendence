@@ -134,7 +134,7 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 | POST | `/media/company-logo/confirm` | Bearer (employer) | `{object_key}` | 204 | 404 |
 
 - Statuses: moderation `pending → approved | rejected` (+ `moderation_error` once fixed); lifecycle `loaded → posted ⇄ unposted`, any → `deleted`. Poll `/media/intro-video/mine` while a video is `pending` (or listen for a WS event once added).
-- The browser PUT to `put_url` is a plain PUT of the file bytes. It works from a browser only once MinIO is reachable over HTTPS with CORS for our origin (Infrastructure doc). Use XHR or fetch with upload progress for the progress bar.
+- The browser PUT to `put_url` is a plain PUT of the file bytes to `https://<host>/files/<object_key>?X-Amz-…`. That is the frontend's own origin, so no CORS is involved (INF-04, Infrastructure doc). Use XHR or fetch with upload progress for the progress bar.
 - With `job_id`, the employer feed lists that job's applicants first, then candidates whose position matches the job title, then everyone else.
 - Avatar and logo are returned only as `avatar_object_key` / `logo_object_key` today; the frontend cannot turn a key into a URL. See planned changes.
 

@@ -4,7 +4,14 @@ from uuid import uuid4
 
 import conftest
 import pytest
-from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database, transactional_session
+from conftest import (
+    INTERNAL_KEY,
+    TEST_DATABASE_URL,
+    alembic,
+    build_app,
+    needs_database,
+    transactional_session,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
@@ -95,3 +102,19 @@ async def test_async_db_client_registers_inside_the_test_transaction(async_db_cl
 
 def test_sync_client_coexists_with_async_infrastructure(client):
     assert client.get("/api/health").json() == {"status": "ok"}
+
+
+def test_build_app_isolates_test_mailbox_per_instance():
+    app_one = build_app()
+    app_two = build_app()
+    app_one.dependency_overrides[get_mailer]().send("one@example.test", "Subj", "body")
+    assert len(app_one.state.test_mailbox.sent) == 1
+    assert app_two.state.test_mailbox.sent == []
+
+
+@pytest.mark.anyio
+async def test_async_client_injects_internal_key_and_preserves_error_envelope(async_client):
+    assert async_client.headers["X-Internal-Key"] == INTERNAL_KEY
+    response = await async_client.get("/api/does-not-exist")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "404"
