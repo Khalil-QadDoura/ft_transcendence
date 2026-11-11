@@ -101,7 +101,11 @@ async def confirm_upload(
         raise HTTPException(status_code=400, detail=NO_FILE)
     if size > MAX_SIZE_BYTES:
         raise HTTPException(status_code=413, detail=TOO_BIG)
-    first_bytes = await asyncio.to_thread(storage.first_bytes, data.object_key, MP4_SIGNATURE_END)
+    first_bytes = b""
+    if size >= MP4_SIGNATURE_END:  # a shorter file cannot be an MP4, and has nothing to read
+        first_bytes = await asyncio.to_thread(
+            storage.first_bytes, data.object_key, MP4_SIGNATURE_END
+        )
     if not looks_like_mp4(first_bytes):
         raise HTTPException(status_code=415, detail=NOT_AN_MP4)
 
