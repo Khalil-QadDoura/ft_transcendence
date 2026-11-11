@@ -17,6 +17,7 @@ from app.core.logging import configure_logging
 from app.core.request_id import request_id_middleware
 from app.db.session import setup_database
 from app.health import routes as health
+from app.jobs import routes as jobs
 from app.users import routes as users
 
 log = structlog.get_logger("app")
@@ -59,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(users.router)
     api.include_router(companies.router)
     api.include_router(conversations.router)
+    api.include_router(jobs.router)
     app.include_router(api)
 
     # Internal routes: left out of the OpenAPI spec and locked by X-Internal-Key.
