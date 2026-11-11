@@ -1,5 +1,5 @@
 """The WebSocket layer on a real server, a real database and a real Redis: tickets, the socket's
-login check (close code 1008) and ping / pong.
+login check (close code 1008), ping / pong and events for a user on every socket and worker.
 
 The server is uvicorn, started by the test on a free port (conftest.running_server), and the
 client is a real WebSocket client, like the browser's. These tests use TEST_DATABASE_URL and
@@ -8,6 +8,7 @@ are made up: added straight to the database, already verified, and logged in thr
 /api/auth/login.
 """
 
+import asyncio
 import json
 import time
 from collections.abc import Iterator
@@ -15,6 +16,7 @@ from collections.abc import Iterator
 import httpx2
 import pytest
 import redis
+import redis.asyncio
 from conftest import (
     TEST_DATABASE_URL,
     TEST_REDIS_URL,
@@ -126,6 +128,40 @@ def close_code(ws: ClientConnection) -> int:
     return ws.close_code
 
 
+def next_frame(ws: ClientConnection) -> dict:
+    return json.loads(ws.recv(timeout=WAIT))
+
+
+def nothing_arrives(ws: ClientConnection, seconds: float = 0.5) -> bool:
+    """True when no frame comes within `seconds`."""
+    try:
+        ws.recv(timeout=seconds)
+    except TimeoutError:
+        return True
+    return False
+
+
+def wait_for_listeners(redis_db: redis.Redis, user_id: int, count: int) -> None:
+    """Wait until `count` sockets listen on the user's channel: a new socket subscribes a
+    moment after it opens, and an event published before that would not reach it."""
+    deadline = time.monotonic() + WAIT
+    while redis_db.pubsub_numsub(f"ws:user:{user_id}")[0][1] < count:
+        assert time.monotonic() < deadline, "the sockets never listened"
+        time.sleep(0.01)
+
+
+def send_event(user_id: int, event_type: str, payload: object, redis_url: str = TEST_REDIS_URL):
+    """What another card does after a change: call send_to_user(). Any process can, so this
+    one runs outside both test servers."""
+
+    async def send() -> None:
+        client = redis.asyncio.Redis.from_url(redis_url, decode_responses=True)
+        await service.send_to_user(client, user_id, event_type, payload)
+        await client.aclose()
+
+    asyncio.run(send())
+
+
 # --- The ticket -------------------------------------------------------------------------------
 
 
@@ -205,3 +241,54 @@ def test_frames_the_layer_does_not_know_are_ignored(server):
         ws.send(json.dumps(["ping"]))
         ws.send(json.dumps({"type": "something_new"}))
         assert ping(ws) == PONG  # the socket is still open, and nothing else came first
+
+
+# --- Events for a user ------------------------------------------------------------------------
+
+
+def test_an_event_reaches_every_socket_of_the_user_and_nobody_else(server, redis_db):
+    ana_id, ana = sign_in(server, "ana@example.com")
+    _, ben = sign_in(server, "ben@example.com")
+    with (
+        open_user_socket(server, ana) as ana_tab_1,
+        open_user_socket(server, ana) as ana_tab_2,
+        open_user_socket(server, ben) as ben_tab,
+    ):
+        wait_for_listeners(redis_db, ana_id, 2)
+        send_event(ana_id, "something_happened", {"n": 1})
+        # Every frame is {type, payload}.
+        expected = {"type": "something_happened", "payload": {"n": 1}}
+        assert next_frame(ana_tab_1) == expected
+        assert next_frame(ana_tab_2) == expected
+        assert nothing_arrives(ben_tab)
+
+
+def test_an_event_reaches_the_user_on_every_api_worker(server, redis_db):
+    ana_id, ana = sign_in(server, "ana@example.com")
+    # A second API on the same database and Redis, like a second worker behind the proxy.
+    with running_server(new_app()) as second_server:
+        # A ticket from one worker opens a socket on the other: tickets live in Redis.
+        ticket = new_ticket(server, ana)
+        with (
+            open_socket(second_server, f"?ticket={ticket}") as on_second,
+            open_user_socket(server, ana) as on_first,
+        ):
+            wait_for_listeners(redis_db, ana_id, 2)
+            send_event(ana_id, "something_happened", {"n": 2})
+            expected = {"type": "something_happened", "payload": {"n": 2}}
+            assert next_frame(on_first) == expected
+            assert next_frame(on_second) == expected
+
+
+def test_send_to_user_does_not_fail_when_redis_is_down():
+    # Nothing listens on port 1: the event is lost and logged, and the caller goes on.
+    send_event(1, "something_happened", None, redis_url="redis://127.0.0.1:1/0")
+
+
+def test_a_socket_that_loses_its_redis_connection_is_closed_with_1011(server, redis_db):
+    ana_id, ana = sign_in(server, "ana@example.com")
+    with open_user_socket(server, ana) as ws:
+        wait_for_listeners(redis_db, ana_id, 1)
+        redis_db.client_kill_filter(_type="pubsub")  # cut every listening connection
+        # It would get no more events: the server closes it, and the client reconnects.
+        assert close_code(ws) == 1011

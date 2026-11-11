@@ -29,3 +29,14 @@ async def take_ticket(redis: Redis, ticket: str) -> dict | None:
     """
     holder = await redis.getdel(ticket_key(ticket))
     return json.loads(holder) if holder is not None else None
+
+
+def user_channel(user_id: int) -> str:
+    """The pub/sub channel of one user: every socket of that user listens on it."""
+    return f"ws:user:{user_id}"
+
+
+async def publish(redis: Redis, user_id: int, frame: str) -> None:
+    """Hand the frame to every socket listening on the user's channel, on any API process.
+    Redis keeps nothing: a socket that is not listening right now never gets it."""
+    await redis.publish(user_channel(user_id), frame)

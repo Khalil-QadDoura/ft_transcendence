@@ -1,11 +1,16 @@
 """The rules of the WebSocket layer. Routes call these functions; these call the repo."""
 
+import asyncio
 import json
 import secrets
+from contextlib import suppress
+from typing import Any
 
 import structlog
 from fastapi import FastAPI, WebSocket, status
 from redis.asyncio import Redis
+from redis.asyncio.client import PubSub
+from redis.exceptions import RedisError
 
 from app.auth import repo as auth_repo
 from app.realtime import repo
@@ -60,13 +65,52 @@ async def user_for_ticket(app: FastAPI, ticket: str) -> User | None:
     return user
 
 
+async def send_to_user(redis: Redis, user_id: int, event_type: str, payload: Any = None) -> None:
+    """Send one event to every socket the user has open, whichever API process holds them.
+
+    This is how other cards push a live update, for example after saving a message (BE-22):
+        await send_to_user(redis, peer_id, "message", MessageOut.model_validate(message))
+    A user with no open socket gets nothing; the client reloads what it shows when it reconnects.
+    """
+    frame = Event(type=event_type, payload=payload).model_dump_json()
+    try:
+        await repo.publish(redis, user_id, frame)
+    except RedisError:
+        # The change itself is already saved; only the live notice is lost. Log it, go on.
+        log.warning("event not sent", user_id=user_id, type=event_type, exc_info=True)
+
+
 async def serve_socket(websocket: WebSocket, user: User) -> None:
-    """The life of one open socket, until the client goes away."""
+    """The life of one open socket, until the client goes away.
+
+    The socket listens on its user's Redis channel, and a second task copies whatever arrives
+    there to the browser, while this one reads what the browser sends.
+    """
+    pubsub = websocket.app.state.redis.pubsub()  # a Redis connection only for listening
+    await pubsub.subscribe(repo.user_channel(user.id))
+    forwarding = asyncio.create_task(forward_events(pubsub, websocket))
     log.info("socket open", user_id=user.id)
     try:
         await read_frames(websocket)
     finally:
+        forwarding.cancel()
+        await asyncio.wait({forwarding})  # until it has really stopped
+        await pubsub.aclose()  # stop listening and give the connection back
         log.info("socket closed", user_id=user.id)
+
+
+async def forward_events(pubsub: PubSub, websocket: WebSocket) -> None:
+    """Copy each event that arrives on the user's channel to this socket, as it is."""
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":  # not Redis's "subscribed" confirmation
+                await websocket.send_text(message["data"])
+    except Exception:
+        # Redis went away (or the socket did). A socket that gets no events is useless: close
+        # it with 1011, so that the client reconnects and reloads what it shows.
+        log.warning("event forwarding stopped", exc_info=True)
+        with suppress(Exception):  # the socket may already be gone
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
 
 
 async def read_frames(websocket: WebSocket) -> None:
