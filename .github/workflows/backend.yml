@@ -23,8 +23,17 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/wozu_ci_test
+      TEST_REDIS_URL: redis://localhost:6379/1
       DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/wozu_ci_test
       JWT_SECRET: ci-only-jwt-secret-not-for-production
     defaults:
@@ -47,6 +56,6 @@ jobs:
           import xml.etree.ElementTree as ET
           suites = ET.parse('pytest-results.xml').getroot().iter('testsuite')
           skipped = sum(int(suite.get('skipped', '0')) for suite in suites)
-          assert skipped == 0, f'{skipped} tests skipped; database validation is incomplete'
+          assert skipped == 0, f'{skipped} tests skipped; database or Redis validation is incomplete'
           PY
       - run: docker build -t wozu-backend:ci .
