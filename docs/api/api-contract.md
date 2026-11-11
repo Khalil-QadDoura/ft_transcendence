@@ -32,9 +32,9 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials (same answer for an unknown email), 403 email not verified, 429 |
 | POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
 | POST | `/auth/logout` | — | `{refresh_token}` (optional) | 204 always, even with no token or a bad one | — |
-| POST | `/auth/change-password` | Bearer | `{current_password, new_password}` | 204; all tokens revoked | 400 `wrong_current_password` |
-| POST | `/auth/forgot-password` | — | `{email}` | 202 always | — |
-| POST | `/auth/reset-password` | — | `{token, new_password}` | 204; all tokens revoked | 400 invalid / expired |
+| POST | `/auth/change-password` | Bearer | `{current_password, new_password}` new password 8–128 | 204; all tokens revoked | 400 wrong current password, 401, 422, 429 |
+| POST | `/auth/forgot-password` | — | `{email}` | 202 `{message}` always, whether the email has an account or not | 422 not an email, 429 |
+| POST | `/auth/reset-password` | — | `{token, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
 | PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
 | DELETE | `/users/me` | Bearer | — | 204 (soft delete) | 401 |
@@ -47,6 +47,14 @@ Sign-up and login in the new backend (BE-03):
 - The verification email links to the frontend page `<FRONTEND_BASE_URL>/verify-email?token=…` (valid 24 h); that page calls `GET /api/auth/verify?token=…`. The link carries `ver` (`users.token_version`), so **only the newest link is valid**: it verifies the account with the newest password, and every older link answers 400. Opening the newest link twice answers 200 with `updated: false`. A link and a sign-up arriving together are handled one after the other by the database, so a sign-up never changes an account that has just been verified (that sign-up gets 409).
 - Access token: JWT (HS256), 15 min, claims `sub` (user id), `scope` (`access`), `ver` (`users.token_version`), `jti`, `iat`, `exp`. Refresh token: JWT, 30 days, stored by its `jti` in `refresh_tokens`; each refresh revokes it and returns a new pair (rotation), and a reused one gets 401.
 - A deleted account gets the same 401 as a wrong password at login, and 401 on every protected route.
+
+Passwords in the new backend (BE-04):
+
+- `POST /auth/change-password` needs the right current password, else 400 `"Wrong current password"` (400, not 401, so the client does not refresh and log out). The new password follows the sign-up rule (8–128). On success `users.token_version` goes up by 1: from then on every access and refresh token of the user gets 401, the one that made the request too, so the frontend sends the user to log in again.
+- `POST /auth/forgot-password` answers the same 202 `{"message": "If this email has an account, a reset link is on its way"}` for any well-formed email (no account enumeration). Only an active account with a verified email gets the email, which links to the frontend page `<FRONTEND_BASE_URL>/reset-password?token=…`. The token is 64 random URL-safe characters, valid 1 h, single use; the database keeps only its SHA-256 (`password_reset_tokens.token`).
+- `POST /auth/reset-password` is called by that page with `{token, new_password}`. 204: the password is replaced and `token_version` goes up, as for a change. A wrong, expired or already used token gets 400 `"Invalid or expired link"`; a 422 (a bad new password) does not use up the link.
+- After a change or a reset, every other reset link of the user that still works is closed too: all of the user's tokens (access, refresh, reset) stop working together.
+- Both emails (verify and reset) go through one sender: SMTP to Mailpit by default (`SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM`), Brevo's API only when `BREVO_API_KEY` is set.
 
 The profile in the new backend (BE-05):
 
@@ -197,7 +205,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
-| \[ \] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
+| \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
 | \[ \] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` | Access tokens no longer in URLs and logs |
 | \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` | Live edits, online dots, no polling for moderation |
 | \[ \] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
