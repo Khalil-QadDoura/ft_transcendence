@@ -12,6 +12,7 @@ import subprocess
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from email import message_from_bytes, policy
 from pathlib import Path
 
 # Settings require DATABASE_URL and JWT_SECRET, and importing the app reads the settings.
@@ -21,6 +22,7 @@ os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-0123456789abcdef")
 
 import httpx2
 import pytest
+from aiosmtpd.controller import Controller
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import make_url, text
@@ -135,6 +137,35 @@ class TestMailbox:
 
     def send(self, to: str, subject: str, body: str) -> None:
         self.sent.append({"to": to, "subject": subject, "body": body})
+
+
+def free_port() -> int:
+    """A port number that nothing on this machine listens on right now."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+class SmtpInbox:
+    """The test mail server calls handle_DATA for every email it receives; we keep them."""
+
+    def __init__(self):
+        self.emails = []
+
+    async def handle_DATA(self, server, session, envelope):
+        self.emails.append(message_from_bytes(envelope.content, policy=policy.default))
+        return "250 OK"
+
+
+@pytest.fixture
+def smtp_server():
+    """A real SMTP server on this machine (the aiosmtpd library), like Mailpit, for one test.
+    Gives its port and its inbox."""
+    inbox = SmtpInbox()
+    server = Controller(inbox, hostname="127.0.0.1", port=free_port())
+    server.start()
+    yield server.port, inbox
+    server.stop()
 
 
 @pytest.fixture
