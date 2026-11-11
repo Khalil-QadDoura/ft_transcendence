@@ -23,15 +23,38 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/wozu_ci_test
       DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/wozu_ci_test
       JWT_SECRET: ci-only-jwt-secret-not-for-production
+      # The media tests (BE-07) also need MinIO and Redis.
+      TEST_MINIO_ENDPOINT: localhost:9000
+      TEST_MINIO_ACCESS_KEY: ci-only-minio-user
+      TEST_MINIO_SECRET_KEY: ci-only-minio-secret
+      TEST_REDIS_URL: redis://localhost:6379/0
     defaults:
       run:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+      # MinIO needs a command (`server /data`), which a service container cannot be given.
+      # The same image and digest as docker-compose.yml (INF-04).
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER="$TEST_MINIO_ACCESS_KEY" \
+            -e MINIO_ROOT_PASSWORD="$TEST_MINIO_SECRET_KEY" \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 \
+            server /data
+          timeout 60 sh -c 'until curl -sf http://localhost:9000/minio/health/live; do sleep 1; done'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
