@@ -339,15 +339,25 @@ export function ProfilePage() {
         <h1>{t("title")}</h1>
         <p>{t("intro")}</p>
       </header>
-      {profile.isPending ? (
+      {profile.data ? (
+        <>
+          {profile.isError && (
+            <div role="alert">
+              <p>{t("refreshError")}</p>
+              <Button onClick={() => void profile.refetch()}>
+                {t("retry")}
+              </Button>
+            </div>
+          )}
+          <ProfileEditor key={profile.data.id} profile={profile.data} />
+        </>
+      ) : profile.isPending ? (
         <p role="status">{t("load")}</p>
-      ) : profile.isError ? (
+      ) : (
         <div className="profile-form-panel">
           <p role="alert">{t("loadError")}</p>
           <Button onClick={() => void profile.refetch()}>{t("retry")}</Button>
         </div>
-      ) : (
-        <ProfileEditor key={profile.data.id} profile={profile.data} />
       )}
     </section>
   );

@@ -48,5 +48,6 @@
     "adult": "You must be at least 18 years old.",
     "invalid": "Please check this value."
   },
-  "settings": "Account settings"
+  "settings": "Account settings",
+  "refreshError": "We couldn’t refresh your profile. Your edits are still here."
 }

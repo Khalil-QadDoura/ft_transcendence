@@ -155,3 +155,21 @@ test("load failures show retry instead of an editable blank profile", async () =
   });
   expect(container.querySelector("form")).not.toBeNull();
 });
+
+test("background refresh failure keeps the editor and unsaved draft mounted", async () => {
+  vi.spyOn(profileApi, "get")
+    .mockResolvedValueOnce(original)
+    .mockRejectedValue(new Error("offline"));
+  await render();
+  await fill("position", "Unsaved draft");
+  await act(async () => {
+    await cache.invalidateQueries({ queryKey: ["auth", "me"] });
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(container.textContent).toContain("Your edits are still here");
+  expect(
+    container.querySelector<HTMLInputElement>('[name="position"]')!.value,
+  ).toBe("Unsaved draft");
+});
