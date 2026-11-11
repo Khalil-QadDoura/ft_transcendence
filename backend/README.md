@@ -17,10 +17,11 @@ app/
                  constants (lifetimes, rate limits), security (Argon2id, JWT), deps (get_current_user)
   users/         /api/users/me: read, partial update, soft delete (BE-05), plus
                  constants (minimum age, field lengths)
+  companies/     CRUD, /companies/me returns 200 null for job seekers (BE-21)
   media/         /api/media: intro video upload-url, confirm, mine, post, unpost, delete,
                  feed (BE-07), plus constants (video limits, link lifetimes)
   worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
-  friends/ companies/ jobs/ conversations/ applications/ game/
+  friends/ jobs/ conversations/ applications/ game/
                  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
