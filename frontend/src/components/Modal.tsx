@@ -1,3 +1,4 @@
+import { useText } from "../i18n/useText";
 import { useEffect, useRef, useId, type ReactNode } from "react";
 
 export interface ModalProps {
@@ -21,6 +22,7 @@ export function Modal({
   className = "",
   closeOnBackdrop = true,
 }: ModalProps) {
+  const { t } = useText();
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -125,7 +127,7 @@ export function Modal({
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close modal"
+              aria-label={t("controls.closeModal")}
               className="rounded-md p-1.5 text-ink-muted hover:text-ink hover:bg-paper-subtle transition-colors focus-visible:ring-2 focus-visible:ring-ink focus-visible:outline-hidden cursor-pointer"
             >
               <svg

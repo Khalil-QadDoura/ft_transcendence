@@ -1,3 +1,4 @@
+import { activeLanguage } from "../i18n";
 /**
  * API Client for WOZU Web (ft_transcendence)
  * FE-20: Build the API client with token refresh and error handling
@@ -176,7 +177,11 @@ async function rotateToken(
 ): Promise<TokenPair | null> {
   const response = await fetch(`${basePath}${REFRESH_PATH}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "Accept-Language": activeLanguage(),
+    },
     body: JSON.stringify({ refresh_token: refreshToken }),
     signal: AbortSignal.timeout(15_000),
     cache: "no-store",
@@ -368,6 +373,9 @@ export async function apiClient<T = unknown>(
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
   }
+
+  if (!headers.has("Accept-Language"))
+    headers.set("Accept-Language", activeLanguage());
 
   // Attach body if present
   let body: BodyInit | undefined;

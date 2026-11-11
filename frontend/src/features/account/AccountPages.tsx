@@ -1,3 +1,6 @@
+import copy from "./copy.en.json";
+import { LanguageSwitcher } from "../../i18n/LanguageSwitcher";
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -20,7 +23,7 @@ const passwordSchema = z
   })
   .refine((v) => v.new_password === v.confirm, {
     path: ["confirm"],
-    message: "Passwords must match.",
+    message: copy.passwordsMustMatch,
   });
 type PasswordFields = z.infer<typeof passwordSchema>;
 function errorText(error: unknown) {
@@ -28,13 +31,12 @@ function errorText(error: unknown) {
     if (error.status === 400)
       return typeof error.detail === "string"
         ? error.detail
-        : "Please check your details and try again.";
+        : copy.pleaseCheckYourDetailsAndTryAgain;
     if (error.status === 429)
-      return "Too many attempts. Please wait a few minutes and try again.";
-    if (error.status === 422)
-      return "Please check the form values and try again.";
+      return copy.tooManyAttemptsPleaseWaitAFewMinutesAndTry;
+    if (error.status === 422) return copy.pleaseCheckTheFormValuesAndTryAgain;
   }
-  return "We couldn’t complete that request. Please try again.";
+  return copy.weCouldntCompleteThatRequestPleaseTryAgain;
 }
 export function ForgotPassword() {
   const [sent, setSent] = useState(false);
@@ -49,17 +51,15 @@ export function ForgotPassword() {
   return (
     <section className="account-page">
       <div className="account-heading">
-        <p className="eyebrow">A WAY BACK IN</p>
-        <h1>Forgot your password?</h1>
-        <p>We’ll help you get back to your next chapter.</p>
+        <p className="eyebrow">{copy.aWayBackIn}</p>
+        <h1>{copy.forgotYourPassword}</h1>
+        <p>{copy.wellHelpYouGetBackToYourNextChapter}</p>
       </div>
       <div className="account-panel">
         {sent ? (
           <div role="status">
-            <h2>Check your inbox.</h2>
-            <p>
-              If this email has an eligible account, a reset link is on its way.
-            </p>
+            <h2>{copy.checkYourInbox}</h2>
+            <p>{copy.ifThisEmailHasAnEligibleAccountAResetLink}</p>
           </div>
         ) : (
           <form
@@ -75,20 +75,20 @@ export function ForgotPassword() {
             })}
           >
             <Input
-              label="Email address"
+              label={copy.emailAddress}
               type="email"
               autoComplete="email"
               required
               {...register("email")}
-              error={errors.email && "Enter a valid email address."}
+              error={errors.email && copy.enterAValidEmailAddress}
             />
             {error && <p role="alert">{error}</p>}
             <Button type="submit" isLoading={isSubmitting}>
-              Send reset link
+              {copy.sendResetLink}
             </Button>
           </form>
         )}
-        <Link to="/login">Back to sign in</Link>
+        <Link to="/login">{copy.backToSignIn}</Link>
       </div>
     </section>
   );
@@ -125,25 +125,25 @@ function PasswordForm({ token }: { token?: string }) {
     >
       {changing && (
         <Input
-          label="Current password"
+          label={copy.currentPassword}
           type="password"
           autoComplete="current-password"
           required
           {...register("current_password")}
-          error={errors.current_password && "Use no more than 128 characters."}
+          error={errors.current_password && copy.useNoMoreThan128Characters}
         />
       )}
       <Input
-        label="New password"
+        label={copy.newPassword}
         type="password"
         autoComplete="new-password"
         required
         {...register("new_password")}
-        helperText="Use 8–128 characters."
-        error={errors.new_password && "Use 8–128 characters."}
+        helperText={copy.use8128Characters}
+        error={errors.new_password && copy.use8128Characters}
       />
       <Input
-        label="Confirm new password"
+        label={copy.confirmNewPassword}
         type="password"
         autoComplete="new-password"
         required
@@ -152,7 +152,7 @@ function PasswordForm({ token }: { token?: string }) {
       />
       {error && <p role="alert">{error}</p>}
       <Button type="submit" isLoading={isSubmitting}>
-        {changing ? "Change password" : "Reset password"}
+        {changing ? copy.changePassword : copy.resetPassword}
       </Button>
     </form>
   );
@@ -163,27 +163,23 @@ export function ResetPassword() {
   return (
     <section className="account-page">
       <div className="account-heading">
-        <p className="eyebrow">A FRESH START</p>
-        <h1>Choose a new password.</h1>
-        <p>
-          Your reset link works once. After resetting, sign in again on your
-          devices.
-        </p>
+        <p className="eyebrow">{copy.aFreshStart}</p>
+        <h1>{copy.chooseANewPassword}</h1>
+        <p>{copy.yourResetLinkWorksOnceAfterResettingSignInAgain}</p>
       </div>
       <div className="account-panel">
         {token ? (
           <PasswordForm key={token} token={token} />
         ) : (
-          <p role="alert">
-            This reset link is missing its token. Request a new link below.
-          </p>
+          <p role="alert">{copy.thisResetLinkIsMissingItsTokenRequestANew}</p>
         )}
-        <Link to="/forgot-password">Request a new reset link</Link>
+        <Link to="/forgot-password">{copy.requestANewResetLink}</Link>
       </div>
     </section>
   );
 }
 export function AccountSettings() {
+  const { t } = useTranslation();
   const [confirm, setConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState("");
@@ -194,26 +190,29 @@ export function AccountSettings() {
   return (
     <section className="account-page">
       <div className="account-heading">
-        <p className="eyebrow">YOUR ACCOUNT, YOUR CHOICE</p>
-        <h1>Account settings.</h1>
-        <p>Keep your account secure and stay in control.</p>
-        <Link to="/profile">Back to my profile</Link>
+        <p className="eyebrow">{copy.yourAccountYourChoice}</p>
+        <h1>{copy.accountSettings}</h1>
+        <p>{copy.keepYourAccountSecureAndStayInControl}</p>
+        <Link to="/profile">{copy.backToMyProfile}</Link>
       </div>
       <div className="account-panel">
-        <h2>Change password</h2>
-        <p>
-          This signs you out on all devices. You’ll sign in again with the new
-          password.
-        </p>
+        <section
+          className="account-language"
+          aria-labelledby="settings-language"
+        >
+          <div>
+            <h2 id="settings-language">{t("language")}</h2>
+            <p>{copy.chooseTheLanguageUsedOnThisDevice}</p>
+          </div>
+          <LanguageSwitcher />
+        </section>
+        <h2>{copy.changePassword}</h2>
+        <p>{copy.thisSignsYouOutOnAllDevicesYoullSignIn}</p>
         <PasswordForm />
         <div className="account-danger">
-          <h2>Delete account</h2>
-          <p>
-            Your account will be deactivated immediately and you won’t be able
-            to sign in. Read the Privacy Policy for the retention and deletion
-            details.
-          </p>
-          <Link to="/privacy">Privacy Policy</Link>
+          <h2>{copy.deleteAccount}</h2>
+          <p>{copy.yourAccountWillBeDeactivatedImmediatelyAndYouWontBe}</p>
+          <Link to="/privacy">{copy.privacyPolicy}</Link>
           <Button
             variant="danger"
             onClick={() => {
@@ -221,20 +220,22 @@ export function AccountSettings() {
               setConfirm(true);
             }}
           >
-            Delete account
+            {copy.deleteAccount}
           </Button>
         </div>
         <Modal
           isOpen={confirm}
           onClose={close}
-          title="Delete your account?"
-          description="This deactivates your account and ends your sessions. You won’t be able to sign in again."
+          title={copy.deleteYourAccount}
+          description={
+            copy.thisDeactivatesYourAccountAndEndsYourSessionsYouWont
+          }
           closeOnBackdrop={!removing}
         >
           {error && <p role="alert">{error}</p>}
           <div className="account-actions">
             <Button variant="outline" disabled={removing} onClick={close}>
-              Keep my account
+              {copy.keepMyAccount}
             </Button>
             <Button
               variant="danger"
@@ -252,7 +253,7 @@ export function AccountSettings() {
                 }
               }}
             >
-              Yes, delete my account
+              {copy.yesDeleteMyAccount}
             </Button>
           </div>
         </Modal>

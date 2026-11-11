@@ -192,11 +192,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     >
       {!signup && params.get("password") === "updated" && (
         <p role="status">
-          Your password was updated. Sign in with your new password.
+          {copy.yourPasswordWasUpdatedSignInWithYourNewPassword}
         </p>
       )}
       {!signup && params.get("account") === "deleted" && (
-        <p role="status">Your account has been deactivated.</p>
+        <p role="status">{copy.yourAccountHasBeenDeactivated}</p>
       )}
       {params.get("logout") === "local" && (
         <p className="auth-alert" role="alert">
@@ -286,8 +286,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       </p>
       <p className="auth-hint">
         {copy.learnHowWeHandleYourInformationInOur}{" "}
-        <Link to="/privacy">{copy.privacyPolicy}</Link>{" "}
-        {copy.and} <Link to="/terms">{copy.termsOfService}</Link>.
+        <Link to="/privacy">{copy.privacyPolicy}</Link> {copy.and}{" "}
+        <Link to="/terms">{copy.termsOfService}</Link>.
       </p>
     </AuthFrame>
   );

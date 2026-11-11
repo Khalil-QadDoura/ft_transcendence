@@ -1,3 +1,4 @@
+import { useText } from "../i18n/useText";
 import {
   ForgotPassword,
   ResetPassword,
@@ -11,29 +12,33 @@ import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
 function ComingSoon({ title }: { title: string }) {
+  const { t } = useText();
   return (
     <section className="empty-page">
-      <span className="eyebrow">A SPACE FOR WHAT’S NEXT</span>
-      <h1>{title}</h1>
-      <p>This space is taking shape. Please check back soon.</p>
+      <span className="eyebrow">{t("routes.aSpaceForWhatsNext")}</span>
+      <h1>{t(title)}</h1>
+      <p>{t("routes.thisSpaceIsTakingShapePleaseCheckBackSoon")}</p>
       <Link className="button" to="/">
-        Back to WOZU <span aria-hidden="true">↗</span>
+        {t("routes.backToWozu")}
+        <span aria-hidden="true">↗</span>
       </Link>
     </section>
   );
 }
 function Missing() {
+  const { t } = useText();
   return (
     <section className="empty-page">
-      <span className="eyebrow">404 / A SMALL DETOUR</span>
+      <span className="eyebrow">{t("routes.404ASmallDetour")}</span>
       <h1>
-        A different
+        {t("routes.aDifferent")}
         <br />
-        <em>direction.</em>
+        <em>{t("routes.direction")}</em>
       </h1>
-      <p>We couldn’t find that page. Your next chapter is still out there.</p>
+      <p>{t("routes.weCouldntFindThatPageYourNextChapterIs")}</p>
       <Link className="button" to="/">
-        Take me home <span aria-hidden="true">↗</span>
+        {t("routes.takeMeHome")}
+        <span aria-hidden="true">↗</span>
       </Link>
     </section>
   );
@@ -55,11 +60,11 @@ export const routes: RouteObject[] = [
       { path: "privacy", element: <LegalPage kind="privacy" /> },
       { path: "terms", element: <LegalPage kind="terms" /> },
       ...pages([
-        ["jobs", "Find your next chapter."],
-        ["jobs/:id", "A closer look."],
-        ["users/:id", "Meet the person."],
-        ["game/rules", "How to play."],
-        ["status", "Service status"],
+        ["jobs", "routes.jobs"],
+        ["jobs/:id", "routes.job"],
+        ["users/:id", "routes.person"],
+        ["game/rules", "routes.rules"],
+        ["status", "routes.status"],
       ]),
       {
         element: <GuestOnly />,
@@ -79,14 +84,14 @@ export const routes: RouteObject[] = [
         children: [
           { path: "settings", element: <AccountSettings /> },
           ...pages([
-            ["profile", "Your story."],
-            ["friends", "Good company."],
-            ["chat", "Start a conversation."],
-            ["chat/:id", "Keep the conversation going."],
-            ["videos", "More than a résumé."],
-            ["employer/*", "Build your next team."],
-            ["game", "Trust your instincts."],
-            ["game/rooms/:id", "Who’s really human?"],
+            ["profile", "routes.profile"],
+            ["friends", "routes.friends"],
+            ["chat", "routes.chat"],
+            ["chat/:id", "routes.conversation"],
+            ["videos", "routes.videos"],
+            ["employer/*", "routes.employer"],
+            ["game", "routes.game"],
+            ["game/rooms/:id", "routes.room"],
           ]),
         ],
       },
