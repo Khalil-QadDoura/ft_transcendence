@@ -1,6 +1,7 @@
-"""The rules of sign-up and login. Routes call these functions; these call the repo."""
+"""The rules of sign-up, login and passwords. Routes call these functions; these call the repo."""
 
 import asyncio
+from datetime import UTC, datetime
 
 import jwt
 from fastapi import BackgroundTasks, HTTPException
@@ -12,10 +13,18 @@ from app.auth.constants import (
     ACCESS_TOKEN_LIFETIME,
     EMAIL_VERIFY_SCOPE,
     EMAIL_VERIFY_TOKEN_LIFETIME,
+    PASSWORD_RESET_TOKEN_LIFETIME,
     REFRESH_SCOPE,
     REFRESH_TOKEN_LIFETIME,
 )
-from app.auth.schemas import LoginIn, RegisterIn, TokenPairOut, VerifyOut
+from app.auth.schemas import (
+    ChangePasswordIn,
+    LoginIn,
+    RegisterIn,
+    ResetPasswordIn,
+    TokenPairOut,
+    VerifyOut,
+)
 from app.core.config import Settings
 from app.core.mailer import Mailer
 from app.users.models import User
@@ -25,6 +34,7 @@ INVALID_LINK = "Invalid or expired link"
 INVALID_CREDENTIALS = "Invalid email or password"
 EMAIL_NOT_VERIFIED = "Email not verified"
 INVALID_TOKEN = "Invalid or expired token"
+WRONG_CURRENT_PASSWORD = "Wrong current password"
 
 VERIFY_SUBJECT = "Verify your WOZU account"
 VERIFY_BODY = """\
@@ -34,6 +44,17 @@ Open this link to verify your email address:
 {link}
 
 If you did not sign up, you can ignore this email.
+"""
+
+RESET_SUBJECT = "Reset your WOZU password"
+RESET_BODY = """\
+Someone asked to reset the password of your WOZU account.
+
+Open this link to choose a new password:
+{link}
+
+The link works once, for {minutes} minutes.
+If you did not ask for this, you can ignore this email: your password stays the same.
 """
 
 
@@ -158,3 +179,62 @@ async def issue_token_pair(session: AsyncSession, settings: Settings, user: User
     )
     await session.commit()
     return TokenPairOut(access_token=access_token, refresh_token=refresh_token)
+
+
+async def change_password(session: AsyncSession, user: User, data: ChangePasswordIn) -> None:
+    """The logged-in user picks a new password, after proving they know the current one.
+    Every token of the user stops working, this request's too: the user logs in again."""
+    # 400, not 401: a 401 would make the frontend refresh the token and log the user out.
+    if not await asyncio.to_thread(
+        security.verify_password, data.current_password, user.password_hash
+    ):
+        raise HTTPException(status_code=400, detail=WRONG_CURRENT_PASSWORD)
+    password_hash = await asyncio.to_thread(security.hash_password, data.new_password)
+    await repo.set_password(session, user.id, password_hash)
+    # A reset link asked for earlier would otherwise still change the password.
+    await repo.close_password_reset_tokens(session, user.id)
+    await session.commit()
+
+
+async def forgot_password(
+    session: AsyncSession,
+    settings: Settings,
+    mailer: Mailer,
+    background: BackgroundTasks,
+    email: str,
+) -> None:
+    """Email a reset link if this email belongs to an account that can log in."""
+    user = await repo.get_user_by_email(session, email)
+    # No account, a deleted one, or one not verified yet (signing up again is how that one gets
+    # a new password, BE-03): no email. The route gives the same 202 either way.
+    if user is None or user.status != "active" or not user.is_email_verified:
+        return
+    token = security.new_reset_token()
+    expires_at = datetime.now(UTC) + PASSWORD_RESET_TOKEN_LIFETIME
+    # Only the token's hash is stored: the token itself exists only in the email.
+    repo.add_password_reset_token(session, user.id, security.hash_reset_token(token), expires_at)
+    await session.commit()
+
+    # The link opens the frontend's page, which asks for the new password and then calls
+    # POST /api/auth/reset-password with the token.
+    link = f"{settings.frontend_base_url.rstrip('/')}/reset-password?token={token}"
+    minutes = int(PASSWORD_RESET_TOKEN_LIFETIME.total_seconds() // 60)
+    body = RESET_BODY.format(link=link, minutes=minutes)
+    # Sent after the answer has gone out, as at sign-up.
+    background.add_task(mailer.send, user.email, RESET_SUBJECT, body)
+
+
+async def reset_password(session: AsyncSession, data: ResetPasswordIn) -> None:
+    """Set a new password with the token of a reset link. Each link works once."""
+    # The database has only hashes, so the token is hashed the same way to find its row.
+    row = await repo.use_password_reset_token(session, security.hash_reset_token(data.token))
+    if row is None:  # unknown, already used or expired
+        raise HTTPException(status_code=400, detail=INVALID_LINK)
+    password_hash = await asyncio.to_thread(security.hash_password, data.new_password)
+    # token_version + 1, as for a change: every token made before stops working.
+    if await repo.set_password(session, row.user_id, password_hash) is None:
+        # The account was deleted after the email was sent. Nothing is saved (no commit).
+        raise HTTPException(status_code=400, detail=INVALID_LINK)
+    # The user's other links (from earlier requests) stop working too.
+    await repo.close_password_reset_tokens(session, row.user_id)
+    await session.commit()  # the used links and the new password, together
