@@ -157,8 +157,14 @@ async def list_my_videos(
 
 
 async def find_my_video(session: AsyncSession, user: User, video_id: int) -> IntroVideo:
-    """One of my videos, or 404. Someone else's video gets the same 404 as a missing one, so
-    nobody learns which ids exist; a deleted video is gone for good."""
+    """One of my videos, or 404, for post, unpost or delete. Someone else's video gets the
+    same 404 as a missing one, so nobody learns which ids exist; a deleted video is gone for good.
+
+    First I lock my row in users, the lock confirm takes: post, unpost and delete of my videos
+    wait in line, one at a time, until the one before has saved (commit). Only then is the
+    video read, fresh from the database: a video another request deleted meanwhile is 404,
+    so post or unpost can never bring it back."""
+    await repo.lock_user(session, user.id)
     video = await repo.get_my_video(session, user.id, video_id)
     if video is None:
         raise HTTPException(status_code=404, detail=VIDEO_NOT_FOUND)

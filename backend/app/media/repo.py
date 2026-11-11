@@ -49,13 +49,17 @@ def add_video(
 
 
 async def get_my_video(session: AsyncSession, user_id: int, video_id: int) -> IntroVideo | None:
-    """One of the user's videos, or None if it does not exist, is someone else's or is deleted."""
+    """One of the user's videos, or None if it does not exist, is someone else's or is deleted.
+    populate_existing: always the row as the database has it now, never a copy this session
+    read before."""
     return await session.scalar(
-        select(IntroVideo).where(
+        select(IntroVideo)
+        .where(
             IntroVideo.id == video_id,
             IntroVideo.user_id == user_id,
             IntroVideo.lifecycle_status != "deleted",
         )
+        .execution_options(populate_existing=True)
     )
 
 

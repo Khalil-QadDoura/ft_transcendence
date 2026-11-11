@@ -638,6 +638,79 @@ def test_a_normal_video_id_still_works_for_post_unpost_and_delete(client, ana):
         assert response.json()["lifecycle_status"] == lifecycle
 
 
+class PauseAfterTheRead:
+    """Stops the first request that reads a video (repo.get_my_video) right after the read,
+    until the test sets `released`. For post that is the moment of Zayid's review: the video
+    is read, my other posted video is not unposted yet. The pause waits in a worker thread, so
+    the app goes on serving the other request, which has its own database session."""
+
+    def __init__(self, monkeypatch):
+        self.reached = threading.Event()
+        self.released = threading.Event()
+        read = repo.get_my_video
+
+        async def read_then_pause(session, user_id: int, video_id: int):
+            video = await read(session, user_id, video_id)
+            if not self.reached.is_set():  # only the first request stops
+                self.reached.set()
+                await asyncio.to_thread(self.released.wait, 10)
+            return video
+
+        monkeypatch.setattr(repo, "get_my_video", read_then_pause)
+
+
+def a_request_waits_for_a_lock() -> bool:
+    """True while a database session waits for a row that another one has locked."""
+    return sql("SELECT count(*) FROM pg_locks WHERE NOT granted") != [(0,)]
+
+
+def wait_until(condition, seconds: float = 10) -> None:
+    deadline = time.monotonic() + seconds
+    while not condition():
+        assert time.monotonic() < deadline, "waited too long"
+        time.sleep(0.05)
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "answers"),
+    [
+        # Zayid's case: post stops after reading the video, delete comes. The delete waits
+        # for the post to finish, then deletes.
+        ("post", "delete", [200, 200]),
+        ("unpost", "delete", [200, 200]),
+        # The other way round: the post or unpost waits for the delete, then reads the video
+        # again and finds it deleted.
+        ("delete", "post", [200, 404]),
+        ("delete", "unpost", [200, 404]),
+    ],
+)
+def test_a_deleted_video_stays_deleted_when_two_requests_meet(
+    client, ana, monkeypatch, first, second, answers
+):
+    other = new_video(client, ana)
+    moderate(other)
+    action(client, ana, other, "post")
+    video_id = new_video(client, ana)
+    moderate(video_id)
+    if "unpost" in (first, second):  # unpost needs a posted video
+        action(client, ana, video_id, "post")
+    pause = PauseAfterTheRead(monkeypatch)
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        first_answer = threads.submit(action, client, ana, video_id, first)
+        assert pause.reached.wait(10)  # the first request has read the video and stopped
+        second_answer = threads.submit(action, client, ana, video_id, second)
+        # With the lock, the second request now waits for the first one. Without it, the
+        # second one runs to its end while the first one is stopped.
+        wait_until(lambda: second_answer.done() or a_request_waits_for_a_lock())
+        pause.released.set()
+        got = [first_answer.result(10).status_code, second_answer.result(10).status_code]
+    assert got == answers
+    # Deleted for good: not posted or unposted again, not in the feed, and post is 404.
+    assert lifecycles(ana.id)[video_id] == "deleted"
+    assert video_id not in feed_ids(client, ana)
+    assert action(client, ana, video_id, "post").json() == error(404, "Video not found")
+
+
 # --- mine --------------------------------------------------------------------------------
 
 
