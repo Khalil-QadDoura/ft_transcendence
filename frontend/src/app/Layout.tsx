@@ -13,7 +13,14 @@ export function Layout({
   const main = useRef<HTMLElement>(null);
   const signedIn = useContext(SessionContext) === "authenticated";
   useEffect(() => {
-    document.title = `${document.querySelector("h1")?.textContent || "Find your people"} · WOZU`;
+    const heading = main.current?.querySelector("h1")?.cloneNode(true) as
+      HTMLElement | undefined;
+    // A visual line break separates words even though textContent omits it.
+    heading
+      ?.querySelectorAll("br")
+      .forEach((lineBreak) => lineBreak.replaceWith(" "));
+    const title = heading?.textContent?.replace(/\s+/g, " ").trim();
+    document.title = `${title || "Find your people"} · WOZU`;
     if (previousPath.current !== pathname) {
       window.scrollTo(0, 0);
       main.current?.focus({ preventScroll: true });

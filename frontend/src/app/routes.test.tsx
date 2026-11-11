@@ -96,6 +96,20 @@ test("renders unknown paths and focuses the main landmark after navigation", asy
   expect(document.activeElement?.id).toBe("main");
   expect(document.title).toBe("Privacy Policy · WOZU");
 });
+
+test("preserves word spacing in tab titles across visual line breaks", async () => {
+  const router = await render("/");
+  expect(document.title).toBe("Your next chapter, in good company. · WOZU");
+  expect(container.querySelectorAll("h1 br")).toHaveLength(2);
+  await act(() => router.navigate("/missing/path"));
+  expect(document.title).toBe("A different direction. · WOZU");
+});
+
+test("keeps the shared component preview available during development", async () => {
+  await render("/dev/components");
+  expect(container.textContent).toContain("Design System & Component Preview");
+  expect(container.textContent).not.toContain("404 / A SMALL DETOUR");
+});
 test.each([
   null,
   "https://example.com",
