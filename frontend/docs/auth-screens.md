@@ -16,9 +16,7 @@ The screen layout, accessible labels, pending states, verification single-flight
 
 ## Dependency and review base
 
-FE-03 #14, FE-20 #22 and FE-21 #21 are merged on main. FE-04 now includes main `5e00da5` and the corrected FE-02 shell at `763df62`; Ahmad's original client/component commits are retained. PR #17 is stacked on `feat/FE-02-app-shell` (#2) so its diff contains only authentication changes.
-
-Do not merge FE-04 into the FE-02 branch. After #2 is approved and merged, update FE-04 onto main, retarget #17 and repeat checks. Khalil reviews the backend contract; Ahmad reviews the shared-client lifecycle changes. In particular, `setTokens` without a refresh token now removes any saved refresh token, and auth-change subscribers must not throw.
+FE-02, FE-03, FE-20 and FE-21 are merged. PR #17 targets main and includes the merged legal pages. Khalil reviews the backend contract; Ahmad reviews the shared-client lifecycle and component changes. Cross-tab rotation coordination remains separate.
 
 ## Verified backend contract
 
@@ -57,3 +55,9 @@ Khalil's review, prerequisite merges, main-based CI and the owner walkthrough re
 A verified email that returns HTTP 409 shows “This email already has an account. Try signing in.” The existing sign-in link preserves `next`; a repeated unverified registration still follows the 202 check-inbox flow. Empty login passwords are rejected locally while short nonempty passwords still reach the backend. Backend 422 field explanations render as ordinary React text and retain field focus.
 
 Transient refresh failures (429, 5xx or offline), cross-tab rotation coordination and shared UI primitive adoption remain follow-up work discussed in review; they are not claimed fixed by this message-handling change. A new browser pass is pending because browser access was unavailable in the review-fix session; the earlier browser evidence above is historical.
+
+## November 11 follow-up
+
+Transient refresh failures (429, 5xx and offline) now preserve the current credentials and schedule one retry after 30 seconds. The shared promise still deduplicates refresh requests. Logout/new login cancels retries; a rejected 401 or structurally invalid token response still clears credentials. Protected startup stays at its original URL while refresh is unavailable and offers a retry message. This avoids treating rate limiting as revoked credentials.
+
+Auth forms now use Ahmad’s shared Input and Button, including accessible field errors, loading and Tailwind focus/spacing. Auth CSS uses the shared color tokens. Auth interface copy is extracted into `copy.en.json` for the FE-06/FE-07 integration; server validation details remain plain React text. English wording is preserved. These changes supersede the earlier “transient refresh/shared primitives pending” notes; cross-tab coordination and final HTTPS/SMTP validation remain open.

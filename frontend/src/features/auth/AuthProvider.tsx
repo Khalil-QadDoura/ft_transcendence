@@ -1,8 +1,10 @@
+import copy from "./copy.en.json";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useState,
   useSyncExternalStore,
   type PropsWithChildren,
 } from "react";
@@ -17,6 +19,8 @@ export function AuthProvider({
   client = gateway,
 }: PropsWithChildren<{ client?: AuthGateway }>) {
   const queries = useQueryClient();
+  const [retry, setRetry] = useState(0);
+  const [restoreFailed, setRestoreFailed] = useState(false);
   const subscribe = useCallback(
     (listener: () => void) => {
       let version = client.getSessionVersion();
@@ -34,11 +38,42 @@ export function AuthProvider({
   );
   const status = useSyncExternalStore(subscribe, client.getStatus);
   useEffect(() => {
-    void client.restore();
-  }, [client]);
+    let active = true;
+    void client.restore().then(
+      () => {
+        if (active) setRestoreFailed(false);
+      },
+      () => {
+        if (active) setRestoreFailed(true);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [client, retry]);
   return (
     <AuthContext value={client}>
-      <SessionContext value={status}>{children}</SessionContext>
+      <SessionContext value={status}>
+        {restoreFailed && status === "loading" && (
+          <div
+            role="alert"
+            className="mx-auto my-4 max-w-xl rounded-lg border border-border bg-surface p-4 text-ink"
+          >
+            <p>{copy.yourSessionCouldNotBeRestoredRightNowYourSaved}</p>
+            <button
+              type="button"
+              className="mt-2 underline"
+              onClick={() => {
+                setRestoreFailed(false);
+                setRetry((value) => value + 1);
+              }}
+            >
+              {copy.tryAgain}
+            </button>
+          </div>
+        )}
+        {children}
+      </SessionContext>
     </AuthContext>
   );
 }

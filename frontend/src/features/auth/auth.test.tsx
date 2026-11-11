@@ -170,7 +170,7 @@ test("backend 422 marks and focuses the permitted field", async () => {
   expect(
     container.querySelector("#auth-email")?.getAttribute("aria-invalid"),
   ).toBe("true");
-  expect(container.querySelector("#email-error")?.textContent).toBe(
+  expect(container.querySelector("#auth-email-error")?.textContent).toBe(
     "invalid address",
   );
 });
@@ -464,4 +464,39 @@ test("private cached queries clear on account replacement but survive ordinary r
   expect(client.getStatus()).toBe("authenticated");
   expect(query.getQueryData(["private-profile"])).toBeUndefined();
   expect(getAccessToken()).toBe("account-b");
+});
+
+test("temporary restoration failure preserves the protected route and offers retry", async () => {
+  setStoredRefreshToken("saved-refresh");
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 503 }))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          JSON.stringify({
+            access_token: "restored",
+            refresh_token: "rotated",
+            token_type: "bearer",
+          }),
+        ),
+      ),
+  );
+  client = createAuthGateway();
+  const router = await render("/friends?tab=pending");
+  expect(router.state.location.pathname).toBe("/friends");
+  expect(container.textContent).toContain("Your saved sign-in has been kept");
+  expect(getStoredRefreshToken()).toBe("saved-refresh");
+  const retry = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === "Try again",
+  )!;
+  await act(() => retry.click());
+  expect(client.getStatus()).toBe("authenticated");
+  expect(router.state.location.pathname + router.state.location.search).toBe(
+    "/friends?tab=pending",
+  );
+  expect(container.textContent).not.toContain(
+    "Your saved sign-in has been kept",
+  );
 });
