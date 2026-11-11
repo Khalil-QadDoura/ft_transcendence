@@ -63,7 +63,9 @@ async def update_job(
 
     updates = payload.model_dump(exclude_unset=True)
     if updates:
-        await repo.update_job(session, job, actor_id=user_id, values=updates)
+        updated = await repo.update_job(session, job, actor_id=user_id, values=updates)
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     detail = await repo.get_job_detail(session, job_id)
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
@@ -76,4 +78,6 @@ async def delete_job(session: AsyncSession, job_id: int, user_id: int) -> None:
     job = await repo.get_owned_job(session, job_id, user_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    await repo.soft_delete_job(session, job, actor_id=user_id)
+    deleted = await repo.soft_delete_job(session, job, actor_id=user_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")

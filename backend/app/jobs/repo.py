@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.applications.models import Application, JobView
@@ -167,25 +167,44 @@ async def create_job(
     return job
 
 
+async def _conditional_job_update(
+    session: AsyncSession,
+    job: Job,
+    *,
+    actor_id: int,
+    values: dict[str, Any],
+) -> bool:
+    """Update a job only while status != 'deleted'; returns False if concurrently deleted."""
+    allowed_values = {k: v for k, v in values.items() if hasattr(Job, k)}
+    stmt = (
+        update(Job)
+        .where(Job.id == job.id, Job.status != DELETED)
+        .values(**allowed_values, updated_by_id=actor_id)
+        .returning(Job.id)
+    )
+    updated_id = (await session.execute(stmt)).scalar_one_or_none()
+    if updated_id is None:
+        await session.rollback()
+        return False
+    await session.commit()
+    # Invalidate the loaded ORM instance because async_sessionmaker sets expire_on_commit=False.
+    session.expire(job)
+    return True
+
+
 async def update_job(
     session: AsyncSession,
     job: Job,
     *,
     actor_id: int,
     values: dict[str, Any],
-) -> Job:
-    """Persist field changes onto an owned job row."""
-    for key, value in values.items():
-        if hasattr(job, key):
-            setattr(job, key, value)
-    job.updated_by_id = actor_id
-    await session.commit()
-    await session.refresh(job)
-    return job
+) -> bool:
+    """Persist field changes onto an owned job row if still non-deleted."""
+    return await _conditional_job_update(session, job, actor_id=actor_id, values=values)
 
 
-async def soft_delete_job(session: AsyncSession, job: Job, *, actor_id: int) -> None:
-    """Soft-delete a job by setting status to 'deleted'."""
-    job.status = DELETED
-    job.updated_by_id = actor_id
-    await session.commit()
+async def soft_delete_job(session: AsyncSession, job: Job, *, actor_id: int) -> bool:
+    """Soft-delete a job by setting status to 'deleted' if still non-deleted."""
+    return await _conditional_job_update(
+        session, job, actor_id=actor_id, values={"status": DELETED}
+    )

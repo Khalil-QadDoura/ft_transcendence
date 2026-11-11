@@ -7,14 +7,19 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database, sql
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.auth import security
 from app.auth.deps import get_current_user, get_current_user_optional
 from app.companies.models import Company
+from app.jobs import repo as jobs_repo
+from app.jobs import service as jobs_service
+from app.jobs.schemas import JobUpdate
 from app.users.models import User
 
 AUTH_SECRET = "test-only-jwt-secret-0123456789abcdef"
@@ -356,6 +361,29 @@ def test_delete_job_ownership_and_success(client):
     mock_del.assert_awaited_once()
 
 
+def test_patch_and_delete_return_404_when_conditional_write_hits_zero_rows(client):
+    """Concurrent delete between ownership read and conditional UPDATE returns 404."""
+    client.app.dependency_overrides[get_current_user] = lambda: OWNER_USER
+
+    with (
+        patch("app.jobs.repo.get_owned_job", new_callable=AsyncMock) as mock_owned,
+        patch("app.jobs.repo.update_job", new_callable=AsyncMock) as mock_upd,
+    ):
+        mock_owned.return_value = object()
+        mock_upd.return_value = False
+        res = client.patch("/api/jobs/101", json={"status": "open"}, headers=AUTH_HEADER)
+    assert res.status_code == 404
+
+    with (
+        patch("app.jobs.repo.get_owned_job", new_callable=AsyncMock) as mock_owned,
+        patch("app.jobs.repo.soft_delete_job", new_callable=AsyncMock) as mock_del,
+    ):
+        mock_owned.return_value = object()
+        mock_del.return_value = False
+        res = client.delete("/api/jobs/101", headers=AUTH_HEADER)
+    assert res.status_code == 404
+
+
 def test_openapi_documents_jobs_routes_and_draft_status(client):
     """OpenAPI documents BE-25 routes and 'draft'/'open' statuses (not 'active')."""
     spec = client.get("/api/openapi.json").json()
@@ -570,3 +598,81 @@ def test_jobs_database_check_constraints_enforced():
             await engine.dispose()
 
     asyncio.run(_assert_constraints())
+
+
+@needs_database
+def test_concurrent_patch_cannot_resurrect_deleted_job():
+    """Two-session barrier: committed DELETE prevents paused PATCH from reopening the job."""
+    alembic("upgrade", "head")
+    sql("TRUNCATE users, companies, jobs RESTART IDENTITY CASCADE")
+    _seed_db_user("race_employer@example.com")
+
+    with TestClient(build_app(database_url=TEST_DATABASE_URL)) as test_client:
+        tok = test_client.post(
+            "/api/auth/login",
+            json={"email": "race_employer@example.com", "password": PASSWORD},
+        ).json()["access_token"]
+        emp_h = {"Authorization": f"Bearer {tok}"}
+
+        assert (
+            test_client.post(
+                "/api/companies",
+                json={"name": "Race Co", "country": "UAE", "city": "Abu Dhabi"},
+                headers=emp_h,
+            ).status_code
+            == 201
+        )
+        draft_res = test_client.post("/api/jobs", json=_job_payload(), headers=emp_h)
+        assert draft_res.status_code == 201
+        job = draft_res.json()
+        job_id = job["id"]
+        owner_user_id = job["created_by_id"]
+
+    async def _exercise() -> int:
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+
+        orig_get_owned = jobs_repo.get_owned_job
+        patch_read = asyncio.Event()
+        delete_done = asyncio.Event()
+        paused = False
+
+        async def barrier_get_owned(session: AsyncSession, jid: int, uid: int):
+            nonlocal paused
+            res = await orig_get_owned(session, jid, uid)
+            if not paused:
+                paused = True
+                patch_read.set()
+                await asyncio.wait_for(delete_done.wait(), timeout=5.0)
+            return res
+
+        async def _run_patch() -> int:
+            async with maker() as s1:
+                try:
+                    await jobs_service.update_job(
+                        s1, job_id, owner_user_id, JobUpdate(status="open")
+                    )
+                except HTTPException as exc:
+                    return exc.status_code
+                return 200
+
+        async def _run_delete() -> None:
+            await asyncio.wait_for(patch_read.wait(), timeout=5.0)
+            try:
+                async with maker() as s2:
+                    await jobs_service.delete_job(s2, job_id, owner_user_id)
+            finally:
+                delete_done.set()
+
+        try:
+            with patch("app.jobs.repo.get_owned_job", side_effect=barrier_get_owned):
+                patch_status, _ = await asyncio.gather(_run_patch(), _run_delete())
+            return patch_status
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(_exercise()) == 404
+    assert sql("SELECT status::text FROM jobs WHERE id = :id", id=job_id)[0][0] == "deleted"
+
+    with TestClient(build_app(database_url=TEST_DATABASE_URL)) as verify_client:
+        assert verify_client.get(f"/api/jobs/{job_id}").status_code == 404
