@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentUser
@@ -10,13 +10,16 @@ from app.core.queue import TaskQueue, get_queue
 from app.core.storage import Storage, get_storage
 from app.db.session import get_session
 from app.media import service
-from app.media.schemas import ConfirmIn, UploadUrlIn, UploadUrlOut, VideoStatusOut
+from app.media.constants import MAX_URL_EXPIRES_SEC, MIN_URL_EXPIRES_SEC, VIEW_URL_EXPIRES_SEC
+from app.media.schemas import ConfirmIn, MyVideosOut, UploadUrlIn, UploadUrlOut, VideoStatusOut
 
 router = APIRouter(prefix="/media", tags=["media"])  # mounted under /api
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 Files = Annotated[Storage, Depends(get_storage)]
 Queue = Annotated[TaskQueue, Depends(get_queue)]
+# How long the signed links to watch a video work: ?expires_sec=60 to 3600, 300 by default.
+ExpiresSec = Annotated[int, Query(ge=MIN_URL_EXPIRES_SEC, le=MAX_URL_EXPIRES_SEC)]
 
 
 @router.post("/intro-video/upload-url")
@@ -37,3 +40,32 @@ async def confirm_upload(
     """Step 3 of 3, after the PUT: check the file, save the video, queue its moderation."""
     video = await service.confirm_upload(session, storage, queue, background, user, data)
     return VideoStatusOut.model_validate(video)
+
+
+@router.get("/intro-video/mine")
+async def list_my_videos(
+    user: CurrentUser,
+    session: Session,
+    storage: Files,
+    expires_sec: ExpiresSec = VIEW_URL_EXPIRES_SEC,
+) -> MyVideosOut:
+    """My videos (not the deleted ones), newest first. Poll it while one is "pending"."""
+    return await service.list_my_videos(session, storage, user, expires_sec)
+
+
+@router.post("/intro-video/{video_id}/post")
+async def post_video(user: CurrentUser, video_id: int, session: Session) -> VideoStatusOut:
+    """Show this approved video in the feed; my previous posted video becomes "unposted"."""
+    return VideoStatusOut.model_validate(await service.post_video(session, user, video_id))
+
+
+@router.post("/intro-video/{video_id}/unpost")
+async def unpost_video(user: CurrentUser, video_id: int, session: Session) -> VideoStatusOut:
+    """Take my posted video out of the feed."""
+    return VideoStatusOut.model_validate(await service.unpost_video(session, user, video_id))
+
+
+@router.post("/intro-video/{video_id}/delete")
+async def delete_video(user: CurrentUser, video_id: int, session: Session) -> VideoStatusOut:
+    """Delete my video (a soft delete): the row stays, marked "deleted"."""
+    return VideoStatusOut.model_validate(await service.delete_video(session, user, video_id))

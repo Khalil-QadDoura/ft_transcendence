@@ -1,5 +1,6 @@
 """Request and response shapes of /api/media (they also appear in /api/openapi.json)."""
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -51,3 +52,23 @@ class VideoStatusOut(BaseModel):
     id: int
     moderation_status: str
     lifecycle_status: str
+
+
+class MyVideoOut(BaseModel):
+    """One of my videos, with a signed link to watch it (it works for expires_sec seconds)."""
+
+    id: int
+    object_key: str
+    duration_sec: int
+    size_bytes: int
+    content_type: str
+    moderation_status: str
+    lifecycle_status: str
+    created_at: datetime
+    updated_at: datetime
+    signed_url: str
+    expires_sec: int
+
+
+class MyVideosOut(BaseModel):
+    items: list[MyVideoOut]

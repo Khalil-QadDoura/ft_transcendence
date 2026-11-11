@@ -23,7 +23,7 @@ from app.media.constants import (
     UUID_PATTERN,
 )
 from app.media.models import IntroVideo
-from app.media.schemas import ConfirmIn, UploadUrlIn, UploadUrlOut
+from app.media.schemas import ConfirmIn, MyVideoOut, MyVideosOut, UploadUrlIn, UploadUrlOut
 from app.users.models import User
 
 ONLY_MP4 = "Only MP4 videos (video/mp4) are accepted"
@@ -33,6 +33,10 @@ NO_FILE = "No uploaded file at this object_key: PUT the video to put_url first"
 TOO_BIG = f"The video is larger than {MAX_SIZE_BYTES // (1024 * 1024)} MiB"
 NOT_AN_MP4 = "The uploaded file is not an MP4 video"
 ALREADY_CONFIRMED = "This video is already confirmed"
+VIDEO_NOT_FOUND = "Video not found"
+NOT_APPROVED = "Only a video approved by moderation can be posted"
+ALREADY_POSTED = "This video is already posted"
+NOT_POSTED = "This video is not posted"
 
 
 def object_key_for(user_id: int) -> str:
@@ -103,4 +107,73 @@ async def confirm_upload(
 
     # 4. Queue the moderation, after the answer has gone out, so the user never waits for it.
     background.add_task(queue.moderate_video, video.id, video.object_key)
+    return video
+
+
+async def list_my_videos(
+    session: AsyncSession, storage: Storage, user: User, expires_sec: int
+) -> MyVideosOut:
+    """My videos that are not deleted, each with a signed link to watch it."""
+    videos = await repo.list_my_videos(session, user.id)
+    expires = timedelta(seconds=expires_sec)
+    return MyVideosOut(
+        items=[
+            MyVideoOut(
+                id=video.id,
+                object_key=video.object_key,
+                duration_sec=video.duration_sec,
+                size_bytes=video.size_bytes,
+                content_type=video.content_type,
+                moderation_status=video.moderation_status,
+                lifecycle_status=video.lifecycle_status,
+                created_at=video.created_at,
+                updated_at=video.updated_at,
+                signed_url=storage.download_url(video.object_key, expires),
+                expires_sec=expires_sec,
+            )
+            for video in videos
+        ]
+    )
+
+
+async def find_my_video(session: AsyncSession, user: User, video_id: int) -> IntroVideo:
+    """One of my videos, or 404. Someone else's video gets the same 404 as a missing one, so
+    nobody learns which ids exist; a deleted video is gone for good."""
+    video = await repo.get_my_video(session, user.id, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail=VIDEO_NOT_FOUND)
+    return video
+
+
+async def post_video(session: AsyncSession, user: User, video_id: int) -> IntroVideo:
+    """Show this video in the feed. Only an approved one; my previous posted video is unposted."""
+    video = await find_my_video(session, user, video_id)
+    if video.moderation_status != "approved":
+        raise HTTPException(status_code=409, detail=NOT_APPROVED)
+    if video.lifecycle_status == "posted":
+        raise HTTPException(status_code=409, detail=ALREADY_POSTED)
+    # One posted video per user: the database refuses a second one (a unique index on the
+    # posted videos, BE-02), so the old one is unposted first, then this one is posted.
+    await repo.unpost_posted_video(session, user.id)
+    video.lifecycle_status = "posted"
+    await session.commit()
+    return video
+
+
+async def unpost_video(session: AsyncSession, user: User, video_id: int) -> IntroVideo:
+    """Take my posted video out of the feed. I can post it again later."""
+    video = await find_my_video(session, user, video_id)
+    if video.lifecycle_status != "posted":
+        raise HTTPException(status_code=409, detail=NOT_POSTED)
+    video.lifecycle_status = "unposted"
+    await session.commit()
+    return video
+
+
+async def delete_video(session: AsyncSession, user: User, video_id: int) -> IntroVideo:
+    """Soft delete: the row stays (with its file), only its lifecycle becomes "deleted". It
+    leaves my list and the feed, no longer counts in my 3 videos, and cannot come back."""
+    video = await find_my_video(session, user, video_id)
+    video.lifecycle_status = "deleted"
+    await session.commit()
     return video
