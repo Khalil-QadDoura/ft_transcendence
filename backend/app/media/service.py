@@ -1,10 +1,12 @@
-"""The rules of intro videos. Routes call these functions; these call the repo and storage."""
+"""The rules of intro videos, avatars and company logos. Routes call these functions; these
+call the repo and storage."""
 
 import asyncio
 import re
 from datetime import timedelta
 from uuid import uuid4
 
+import structlog
 from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,14 +15,22 @@ from app.core.queue import TaskQueue
 from app.core.storage import Storage
 from app.media import repo
 from app.media.constants import (
+    AVATARS_FOLDER,
+    JPEG_SIGNATURE,
     MAX_ACTIVE_VIDEOS,
+    MAX_PICTURE_BYTES,
     MAX_SIZE_BYTES,
     MP4_CONTENT_TYPE,
     MP4_EXTENSION,
     MP4_SIGNATURE,
     MP4_SIGNATURE_END,
     MP4_SIGNATURE_START,
+    PICTURE_SIGNATURE_BYTES,
+    PICTURE_TYPES,
+    PNG_SIGNATURE,
     UUID_PATTERN,
+    WEBP_SIGNATURE_RIFF,
+    WEBP_SIGNATURE_WEBP,
 )
 from app.media.models import IntroVideo
 from app.media.schemas import (
@@ -29,10 +39,13 @@ from app.media.schemas import (
     FeedVideoOut,
     MyVideoOut,
     MyVideosOut,
+    PictureUploadUrlOut,
     UploadUrlIn,
     UploadUrlOut,
 )
 from app.users.models import User
+
+log = structlog.get_logger(__name__)
 
 ONLY_MP4 = "Only MP4 videos (video/mp4) are accepted"
 NOT_YOUR_KEY = "Invalid object_key: use the one upload-url gave you"
@@ -45,6 +58,11 @@ VIDEO_NOT_FOUND = "Video not found"
 NOT_APPROVED = "Only a video approved by moderation can be posted"
 ALREADY_POSTED = "This video is already posted"
 NOT_POSTED = "This video is not posted"
+ONLY_PICTURES = "Only jpg, png or webp pictures are accepted"
+NO_PICTURE = "No uploaded file at this object_key: PUT the picture to put_url first"
+PICTURE_TOO_BIG = f"The picture is larger than {MAX_PICTURE_BYTES // (1024 * 1024)} MiB"
+WRONG_CONTENT_TYPE = "Upload the picture with the header Content-Type: {}"
+NOT_THAT_PICTURE = "The uploaded file is not a {} picture"
 
 
 def object_key_for(user_id: int) -> str:
@@ -234,3 +252,87 @@ async def get_feed(
     ]
     next_cursor = items[-1].id if len(rows) > limit else None
     return FeedOut(items=items, next_cursor=next_cursor)
+
+
+# --- Avatars and company logos (BE-08) -----------------------------------------------------
+
+
+def create_picture_upload_url(
+    storage: Storage, folder: str, owner_id: int, ext: str, expires_sec: int
+) -> PictureUploadUrlOut:
+    """A new key in the owner's public folder (avatars/<user id>/ or logos/<company id>/) and
+    a signed link to PUT one jpg, png or webp picture there (415 for anything else)."""
+    ext = ext.lower()  # "PNG" is fine too; the key is always written in small letters
+    if ext not in PICTURE_TYPES:
+        raise HTTPException(status_code=415, detail=ONLY_PICTURES)
+    object_key = f"{folder}/{owner_id}/{uuid4()}.{ext}"
+    return PictureUploadUrlOut(
+        object_key=object_key,
+        put_url=storage.upload_url(object_key, timedelta(seconds=expires_sec)),
+        expires_sec=expires_sec,
+        max_bytes=MAX_PICTURE_BYTES,
+    )
+
+
+def looks_like_picture(ext: str, first_bytes: bytes) -> bool:
+    """True when the file really starts like a picture of this type, whatever its name says."""
+    if ext == "jpg":
+        return first_bytes.startswith(JPEG_SIGNATURE)
+    if ext == "png":
+        return first_bytes.startswith(PNG_SIGNATURE)
+    if ext == "webp":
+        return first_bytes[0:4] == WEBP_SIGNATURE_RIFF and first_bytes[8:12] == WEBP_SIGNATURE_WEBP
+    return False
+
+
+async def check_picture(storage: Storage, folder: str, owner_id: int, object_key: str) -> None:
+    """Refuse the key unless upload-url could have made it for this owner, and the file unless
+    it really is a small enough picture of the key's type."""
+    # 1. The key. Its extension must be jpg, png or webp...
+    ext = object_key.rsplit(".", 1)[-1]
+    if ext not in PICTURE_TYPES:
+        raise HTTPException(status_code=415, detail=ONLY_PICTURES)
+    # ...and the whole key must be <folder>/<owner id>/<uuid>.<ext>: nobody can confirm a file
+    # of another user or company, or a path trick such as "avatars/1/../2/...".
+    if re.fullmatch(rf"{folder}/{owner_id}/{UUID_PATTERN}\.{ext}", object_key) is None:
+        raise HTTPException(status_code=400, detail=NOT_YOUR_KEY)
+
+    # 2. The file in storage itself (stat_object), not what the browser says about it. The
+    # MinIO calls wait for the network, so they run in a worker thread.
+    stored = await asyncio.to_thread(storage.stat, object_key)
+    if stored is None:  # never uploaded, or uploaded somewhere else
+        raise HTTPException(status_code=400, detail=NO_PICTURE)
+    if stored.size > MAX_PICTURE_BYTES:
+        raise HTTPException(status_code=413, detail=PICTURE_TOO_BIG)
+    # MinIO sends this Content-Type back to everyone who downloads the file: it must be the
+    # picture's own type, never something a browser would run, such as text/html.
+    if stored.content_type != PICTURE_TYPES[ext]:
+        raise HTTPException(status_code=415, detail=WRONG_CONTENT_TYPE.format(PICTURE_TYPES[ext]))
+    first_bytes = b""
+    if stored.size >= PICTURE_SIGNATURE_BYTES:  # a smaller file cannot be a picture
+        first_bytes = await asyncio.to_thread(
+            storage.first_bytes, object_key, PICTURE_SIGNATURE_BYTES
+        )
+    if not looks_like_picture(ext, first_bytes):
+        raise HTTPException(status_code=415, detail=NOT_THAT_PICTURE.format(ext))
+
+
+async def remove_files(storage: Storage, keys: list[str]) -> None:
+    """Delete files that nothing points to any more. The database is already saved, so if
+    MinIO fails here the request still succeeds: the file left behind is logged instead."""
+    for key in keys:
+        try:
+            await asyncio.to_thread(storage.remove, key)
+        except Exception:  # MinIO down or unreachable: log it with the traceback
+            log.exception("file not removed from storage", object_key=key)
+
+
+async def confirm_avatar(session: AsyncSession, storage: Storage, user: User, key: str) -> None:
+    """Make the checked picture my avatar. The file of my old avatar is deleted: its public
+    link must not keep working once I have changed my picture."""
+    await check_picture(storage, AVATARS_FOLDER, user.id, key)
+    old_key = user.avatar_object_key
+    user.avatar_object_key = key
+    await session.commit()  # the new avatar is saved first, then the old file goes
+    if old_key and old_key != key:
+        await remove_files(storage, [old_key])

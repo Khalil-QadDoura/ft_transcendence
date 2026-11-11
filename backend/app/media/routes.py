@@ -13,16 +13,21 @@ from app.core.storage import Storage, get_storage
 from app.db.session import get_session
 from app.media import service
 from app.media.constants import (
+    AVATARS_FOLDER,
+    DEFAULT_PICTURE_EXTENSION,
     FEED_DEFAULT_LIMIT,
     FEED_MAX_LIMIT,
     MAX_URL_EXPIRES_SEC,
     MIN_URL_EXPIRES_SEC,
+    UPLOAD_URL_EXPIRES_SEC,
     VIEW_URL_EXPIRES_SEC,
 )
 from app.media.schemas import (
     ConfirmIn,
     FeedOut,
     MyVideosOut,
+    PictureConfirmIn,
+    PictureUploadUrlOut,
     UploadUrlIn,
     UploadUrlOut,
     VideoStatusOut,
@@ -33,7 +38,8 @@ router = APIRouter(prefix="/media", tags=["media"])  # mounted under /api
 Session = Annotated[AsyncSession, Depends(get_session)]
 Files = Annotated[Storage, Depends(get_storage)]
 Queue = Annotated[TaskQueue, Depends(get_queue)]
-# How long the signed links to watch a video work: ?expires_sec=60 to 3600, 300 by default.
+# How long a signed link works: ?expires_sec=60 to 3600 (by default 300 to watch a video,
+# 900 to upload a picture).
 ExpiresSec = Annotated[int, Query(ge=MIN_URL_EXPIRES_SEC, le=MAX_URL_EXPIRES_SEC)]
 
 # The picture of users who have none (DEFAULT_AVATAR_URL points here): a grey head and
@@ -113,3 +119,24 @@ async def get_default_avatar() -> Response:
     return Response(
         DEFAULT_AVATAR, media_type="image/svg+xml", headers={"Cache-Control": DEFAULT_AVATAR_CACHE}
     )
+
+
+@router.post("/avatar/upload-url")
+async def get_avatar_upload_url(
+    user: CurrentUser,
+    storage: Files,
+    ext: str = DEFAULT_PICTURE_EXTENSION,
+    expires_sec: ExpiresSec = UPLOAD_URL_EXPIRES_SEC,
+) -> PictureUploadUrlOut:
+    """Step 1 of 3: a signed link to PUT my new picture (?ext=jpg, png or webp; 415 for
+    anything else) straight into storage, under avatars/<my id>/."""
+    return service.create_picture_upload_url(storage, AVATARS_FOLDER, user.id, ext, expires_sec)
+
+
+@router.post("/avatar/confirm", status_code=204)
+async def confirm_avatar(
+    user: CurrentUser, data: PictureConfirmIn, session: Session, storage: Files
+) -> None:
+    """Step 3 of 3, after the PUT: check the picture and make it my avatar (the old file is
+    deleted). GET /api/users/me then gives its avatar_url."""
+    await service.confirm_avatar(session, storage, user, data.object_key)

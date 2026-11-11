@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import urllib3
 from fastapi import Request
 from minio import Minio
+from minio.datatypes import Object
 from minio.error import S3Error
 
 from app.core.config import Settings
@@ -67,14 +68,24 @@ class Storage:
         """A link that lets whoever has it GET the file at this key, until it expires."""
         return self.external.presigned_get_object(self.bucket, key, expires)
 
-    def size(self, key: str) -> int | None:
-        """The real size of the stored file in bytes (stat_object), or None if there is none."""
+    def stat(self, key: str) -> Object | None:
+        """What MinIO knows about the stored file (stat_object): its real size and the
+        Content-Type it was uploaded with. None if there is no file at this key."""
         try:
-            return self.internal.stat_object(self.bucket, key).size
+            return self.internal.stat_object(self.bucket, key)
         except S3Error as error:
             if error.code == "NoSuchKey":
                 return None
             raise
+
+    def size(self, key: str) -> int | None:
+        """The real size of the stored file in bytes, or None if there is none."""
+        stored = self.stat(key)
+        return None if stored is None else stored.size
+
+    def remove(self, key: str) -> None:
+        """Delete the file at this key. A key with no file is not an error."""
+        self.internal.remove_object(self.bucket, key)
 
     def first_bytes(self, key: str, count: int) -> bytes:
         """The first bytes of the stored file, without downloading the rest."""
