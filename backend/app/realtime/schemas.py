@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 
 class TicketOut(BaseModel):
-    """POST /api/ws/ticket: open wss://<host>/ws?ticket=<ticket> with it, within 30 seconds."""
+    """POST /api/ws/ticket: open wss://<host>/ws?ticket=<ticket> with it before it expires."""
 
     ticket: str
 

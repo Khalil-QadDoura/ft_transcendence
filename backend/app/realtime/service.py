@@ -55,7 +55,7 @@ async def user_for_ticket(app: FastAPI, ticket: str) -> User | None:
     if not ticket:
         return None
     holder = await repo.take_ticket(app.state.redis, ticket)
-    if holder is None:  # never made, older than 30 s, or already used
+    if holder is None:  # never made, expired, or already used
         return None
     # A short session of our own: a socket stays open for hours, and it must not keep a
     # database connection for all that time.

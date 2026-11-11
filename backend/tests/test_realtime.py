@@ -199,7 +199,7 @@ def test_a_ticket_needs_a_logged_in_user(server):
     assert response.json() == {"error": {"code": "401", "detail": "Not authenticated"}}
 
 
-def test_a_ticket_is_kept_in_redis_for_30_seconds_with_its_user(server, redis_db):
+def test_a_ticket_is_kept_in_redis_with_its_user_until_it_expires(server, redis_db):
     user_id, token = sign_in(server, "ana@example.com")
     ticket = new_ticket(server, token)
     key = f"ws:ticket:{ticket}"
