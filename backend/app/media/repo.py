@@ -1,5 +1,5 @@
-"""Database queries of /api/media: the intro_videos table, and for the feed the companies, jobs
-and applications tables. No HTTP, no rules."""
+"""Database queries of /api/media: the intro_videos table, for the feed the companies, jobs and
+applications tables, and for logos the companies table. No HTTP, no rules."""
 
 from sqlalchemy import and_, case, exists, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,6 +69,13 @@ async def unpost_posted_video(session: AsyncSession, user_id: int) -> None:
         update(IntroVideo)
         .where(IntroVideo.user_id == user_id, IntroVideo.lifecycle_status == "posted")
         .values(lifecycle_status="unposted")
+    )
+
+
+async def get_active_company(session: AsyncSession, user_id: int) -> Company | None:
+    """The user's company that is not deleted (at most one, BE-02), or None."""
+    return await session.scalar(
+        select(Company).where(Company.owner_user_id == user_id, Company.status == "active")
     )
 
 

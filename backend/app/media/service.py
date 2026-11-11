@@ -11,12 +11,14 @@ from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.companies.models import Company
 from app.core.queue import TaskQueue
 from app.core.storage import Storage
 from app.media import repo
 from app.media.constants import (
     AVATARS_FOLDER,
     JPEG_SIGNATURE,
+    LOGOS_FOLDER,
     MAX_ACTIVE_VIDEOS,
     MAX_PICTURE_BYTES,
     MAX_SIZE_BYTES,
@@ -63,6 +65,7 @@ NO_PICTURE = "No uploaded file at this object_key: PUT the picture to put_url fi
 PICTURE_TOO_BIG = f"The picture is larger than {MAX_PICTURE_BYTES // (1024 * 1024)} MiB"
 WRONG_CONTENT_TYPE = "Upload the picture with the header Content-Type: {}"
 NOT_THAT_PICTURE = "The uploaded file is not a {} picture"
+NO_COMPANY = "You have no company"
 
 
 def object_key_for(user_id: int) -> str:
@@ -334,5 +337,33 @@ async def confirm_avatar(session: AsyncSession, storage: Storage, user: User, ke
     old_key = user.avatar_object_key
     user.avatar_object_key = key
     await session.commit()  # the new avatar is saved first, then the old file goes
+    if old_key and old_key != key:
+        await remove_files(storage, [old_key])
+
+
+async def find_my_company(session: AsyncSession, user: User) -> Company:
+    """My company that is not deleted, or 404: only an employer has a logo."""
+    company = await repo.get_active_company(session, user.id)
+    if company is None:
+        raise HTTPException(status_code=404, detail=NO_COMPANY)
+    return company
+
+
+async def create_logo_upload_url(
+    session: AsyncSession, storage: Storage, user: User, ext: str, expires_sec: int
+) -> PictureUploadUrlOut:
+    """Like the avatar's, in my company's folder: logos/<company id>/<uuid>.<ext>."""
+    company = await find_my_company(session, user)
+    return create_picture_upload_url(storage, LOGOS_FOLDER, company.id, ext, expires_sec)
+
+
+async def confirm_logo(session: AsyncSession, storage: Storage, user: User, key: str) -> None:
+    """Make the checked picture my company's logo; the file of the old logo is deleted."""
+    company = await find_my_company(session, user)
+    await check_picture(storage, LOGOS_FOLDER, company.id, key)
+    old_key = company.logo_object_key
+    company.logo_object_key = key
+    company.updated_by_id = user.id  # who last changed the company (AuditMixin, BE-02)
+    await session.commit()
     if old_key and old_key != key:
         await remove_files(storage, [old_key])

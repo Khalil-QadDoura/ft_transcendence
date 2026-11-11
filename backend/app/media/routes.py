@@ -140,3 +140,23 @@ async def confirm_avatar(
     """Step 3 of 3, after the PUT: check the picture and make it my avatar (the old file is
     deleted). GET /api/users/me then gives its avatar_url."""
     await service.confirm_avatar(session, storage, user, data.object_key)
+
+
+@router.post("/company-logo/upload-url")
+async def get_logo_upload_url(
+    user: CurrentUser,
+    session: Session,
+    storage: Files,
+    ext: str = DEFAULT_PICTURE_EXTENSION,
+    expires_sec: ExpiresSec = UPLOAD_URL_EXPIRES_SEC,
+) -> PictureUploadUrlOut:
+    """Like the avatar's, for my company's logo: employers only (404 without a company)."""
+    return await service.create_logo_upload_url(session, storage, user, ext, expires_sec)
+
+
+@router.post("/company-logo/confirm", status_code=204)
+async def confirm_logo(
+    user: CurrentUser, data: PictureConfirmIn, session: Session, storage: Files
+) -> None:
+    """Check the picture and make it my company's logo (the old file is deleted)."""
+    await service.confirm_logo(session, storage, user, data.object_key)
