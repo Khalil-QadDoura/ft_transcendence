@@ -12,8 +12,9 @@ app/
   db/            base (Base + naming convention), session (each app's engine, get_session),
                  mixins (TimestampMixin, AuditMixin), models (imports every table model)
   health/        GET /api/health and the internal database check
-  auth/          /api/auth: register, verify, login, refresh, logout (BE-03), plus
-                 constants (lifetimes, rate limits), security (Argon2id, JWT), deps (get_current_user)
+  auth/          /api/auth: register, verify, login, refresh, logout (BE-03), change-password,
+                 forgot-password, reset-password (BE-04), plus constants (lifetimes, rate limits),
+                 security (Argon2id, JWT, reset tokens), deps (get_current_user)
   users/         /api/users/me: read, partial update, soft delete (BE-05), plus
                  constants (minimum age, field lengths)
   friends/ companies/ jobs/ media/ conversations/ applications/ game/
@@ -50,9 +51,10 @@ ruff check . && ruff format --check .
 docker build -t wozu-backend .     # runtime image only: no tests, no test tools
 ```
 
-The database tests (`tests/test_schema.py`, `tests/test_auth.py`, `tests/test_users.py`) need an
-empty PostgreSQL with PostGIS. They delete every table (schema) or every user (auth, users), so
-they only use `TEST_DATABASE_URL`, and only if its database name contains `test`:
+The database tests (`tests/test_schema.py`, `tests/test_auth.py`, `tests/test_password.py`,
+`tests/test_users.py`) need an empty PostgreSQL with PostGIS. They delete every table (schema)
+or every user (auth, password, users), so they only use `TEST_DATABASE_URL`, and only if its
+database name contains `test`:
 
 ```sh
 docker run -d --name wozu-test-db -p 5432:5432 -e POSTGRES_PASSWORD=test \
@@ -68,7 +70,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:5432/wozu_test py
 - **Login check**: a route that needs a logged-in user takes `user: CurrentUser` (from `app.auth.deps`). It answers 401 when the `Authorization: Bearer` token is missing, wrong, expired, or older than the user's `token_version`. Token lifetimes and the auth rate limits are in `app/auth/constants.py`.
 - **Answers**: a route returns its `...Out` schema, e.g. `UserOut.model_validate(user)`, never the table model, so only the fields listed in the schema leave the server (never `password_hash` or `token_version`).
 - **Partial updates (PATCH)**: every field of the request schema has a default and the schema has `extra="forbid"`; the service applies only `data.model_dump(exclude_unset=True)`. A field that is not sent keeps its value, and an unknown field gets 422 (see `app/users/`).
-- **Email**: a route takes `mailer: Annotated[Mailer, Depends(get_mailer)]` and sends with `background.add_task(mailer.send, to, subject, body)`, so the answer does not wait for the mail server; a failed send is logged. Tests replace `get_mailer` with a fake. Locally, emails land in Mailpit (INF-05) at `https://localhost/mail`.
+- **Email**: a route takes `mailer: Annotated[Mailer, Depends(get_mailer)]` and sends with `background.add_task(mailer.send, to, subject, body)`, so the answer does not wait for the mail server; a failed send is logged. Tests replace `get_mailer` with a fake; the `smtp_server` fixture in `tests/conftest.py` is a real SMTP server for tests that send through the real mailer. Locally, emails land in Mailpit (INF-05) at `https://localhost/mail`.
 - **Internal routes** go under `/_internal`. They are left out of the OpenAPI spec and answer 404 unless the `X-Internal-Key` header matches `INTERNAL_API_KEY`; the proxy also blocks them.
 - **OpenAPI** is at `/api/openapi.json` (the frontend generates its types from it); Swagger UI is at `/api/docs` only when `ENV=dev`.
 - **Migrations** run on container start (`alembic upgrade head` in `docker-entrypoint.sh`).
