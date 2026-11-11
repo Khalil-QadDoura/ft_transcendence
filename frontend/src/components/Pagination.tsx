@@ -1,3 +1,4 @@
+import { useText } from "../i18n/useText";
 import { Button } from "./Button";
 
 export interface LoadMoreProps {
@@ -13,14 +14,15 @@ export function LoadMore({
   onLoadMore,
   hasMore,
   isLoading = false,
-  label = "Load more",
-  loadingLabel = "Loading more...",
+  label,
+  loadingLabel,
   className = "",
 }: LoadMoreProps) {
+  const { t } = useText();
   if (!hasMore && !isLoading) {
     return (
       <p className="text-center text-xs text-ink-muted py-4 select-none">
-        You have reached the end.
+        {t("controls.youHaveReachedTheEnd")}
       </p>
     );
   }
@@ -35,7 +37,9 @@ export function LoadMore({
         disabled={isLoading}
         className="min-w-36"
       >
-        {isLoading ? loadingLabel : label}
+        {isLoading
+          ? (loadingLabel ?? t("controls.loadingMore"))
+          : (label ?? t("controls.loadMore"))}
       </Button>
     </div>
   );
@@ -54,12 +58,13 @@ export function Pagination({
   onPageChange,
   className = "",
 }: PaginationProps) {
+  const { t } = useText();
   if (totalPages <= 1) return null;
 
   return (
     <nav
       role="navigation"
-      aria-label="Pagination Navigation"
+      aria-label={t("controls.paginationNavigation")}
       className={`flex items-center justify-center gap-1.5 py-4 ${className}`}
     >
       <Button
@@ -67,13 +72,13 @@ export function Pagination({
         size="sm"
         disabled={currentPage <= 1}
         onClick={() => onPageChange(currentPage - 1)}
-        aria-label="Previous Page"
+        aria-label={t("controls.previousPage")}
       >
-        Previous
+        {t("controls.previous")}
       </Button>
 
       <span className="text-xs text-ink-muted px-2 font-medium">
-        Page {currentPage} of {totalPages}
+        {t("controls.pageOf", { current: currentPage, total: totalPages })}
       </span>
 
       <Button
@@ -81,9 +86,9 @@ export function Pagination({
         size="sm"
         disabled={currentPage >= totalPages}
         onClick={() => onPageChange(currentPage + 1)}
-        aria-label="Next Page"
+        aria-label={t("controls.nextPage")}
       >
-        Next
+        {t("controls.next")}
       </Button>
     </nav>
   );
