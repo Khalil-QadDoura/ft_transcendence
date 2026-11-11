@@ -1,8 +1,10 @@
-"""The /api/media endpoints. Each one needs the logged-in user (CurrentUser)."""
+"""The /api/media endpoints. Each one needs the logged-in user (CurrentUser), except the
+default avatar picture."""
 
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentUser
@@ -33,6 +35,12 @@ Files = Annotated[Storage, Depends(get_storage)]
 Queue = Annotated[TaskQueue, Depends(get_queue)]
 # How long the signed links to watch a video work: ?expires_sec=60 to 3600, 300 by default.
 ExpiresSec = Annotated[int, Query(ge=MIN_URL_EXPIRES_SEC, le=MAX_URL_EXPIRES_SEC)]
+
+# The picture of users who have none (DEFAULT_AVATAR_URL points here): a grey head and
+# shoulders, read once when the app starts.
+DEFAULT_AVATAR = (Path(__file__).parent / "default-avatar.svg").read_bytes()
+# Browsers may keep it for a day instead of asking again for every avatar on a page.
+DEFAULT_AVATAR_CACHE = "public, max-age=86400"
 
 
 @router.post("/intro-video/upload-url")
@@ -97,3 +105,11 @@ async def get_feed(
     """The posted videos. ?cursor=<next_cursor> gives the next page; ?job_id= orders it for
     that job (its applicants first, then matching positions)."""
     return await service.get_feed(session, storage, user, limit, cursor, job_id, expires_sec)
+
+
+@router.get("/avatar/default.svg", response_class=Response)
+async def get_default_avatar() -> Response:
+    """The default avatar picture. No login: it is an <img> on every page, like the avatars."""
+    return Response(
+        DEFAULT_AVATAR, media_type="image/svg+xml", headers={"Cache-Control": DEFAULT_AVATAR_CACHE}
+    )
