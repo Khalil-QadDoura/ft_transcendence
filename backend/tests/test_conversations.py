@@ -957,7 +957,9 @@ def test_conversations_real_database_lifecycle():
         "RESTART IDENTITY CASCADE"
     )
 
-    with TestClient(build_app(database_url=TEST_DATABASE_URL)) as test_client:
+    with TestClient(
+        build_app(database_url=TEST_DATABASE_URL, jwt_secret=AUTH_SECRET)
+    ) as test_client:
         # 1. Seed users in real PostgreSQL
         _seed_db_user("alice@example.com")
         _seed_db_user("bob@example.com")
@@ -1284,7 +1286,11 @@ def test_messages_real_db_and_ws_broadcast_lifecycle():
     alice_headers = {"Authorization": f"Bearer {alice_token}"}
     bob_headers = {"Authorization": f"Bearer {bob_token}"}
 
-    app = build_app(database_url=TEST_DATABASE_URL, redis_url=TEST_REDIS_URL)
+    app = build_app(
+        database_url=TEST_DATABASE_URL,
+        redis_url=TEST_REDIS_URL,
+        jwt_secret=AUTH_SECRET,
+    )
     with (
         _ws_redis() as rdb,
         running_server(app) as address,
@@ -1562,7 +1568,9 @@ def test_messages_real_db_concurrent_idempotency_and_edit_window():
         "UPDATE messages SET created_at = NOW() - INTERVAL '16 minutes' WHERE id = :id",
         id=winner_id,
     )
-    with TestClient(build_app(database_url=TEST_DATABASE_URL)) as test_client:
+    with TestClient(
+        build_app(database_url=TEST_DATABASE_URL, jwt_secret=AUTH_SECRET)
+    ) as test_client:
         r_expired = test_client.patch(
             f"/api/conversations/{conv_id}/messages/{winner_id}",
             json={"content": "Too late"},
