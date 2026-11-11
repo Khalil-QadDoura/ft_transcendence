@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # Optional: when set, emails go out through Brevo's API (real inboxes) instead of SMTP.
     brevo_api_key: str = ""
 
+    # Redis: WebSocket tickets, live events between API processes (pub/sub) and who is online.
+    # The default is the "redis" service of the team's Docker Compose (no password, database 0).
+    redis_url: str = "redis://redis:6379/0"
+
 
 @lru_cache
 def get_settings() -> Settings:

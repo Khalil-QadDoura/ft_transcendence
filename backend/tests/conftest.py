@@ -2,7 +2,8 @@
 
 Most tests need no database: the engine connects only when a query first runs. The database
 tests (test_schema.py, test_auth.py, test_users.py) need a real PostgreSQL with PostGIS and
-are skipped without one, so `pytest -q` works everywhere.
+are skipped without one, so `pytest -q` works everywhere. The WebSocket tests (test_realtime.py)
+need a real Redis as well.
 """
 
 import asyncio
@@ -10,8 +11,10 @@ import os
 import socket
 import subprocess
 import sys
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+import threading
+import time
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from email import message_from_bytes, policy
 from pathlib import Path
 
@@ -22,6 +25,8 @@ os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-0123456789abcdef")
 
 import httpx2
 import pytest
+import redis
+import uvicorn
 from aiosmtpd.controller import Controller
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -66,6 +71,53 @@ DATABASE_SKIP_REASON = database_skip_reason()
 needs_database = pytest.mark.skipif(
     DATABASE_SKIP_REASON is not None, reason=str(DATABASE_SKIP_REASON)
 )
+
+
+# The WebSocket tests (test_realtime.py) also need a real Redis. They use TEST_REDIS_URL only,
+# never REDIS_URL, and delete only the keys they make (names starting with "ws:"). To run them:
+#     docker run -d --name wozu-test-redis -p 6379:6379 redis:7-alpine
+#     TEST_REDIS_URL=redis://localhost:6379/1 pytest -q   (with TEST_DATABASE_URL as above)
+TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL", "")
+
+
+def redis_skip_reason() -> str | None:
+    """Why the Redis tests cannot run here, or None when they can."""
+    if not TEST_REDIS_URL:
+        return "TEST_REDIS_URL is not set"
+    try:
+        with redis.Redis.from_url(TEST_REDIS_URL, socket_connect_timeout=2) as client:
+            client.ping()
+    except redis.RedisError:
+        return "no Redis answers at TEST_REDIS_URL"
+    return None
+
+
+# Checked once per test run. A Redis test file adds `needs_redis` to its pytestmark.
+REDIS_SKIP_REASON = redis_skip_reason()
+needs_redis = pytest.mark.skipif(REDIS_SKIP_REASON is not None, reason=str(REDIS_SKIP_REASON))
+
+
+@contextmanager
+def running_server(app: FastAPI) -> Iterator[str]:
+    """Serve the app with uvicorn, as the container does, in a background thread, on a free
+    local port. Yields its address ("127.0.0.1:<port>") for real HTTP and WebSocket clients.
+    Two of these on the same database and Redis behave like two API workers."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))  # port 0: the system picks a free port
+    host, port = listener.getsockname()
+    server = uvicorn.Server(uvicorn.Config(app, log_config=None))  # keep our JSON logging
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server.started:
+        assert thread.is_alive() and time.monotonic() < deadline, "the test server did not start"
+        time.sleep(0.01)
+    try:
+        yield f"{host}:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        listener.close()
 
 
 def alembic(*args: str) -> str:

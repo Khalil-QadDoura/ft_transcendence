@@ -175,15 +175,26 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 
 One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is per user, not per socket: an event for a user reaches every socket that user has open, including `/game/ws`, so the client must route by `type` and ignore what it does not know.
 
-**Connect:** `wss://<host>/ws?token=<access_token>` (reference). Bad token, unknown or deleted user, or old `token_version` → closed with code 1008. Game room socket: `wss://<host>/game/ws?token=<access_token>&room_id=<id>`, closed 1008 if not a participant.
+**Connect (new backend, BE-06):** the access token never goes into the socket's URL, where proxy logs would keep it. First ask for a one-time ticket over HTTP, then open the socket with it:
+
+| Method | Path | Auth | Request | Success | Errors |
+| --- | --- | --- | --- | --- | --- |
+| POST | `/api/ws/ticket` | Bearer | — | 200 `{ticket}`: opens one socket, once, within 30 s | 401 |
+| WS | `/ws?ticket=<ticket>` | the ticket | — | the socket stays open | closed with code 1008 |
+
+- Every connect and reconnect needs a new ticket. A ticket works on any API worker (tickets live in Redis).
+- **1008** (reason `"Invalid or expired ticket"`): no ticket, an unknown, expired or already used ticket, a deleted user, or a password changed since the ticket was made (`token_version`). The server accepts the socket and then closes it, so the browser sees 1008, not a failed handshake. Get a new ticket (refreshing the access token first if it is old) and connect again.
+- **1011**: the server lost its link to Redis and can no longer deliver events to this socket. Reconnect with backoff, as below.
+- The reference connected with `?token=<access_token>`; the new backend does not accept it. The game room socket moves to `wss://<host>/ws/game?ticket=<ticket>&room_id=<id>` with the same ticket check (BE-09), closed 1008 if not a participant.
 
 | Direction | `type` | Payload | When |
 | --- | --- | --- | --- |
-| client → server | `ping` | — | Keep-alive; send every 25–30 s |
+| client → server | `ping` | — | Keep-alive; send every 25–30 s. It also keeps you online: a socket that has not pinged for 60 s stops counting as online |
 | client → server | `delivered` | `{message_id}` at top level | Message shown on this device |
 | client → server | `read` | `{conversation_id, last_message_id}` at top level | Conversation opened / scrolled to bottom |
 | client → server (`/game/ws`) | `chat_message` | `{text}` at top level | Player sends a room message during discussion |
-| server → client | `pong` | — | Reply to ping |
+| server → client | `pong` | `null` | Reply to ping |
+| server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
 | server → client | `message` | `MessageOut` | New message in any of my conversations (mine too) |
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
@@ -192,7 +203,9 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `game_phase_voting` | `{room_id}` | Discussion ended |
 | server → client | `game_phase_finished` | `{room_id}` | Voting ended, results ready |
 
-**Client rules:** reconnect with backoff (1 s, 2 s, 5 s, then every 10 s) and after reconnecting reload what you show (conversation list, open messages, room state), because events sent while offline are lost. Refresh the access token before reconnecting.
+**Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
+
+**Client rules:** reconnect with backoff (1 s, 2 s, 5 s, then every 10 s) and after reconnecting reload what you show (conversation list, open messages, room state, who is online), because events sent while offline are lost. Refresh the access token before reconnecting, and get a new ticket for every connect.
 
 ## Planned changes for the new backend
 
@@ -206,8 +219,8 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
 | \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
-| \[ \] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` | Access tokens no longer in URLs and logs |
-| \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` | Live edits, online dots, no polling for moderation |
+| \[x\] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` (BE-06) | Access tokens no longer in URLs and logs |
+| \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` (`presence` is sent since BE-06) | Live edits, online dots, no polling for moderation |
 | \[ \] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
 | \[ \] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
