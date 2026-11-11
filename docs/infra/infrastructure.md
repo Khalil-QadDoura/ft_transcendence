@@ -25,7 +25,7 @@ Only the proxy publishes ports to the host; everything else stays on the interna
 | `frontend` | Built from `frontend/` (FE-01 Dockerfile, stage `preview`: Node build → `nginx:1.28-alpine`); site config `infra/frontend/default.conf` mounted for the SPA fallback | React app | no | In compose (INF-02) |
 | `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start; waits for `db` and `redis` to be healthy | no | In compose, `/api/health` health check (Python `urllib`; the image has no curl) |
 | `worker` | Same image as `api`, command `celery -A app.worker.celery_app worker -B` | Video moderation + beat for stuck videos | no | In compose behind the `worker` profile (off by default) until BE-29 adds the Celery app |
-| `db` | `imresamu/postgis:15-3.4`, by digest (PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, amd64 + arm64; every `postgis/postgis` tag is amd64 only, so Apple Silicon would run it emulated) | PostgreSQL + PostGIS | no | In compose, `pg_isready` health check |
+| `db` | `imresamu/postgis:15-3.4`, by digest (PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, amd64 + arm64; every `postgis/postgis` tag is amd64 only, so Apple Silicon would run it emulated) | PostgreSQL + PostGIS; app database `POSTGRES_DB` and test database `POSTGRES_TEST_DB` | no | In compose, `pg_isready` health check |
 | `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker | no | In compose, `redis-cli ping` health check |
 | `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, by digest (the official `minio/minio` and `minio/mc` images left Docker Hub on 2025-10-23) | Object storage for videos, avatars, logos | no (proxied at `/files`) | In compose; bucket in INF-04 |
 | `minio-init` | to be chosen in INF-04 (`minio/mc` is gone) | One-shot: create bucket `files`, set policies | no | INF-04 |
@@ -92,11 +92,13 @@ Add Mailpit and send mail over plain SMTP from the API; the evaluator opens `htt
 | `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait`, which returns once `db`, `redis` and `api` are healthy |
 | `make down` | stops and removes the containers, keeps volumes |
 | `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
-| `make test` | backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only); frontend lint, format check, type check and `vitest` in the build stage of its image |
+| `make test` | starts `db` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db` and `redis` running |
 | `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
 | `make re` | `fclean` + `all` |
 
 `down`, `logs` and `fclean` use `--profile '*'`, so they also reach services that are off by default (`worker`).
+
+**Test database.** The backend tests delete what they find, so they run only on `POSTGRES_TEST_DB` (`wozu_test`), never on the app database `POSTGRES_DB`. `infra/db/create-test-db.sh` creates it, owned by `POSTGRES_USER`, with PostGIS (the schema has a `geography` column). It runs in the `db` container from two places: the image runs it once when the `db-data` volume is new (mounted as the single file `/docker-entrypoint-initdb.d/20-create-test-db.sh`, after the image's own `10_postgis.sh`), and `make test` runs it on every call (`docker compose exec`), so a volume created before the script gets the database too. It is idempotent, reads the names from the container environment, connects over the local socket (no password) and refuses a name that equals `POSTGRES_DB` or lacks `test` (the fixtures skip such a database). The tables come from the fixtures, which run `alembic` on `TEST_DATABASE_URL`.
 
 **`.env.example` additions to the reference file** (every variable in `.env.example` has a comment there)
 
@@ -108,7 +110,7 @@ Add Mailpit and send mail over plain SMTP from the API; the evaluator opens `htt
 | `JWT_SECRET` | generated | api (BE-03 reads this name; the card said `SECRET_KEY`) |
 | `INTERNAL_API_KEY` | generated | api, `/_internal/*` |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `wozu` / generated / `wozu` | db; compose builds `DATABASE_URL` for api and worker from them |
-| `POSTGRES_TEST_DB` | `wozu_test` | compose builds `TEST_DATABASE_URL` for the tests; the database itself is not created yet (BE-20) |
+| `POSTGRES_TEST_DB` | `wozu_test` | db (`infra/db/create-test-db.sh` creates it on a new volume, `make test` when it is missing); compose builds `TEST_DATABASE_URL` for the tests from it |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | `wozu` / generated | minio |
 | `MINIO_EXTERNAL_ENDPOINT` | `https://localhost` | presigned URLs |
 | `MINIO_BUCKET` | `files` | api, worker, minio-init |
