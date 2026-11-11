@@ -2,6 +2,7 @@ import { Link, type RouteObject } from "react-router-dom";
 import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
+import { ComponentPreview } from "../features/dev/ComponentPreview";
 function ComingSoon({ title }: { title: string }) {
   return (
     <section className="empty-page">
@@ -37,6 +38,9 @@ const pages = (entries: [string, string][]): RouteObject[] =>
   }));
 // Explicit route slots keep future domain PRs small. These are not completed feature pages.
 export const routes: RouteObject[] = [
+  ...(import.meta.env.DEV
+    ? [{ path: "/dev/components", element: <ComponentPreview /> }]
+    : []),
   {
     element: <Layout />,
     children: [

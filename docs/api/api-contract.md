@@ -11,7 +11,7 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 | Topic | Rule |
 | --- | --- |
 | Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind Caddy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
-| Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
+| Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. A missing, invalid or expired token, or one made before a password change (`token_version`), gets 401 with `WWW-Authenticate: Bearer`. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
 | Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
 | Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
 | Rate limit | 429 with the same error body. Limits per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min |
@@ -27,19 +27,31 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/auth/register` | — | `{email, password}` password 8–128 | 202 `{message}` | 409 email already verified |
-| GET | `/auth/verify` | — | query `token` | 200 `{verified, email, updated}` | 400 invalid / expired |
-| POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials, 403 email not verified |
-| POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed |
-| POST | `/auth/logout` | — | `{refresh_token}` | 204 always | — |
+| POST | `/auth/register` | — | `{email, password}` password 8–128 | 202 `{message}`; the verification email is sent after the answer | 409 email already verified, 422, 429 |
+| GET | `/auth/verify` | — | query `token` | 200 `{verified, email, updated}` | 400 invalid, expired, or replaced by a newer link |
+| POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials (same answer for an unknown email), 403 email not verified, 429 |
+| POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
+| POST | `/auth/logout` | — | `{refresh_token}` (optional) | 204 always, even with no token or a bad one | — |
 | POST | `/auth/change-password` | Bearer | `{current_password, new_password}` | 204; all tokens revoked | 400 `wrong_current_password` |
 | POST | `/auth/forgot-password` | — | `{email}` | 202 always | — |
 | POST | `/auth/reset-password` | — | `{token, new_password}` | 204; all tokens revoked | 400 invalid / expired |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
-| PATCH | `/users/me` | Bearer | `{first_name, last_name, position, birth_date, bio?}` all required except bio; age ≥ 18 | 200 `UserOut` | 422 |
-| DELETE | `/users/me` | Bearer | — | 204 (soft delete) | — |
+| PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
+| DELETE | `/users/me` | Bearer | — | 204 (soft delete) | 401 |
 
-`UserOut` = `{id, email, phone, username, first_name, last_name, position, birth_date, bio, avatar_object_key, is_email_verified, is_phone_verified, account_number}`; `account_number` is computed as `WZ-000123`.
+`UserOut` = `{id, email, first_name, last_name, position, birth_date, bio, avatar_object_key, is_email_verified}` (new backend, BE-05; `avatar_url` comes with BE-08). The reference also sends `phone`, `username`, `is_phone_verified` and `account_number` (`WZ-000123`); the new backend drops them.
+
+Sign-up and login in the new backend (BE-03):
+
+- Emails are compared in lower case. Registering again before the email is verified keeps the one account, replaces its password with the new one, raises `users.token_version` and sends a new link (202). That is also how a new link is asked for.
+- The verification email links to the frontend page `<FRONTEND_BASE_URL>/verify-email?token=…` (valid 24 h); that page calls `GET /api/auth/verify?token=…`. The link carries `ver` (`users.token_version`), so **only the newest link is valid**: it verifies the account with the newest password, and every older link answers 400. Opening the newest link twice answers 200 with `updated: false`. A link and a sign-up arriving together are handled one after the other by the database, so a sign-up never changes an account that has just been verified (that sign-up gets 409).
+- Access token: JWT (HS256), 15 min, claims `sub` (user id), `scope` (`access`), `ver` (`users.token_version`), `jti`, `iat`, `exp`. Refresh token: JWT, 30 days, stored by its `jti` in `refresh_tokens`; each refresh revokes it and returns a new pair (rotation), and a reused one gets 401.
+- A deleted account gets the same 401 as a wrong password at login, and 401 on every protected route.
+
+The profile in the new backend (BE-05):
+
+- `PATCH /users/me` changes only the fields that are sent: a field left out keeps its value, and `{}` changes nothing (200). `first_name` and `last_name` 1–50 characters, `position` 1–100, `bio` up to 500; spaces around them are removed. `birth_date` is `YYYY-MM-DD`, and the user must be at least 18 full years old today, else 422 `"body → birth_date: You must be at least 18 years old"`. Only `bio` accepts `null` (it empties the bio). Any other field (`email`, `status`, `phone`, …) gets 422 `"body → <field>: Extra inputs are not permitted"`, and then nothing is changed. No body at all gets 422.
+- `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409).
 
 ## Friends, profiles and conversations
 
@@ -183,13 +195,14 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through Caddy: no CORS, no mixed content |
 | \[ \] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
 | \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
-| \[ \] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
-| \[ \] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
+| \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
+| \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
 | \[ \] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
 | \[ \] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` | Access tokens no longer in URLs and logs |
 | \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` | Live edits, online dots, no polling for moderation |
 | \[ \] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
+| \[ \] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |
 | \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
