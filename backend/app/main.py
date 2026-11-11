@@ -16,6 +16,7 @@ from app.core.redis_client import setup_redis
 from app.core.request_id import request_id_middleware
 from app.db.session import setup_database
 from app.health import routes as health
+from app.realtime import routes as realtime
 from app.users import routes as users
 
 log = structlog.get_logger("app")
@@ -53,12 +54,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     add_error_handlers(app)
     app.middleware("http")(request_id_middleware)
 
-    # Public API: every router goes under /api. WebSockets will live under /ws.
+    # Public API: every router goes under /api. WebSockets live under /ws.
     api = APIRouter(prefix="/api")
     api.include_router(health.router)
     api.include_router(auth.router)
     api.include_router(users.router)
+    api.include_router(realtime.router)  # POST /api/ws/ticket
     app.include_router(api)
+    app.include_router(realtime.socket_router)  # the WebSocket at /ws
 
     # Internal routes: left out of the OpenAPI spec and locked by X-Internal-Key.
     internal = APIRouter(
