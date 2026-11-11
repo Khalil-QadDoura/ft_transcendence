@@ -16,7 +16,8 @@ app/
                  constants (lifetimes, rate limits), security (Argon2id, JWT), deps (get_current_user)
   users/         /api/users/me: read, partial update, soft delete (BE-05), plus
                  constants (minimum age, field lengths)
-  friends/ companies/ jobs/ media/ conversations/ applications/ game/
+  companies/     CRUD, /companies/me returns 200 null for job seekers (BE-21)
+  friends/ jobs/ media/ conversations/ applications/ game/
                  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables

@@ -91,7 +91,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
 | POST | `/companies` | Bearer | `{name, description?, country?, city?, district?}` | 201 `CompanyOut` | 409 already has one |
-| GET | `/companies/me` | Bearer | — | 200 `CompanyOut` | 404 none (to change: 200 `null`) |
+| GET | `/companies/me` | Bearer | — | 200 `CompanyOut` or `null` | — |
 | PATCH | `/companies/me` | Bearer | `{name, country, city, district?, country_code?}` | 200 `CompanyOut` | 404, 422 |
 | DELETE | `/companies` | Bearer | — | 204 (soft, idempotent) | — |
 | POST | `/jobs` | Bearer (employer) | `JobCreate` | 201 `JobOut` | 404 no company, 422 |
@@ -193,7 +193,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | Done | Change | Why |
 | --- | --- | --- |
 | \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through Caddy: no CORS, no mixed content |
-| \[ \] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
+| [x] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
 | \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
