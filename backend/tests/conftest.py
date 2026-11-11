@@ -94,8 +94,17 @@ def sql(statement: str, **params) -> list:
 
 
 def build_app(**overrides: object) -> FastAPI:
-    """A fresh app for one test; keyword arguments change its settings, e.g. env="dev"."""
-    settings = {"env": "prod", "internal_api_key": INTERNAL_KEY, **overrides}
+    """A fresh app for one test; keyword arguments change its settings, e.g. env="dev".
+
+    The email links always start with https://localhost here, whatever FRONTEND_BASE_URL the
+    environment has (`make test` passes the one from .env, e.g. https://localhost:18443).
+    """
+    settings = {
+        "env": "prod",
+        "internal_api_key": INTERNAL_KEY,
+        "frontend_base_url": "https://localhost",
+        **overrides,
+    }
     app = create_app(Settings(**settings))
     # Real SMTP/Brevo tests instantiate Mailer directly. Route tests never send mail.
     mailbox = TestMailbox()
