@@ -93,7 +93,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 | POST | `/companies` | Bearer | `{name, description?, country?, city?, district?}` | 201 `CompanyOut` | 409 already has one |
 | GET | `/companies/me` | Bearer | — | 200 `CompanyOut` or `null` | — |
 | PATCH | `/companies/me` | Bearer | `{name, country, city, district?, country_code?}` | 200 `CompanyOut` | 404, 422 |
-| DELETE | `/companies` | Bearer | — | 204 (soft, idempotent) | — |
+| DELETE | `/companies` | Bearer | — | 204 (soft, idempotent; the logo file is deleted, BE-08) | — |
 | POST | `/jobs` | Bearer (employer) | `JobCreate` | 201 `JobOut` | 404 no company, 422 |
 | PATCH | `/jobs/{id}` | Bearer (owner) | any `JobCreate` fields | 200 `JobOut` | 404 |
 | DELETE | `/jobs/{id}` | Bearer (owner) | — | 204 (soft) | 404 |
@@ -113,7 +113,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 - `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (active or open, default active), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
 - `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, views_count, applications_count, new_applications_count, created_by_id, updated_by_id, created_at, updated_at}`.
 - `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at}`.
-- `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, status, country, city, district, country_code, created_at, updated_at}`. The new backend is to add `logo_url`, a follow-up to BE-21 (which brought `CompanyOut` without it): the logo's public address, or `null` without a logo (`Storage.logo_url`, BE-08).
+- `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, logo_url, status, country, city, district, country_code, created_at, updated_at}`. `logo_url` (new backend, BE-08): the logo's public address, or `null` without a logo (see Media).
 
 ## Media
 
@@ -128,11 +128,11 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 | POST | `/media/intro-video/{id}/unpost` | Bearer | — | 200 same shape | 404, 409 not posted |
 | POST | `/media/intro-video/{id}/delete` | Bearer | — | 200 same shape (soft delete) | 404 not mine / already deleted |
 | GET | `/media/feed` | Bearer | query `limit` ≤ 50, `cursor`, `expires_sec`, `job_id?` | 200 `{items: [{id, user_id, duration_sec, size_bytes, content_type, signed_url, expires_sec, created_at, author_name, author_position}], next_cursor}` | 422 `limit` 1–50, `expires_sec` |
-| POST | `/media/avatar/upload-url` | Bearer | query `ext` (`jpg` default, `png`, `webp`), `expires_sec` 60–3600 (default 900) | 200 `{object_key, put_url, expires_sec, max_bytes}` | 415 other extension, 422 `expires_sec` |
-| POST | `/media/avatar/confirm` | Bearer | `{object_key}` | 204; `GET /users/me` then gives the new `avatar_url` | 400 key not yours or no file uploaded there, 413 the stored file is over 5 MiB, 415 extension, `Content-Type` or first bytes not those of jpg / png / webp, 422 |
+| POST | `/media/avatar/upload-url` | Bearer | query `ext` (`jpg` default, `png`, `webp`), `expires_sec` 60–3600 (default 900) | 200 `{object_key, put_url, expires_sec, max_bytes}`, `object_key` in the private `staging/` folder | 415 other extension, 422 `expires_sec` |
+| POST | `/media/avatar/confirm` | Bearer | `{object_key}` | 204; `GET /users/me` then gives the new `avatar_url` | 400 key not yours, no file uploaded there or already confirmed, 413 the stored file is over 5 MiB or the picture over 25 million pixels, 415 extension, or the file is not a real jpg / png / webp picture, 422 |
 | GET | `/media/avatar/default.svg` | — | — | 200 `image/svg+xml`, the default avatar picture | — |
 | POST | `/media/company-logo/upload-url` | Bearer (employer) | same query as the avatar | 200 same shape | 404 no company, 415, 422 |
-| POST | `/media/company-logo/confirm` | Bearer (employer) | `{object_key}` | 204 | 404 no company, 400, 413, 415, 422 |
+| POST | `/media/company-logo/confirm` | Bearer (employer) | `{object_key}` | 204; `GET /companies/me` then gives the new `logo_url` | 404 no company, 400, 413, 415, 422 |
 
 - Statuses: moderation `pending → approved | rejected` (+ `moderation_error` once fixed); lifecycle `loaded → posted ⇄ unposted`, any → `deleted`. Poll `/media/intro-video/mine` while a video is `pending` (or listen for a WS event once added).
 - The browser PUT to `put_url` is a plain PUT of the file bytes to `https://<host>/files/<object_key>?X-Amz-…`. That is the frontend's own origin, so no CORS is involved (INF-04, Infrastructure doc). Use XHR or fetch with upload progress for the progress bar.
@@ -150,11 +150,13 @@ Intro videos in the new backend (BE-07); every route needs the access token (401
 Avatars and company logos in the new backend (BE-08):
 
 - **Read path, agreed with infra (INF-04):** the bucket stays private, but anyone may download (not list, not upload) the files under `avatars/` and `logos/`. So `avatar_url` is a plain address with no signature, `<MINIO_EXTERNAL_ENDPOINT>/<bucket>/<key>`, e.g. `https://localhost/files/avatars/12/<uuid>.png`. It never expires: a page left open never shows a broken picture, and the browser can cache it. Signed links (`?X-Amz-…`) are only for private files: the intro videos.
-- Keys: `avatars/<user id>/<uuid>.<ext>` and `logos/<company id>/<uuid>.<ext>` (a logo belongs to the company, so its folder does too). `ext` is `jpg`, `png` or `webp`, in any case (the key is written in small letters); anything else gets 415. The browser PUTs the file with the matching `Content-Type`: `image/jpeg`, `image/png` or `image/webp` (it does so itself for a `File`); MinIO serves the file back with that type.
-- `confirm` checks the file in storage, not what the browser says: the extension is jpg, png or webp (415); the key has exactly that shape with my own id, or my company's id (400); `stat_object` finds a file there (400 "No uploaded file at this object_key: …"), of at most 5 MiB = 5 242 880 bytes (413; neither the reference nor this contract had a limit), stored with the extension's `Content-Type` (415, so a file is never served as e.g. `text/html`); its first 12 bytes are those of that type: JPEG `FF D8 FF`, PNG `89 50 4E 47 0D 0A 1A 0A`, WebP `RIFF` then `WEBP` at bytes 8–11 (415). Then the key goes into `users.avatar_object_key` (or `companies.logo_object_key`) and the file of the previous avatar (or logo) is deleted from storage; if that delete fails, the request still succeeds and the file left behind is logged.
+- **Upload into `staging/`, then the API publishes:** the browser never writes into `avatars/` or `logos/`. `upload-url` gives a key in the private folder `staging/`, `staging/avatars/<user id>/<uuid>.<ext>` or `staging/logos/<company id>/<uuid>.<ext>` (a logo belongs to the company, so its folder does too), and a `put_url` signed for that key only; nobody can download from `staging/` (403). `confirm` checks the upload and, if it is good, the API itself writes a copy of it at a new key that no upload link ever pointed at, `avatars/<user id>/<new uuid>.<ext>` or `logos/<company id>/<new uuid>.<ext>`, which goes into `users.avatar_object_key` (or `companies.logo_object_key`); `avatar_url` / `logo_url` point at it. The upload itself is deleted, accepted or refused. So nothing unchecked is ever public, and the upload link, valid until it expires, can only write into `staging/` again, never change a published picture.
+- `ext` is `jpg`, `png` or `webp`, in any case (the key is written in small letters); anything else gets 415. The `Content-Type` of the PUT does not matter: the public copy gets `image/jpeg`, `image/png` or `image/webp` from the API, after the check.
+- `confirm` checks the file in storage, not what the browser says: the extension is jpg, png or webp (415); the key has exactly that `staging/` shape with my own id, or my company's id (400; a key under `avatars/` or `logos/` is refused too); `stat_object` finds a file there (400 "No uploaded file at this object_key: …", also for an upload already confirmed), of at most 5 MiB = 5 242 880 bytes (413; neither the reference nor this contract had a limit). The API then reads it once, and the image library Pillow opens it as the type its extension says and decodes every pixel (415 "The uploaded file is not a png picture" otherwise: a web page, a JPEG called `.png`, a file that only starts like a PNG, one cut short); at most 25 million pixels (413), checked before decoding, so a small file holding a huge picture is refused. The public copy is made from those very bytes. `confirm` locks the user's row (or the company's) until it has saved, so two confirms of the same upload at once publish it once (the other gets 400). Then the file of the previous avatar (or logo) is deleted; if a delete fails, the request still succeeds and the file left behind is logged.
 - Company logo routes are for employers: a user with a company that is not deleted (404 "You have no company" otherwise).
-- Default avatar: a user with no picture gets `avatar_url` = `DEFAULT_AVATAR_URL`, by default `/api/media/avatar/default.svg` on our own site, a grey picture the API serves itself (no login, cached for a day). A company with no logo is to get `logo_url: null` (the `CompanyOut` follow-up).
-- Not in BE-08: `avatar_url` in the public profile and in the friends list comes with those endpoints (BE-22), through `Storage.avatar_url`. BE-21 brought `CompanyOut` and `DELETE /companies` without `logo_url` and without deleting the logo file; both are follow-ups to it (`Storage.logo_url`, `service.remove_files`).
+- `logo_url` in `CompanyOut` (`GET /companies/me`, `POST /companies`, `PATCH /companies/me`): the logo's public address, or `null` without a logo (there is no default logo). `DELETE /companies` empties the logo with the soft delete and deletes its file at once, as `DELETE /users/me` does for the avatar and the logo.
+- Default avatar: a user with no picture gets `avatar_url` = `DEFAULT_AVATAR_URL`, by default `/api/media/avatar/default.svg` on our own site, a grey picture the API serves itself (no login, cached for a day).
+- Not in BE-08: `avatar_url` in the public profile and in the friends list comes with those endpoints (BE-22), through `Storage.avatar_url`.
 
 ## Game
 
@@ -226,7 +228,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
 | \[ \] | `GET /metrics` for Prometheus, internal only | Monitoring module |
 
-The `avatar_url` row (BE-08): done for `UserOut`, with a public path and a default avatar (Media). It stays unticked until the public profile and the friends list (BE-22) return `avatar_url` and `CompanyOut` (BE-21) returns `logo_url`, through `Storage.avatar_url` / `Storage.logo_url`.
+The `avatar_url` row (BE-08): done for `UserOut` (`avatar_url`, with a public path and a default avatar) and `CompanyOut` (`logo_url`), see Media. It stays unticked until the public profile and the friends list (BE-22) return `avatar_url`, through `Storage.avatar_url`.
 
 ## Machine-readable spec
 
