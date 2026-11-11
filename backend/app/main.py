@@ -12,9 +12,12 @@ from app.core.errors import add_error_handlers
 from app.core.internal import require_internal_key
 from app.core.limiter import limiter
 from app.core.logging import configure_logging
+from app.core.queue import TaskQueue
 from app.core.request_id import request_id_middleware
+from app.core.storage import Storage
 from app.db.session import setup_database
 from app.health import routes as health
+from app.media import routes as media
 from app.users import routes as users
 
 log = structlog.get_logger("app")
@@ -46,6 +49,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.limiter = limiter  # slowapi looks for the limiter here
     setup_database(app, settings)  # this app's engine, from this app's settings
+    app.state.storage = Storage(settings)  # MinIO, where the videos are kept
+    app.state.queue = TaskQueue(settings)  # Redis, the queue of the Celery worker
 
     add_error_handlers(app)
     app.middleware("http")(request_id_middleware)
@@ -55,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(health.router)
     api.include_router(auth.router)
     api.include_router(users.router)
+    api.include_router(media.router)
     app.include_router(api)
 
     # Internal routes: left out of the OpenAPI spec and locked by X-Internal-Key.
