@@ -35,13 +35,18 @@ logs:
 	-$(COMPOSE_ALL) logs -f --tail=100 $(s)
 
 # Backend: ruff + pytest in the api image, with the dev tools installed into a throwaway
-# container and the code mounted read-only. Frontend: the checks of its CI job, in the
-# build stage of its image.
+# container and the code mounted read-only. The tests get only the test database: db starts
+# first (also from a stopped stack), the script that runs on a new volume creates the test
+# database when it is missing, and pytest sees DATABASE_URL = TEST_DATABASE_URL, as in CI.
+# Frontend: the checks of its CI job, in the build stage of its image.
 test: env
+	$(COMPOSE) up -d --wait db
+	$(COMPOSE) exec -T db /docker-entrypoint-initdb.d/20-create-test-db.sh
 	$(COMPOSE) run --rm --build --user root -v $(CURDIR)/backend:/src:ro -w /src \
 		-e PIP_ROOT_USER_ACTION=ignore -e PIP_DISABLE_PIP_VERSION_CHECK=1 api \
 		sh -c 'pip install -q -r requirements-dev.txt && ruff check --no-cache . \
-		&& ruff format --check --no-cache . && pytest -q -p no:cacheprovider'
+		&& ruff format --check --no-cache . \
+		&& DATABASE_URL="$$TEST_DATABASE_URL" pytest -q -p no:cacheprovider'
 	docker build -q --target build -t wozu-frontend-test ./frontend
 	docker run --rm wozu-frontend-test \
 		sh -c 'npm run lint && npm run format:check && npm run typecheck && npm test'
