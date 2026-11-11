@@ -13,6 +13,7 @@ export function LanguageSwitcher() {
     <label className="language-picker">
       <span className="sr-only">{t("language")}</span>
       <select
+        name="language"
         value={activeLanguage()}
         onChange={(event) => void i18n.changeLanguage(event.target.value)}
       >

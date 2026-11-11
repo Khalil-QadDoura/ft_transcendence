@@ -12,7 +12,7 @@ The client refreshes at 14 minutes for Khalil's 15-minute access lifetime, dedup
 
 Logout clears the browser immediately, then revokes the saved refresh token and any replacement produced by a refresh already in flight. This matters because BE-03 revokes a particular refresh token, not every session. Failed revocation keeps the existing local-sign-out warning. BE-03 access tokens remain valid on the server until expiry; the browser discards its copy. No backend behavior was changed.
 
-The screen layout, accessible labels, pending states, verification single-flight behavior and safe redirects remain. Privacy/Terms content, post-login feature screens and FE-21 primitive adoption are separate tickets.
+The screen layout, accessible labels, pending states, verification single-flight behavior and safe redirects remain. Privacy/Terms content and post-login feature screens are separate tickets. The form now uses FE-21 Input/Button and shared color tokens.
 
 ## Dependency and review base
 
