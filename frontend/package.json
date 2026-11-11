@@ -16,7 +16,10 @@
     "format": "prettier --write .",
     "gen:api": "node scripts/gen-api.mjs",
     "format:check": "prettier --check .",
-    "i18n:check": "node scripts/check-i18n.mjs"
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "legal:sync": "node scripts/legal-content.mjs",
+    "legal:check": "node scripts/legal-content.mjs --check",
+    "prebuild": "npm run legal:sync"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
@@ -28,6 +31,7 @@
     "react-dom": "^19.3.1",
     "react-hook-form": "^7.91.0",
     "react-i18next": "^17.1.13",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.5",
     "tailwindcss": "^4.3.4",
     "zod": "^4.6.7"

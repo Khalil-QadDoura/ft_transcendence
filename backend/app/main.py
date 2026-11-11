@@ -14,9 +14,11 @@ from app.core.errors import add_error_handlers
 from app.core.internal import require_internal_key
 from app.core.limiter import limiter
 from app.core.logging import configure_logging
+from app.core.redis_client import setup_redis
 from app.core.request_id import request_id_middleware
 from app.db.session import setup_database
 from app.health import routes as health
+from app.realtime import routes as realtime
 from app.users import routes as users
 
 log = structlog.get_logger("app")
@@ -28,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("startup", env=app.state.settings.env)
     yield
     await app.state.engine.dispose()  # close this app's pooled database connections
+    await app.state.redis.aclose()  # and its Redis connections
     log.info("shutdown")
 
 
@@ -48,18 +51,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.limiter = limiter  # slowapi looks for the limiter here
     setup_database(app, settings)  # this app's engine, from this app's settings
+    setup_redis(app, settings)  # this app's Redis client, the same way
 
     add_error_handlers(app)
     app.middleware("http")(request_id_middleware)
 
-    # Public API: every router goes under /api. WebSockets will live under /ws.
+    # Public API: every router goes under /api. WebSockets live under /ws.
     api = APIRouter(prefix="/api")
     api.include_router(health.router)
     api.include_router(auth.router)
     api.include_router(users.router)
     api.include_router(companies.router)
     api.include_router(conversations.router)
+    api.include_router(realtime.router)  # POST /api/ws/ticket
     app.include_router(api)
+    app.include_router(realtime.socket_router)  # the WebSocket at /ws
 
     # Internal routes: left out of the OpenAPI spec and locked by X-Internal-Key.
     internal = APIRouter(

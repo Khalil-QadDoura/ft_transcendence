@@ -1,11 +1,16 @@
-"""Password hashing (Argon2id) and the signed tokens (JWT, HS256). No database, no HTTP."""
+"""Password hashing (Argon2id), the signed tokens (JWT, HS256) and the password reset tokens.
+No database, no HTTP."""
 
+import hashlib
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
+
+from app.auth.constants import PASSWORD_RESET_TOKEN_BYTES
 
 # Argon2id with the library's defaults (the RFC 9106 settings: 64 MiB of memory, 3 passes,
 # 4 lanes). Each hash gets its own random salt, kept inside the hash string itself.
@@ -62,3 +67,20 @@ def read_token(secret: str, token: str, scope: str) -> dict:
     if claims["scope"] != scope:
         raise jwt.InvalidTokenError(f"wrong scope, expected {scope}")
     return claims
+
+
+def new_reset_token() -> str:
+    """A new password reset token: 48 random bytes from the operating system's secure random
+    generator, written as 64 URL-safe characters (A-Z, a-z, 0-9, - and _). Too many
+    possibilities to guess, and safe to put in a link as it is."""
+    return secrets.token_urlsafe(PASSWORD_RESET_TOKEN_BYTES)
+
+
+def hash_reset_token(token: str) -> str:
+    """What the database keeps instead of the token: its SHA-256, 64 hex characters.
+
+    Someone who reads the table cannot turn it back into a working link. A plain SHA-256 is
+    enough here, unlike for passwords: the token is long and random, so it cannot be guessed,
+    and the same token always gives the same hash, so the database can look it up.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()

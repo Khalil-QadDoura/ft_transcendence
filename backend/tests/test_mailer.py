@@ -1,12 +1,10 @@
-"""The email sender: over SMTP to a real mail server running inside the test, or to Brevo."""
+"""The email sender: over SMTP to a real mail server running inside the test, or to Brevo.
+The test mail server (the smtp_server fixture) is in conftest.py."""
 
 import contextlib
 import json
-import socket
-from email import message_from_bytes, policy
 
-import pytest
-from aiosmtpd.controller import Controller
+from conftest import free_port
 
 from app.core import mailer as mailer_module
 from app.core.config import Settings
@@ -16,34 +14,6 @@ from app.core.mailer import BREVO_URL, Mailer
 def settings(**values) -> Settings:
     """Settings for one test; _env_file=None ignores a developer's own backend/.env."""
     return Settings(_env_file=None, **values)
-
-
-def free_port() -> int:
-    """A port number that nothing on this machine listens on right now."""
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-class Inbox:
-    """The test mail server calls handle_DATA for every email it receives; we keep them."""
-
-    def __init__(self):
-        self.emails = []
-
-    async def handle_DATA(self, server, session, envelope):
-        self.emails.append(message_from_bytes(envelope.content, policy=policy.default))
-        return "250 OK"
-
-
-@pytest.fixture
-def smtp_server():
-    """A real SMTP server on this machine (the aiosmtpd library), like Mailpit, for one test."""
-    inbox = Inbox()
-    server = Controller(inbox, hostname="127.0.0.1", port=free_port())
-    server.start()
-    yield server.port, inbox
-    server.stop()
 
 
 def test_sends_the_email_over_smtp(smtp_server):
