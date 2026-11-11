@@ -610,6 +610,34 @@ def test_nobody_can_change_another_users_video(client, ana, ben, name):
     assert action(client, ana, 999, name).json() == error(404, "Video not found")
 
 
+@pytest.mark.parametrize("name", ["post", "unpost", "delete"])
+@pytest.mark.parametrize(
+    ("video_id", "detail"),
+    [
+        (0, "path → video_id: Input should be greater than or equal to 1"),
+        (-5, "path → video_id: Input should be greater than or equal to 1"),
+        # One more than the largest id the database can hold (BIGINT): it gave 500.
+        (2**63, "path → video_id: Input should be less than or equal to 9223372036854775807"),
+    ],
+)
+def test_an_id_under_1_or_too_big_for_the_database_gets_422(client, ana, name, video_id, detail):
+    assert action(client, ana, video_id, name).json() == error(422, detail)
+
+
+@pytest.mark.parametrize("name", ["post", "unpost", "delete"])
+def test_the_largest_id_the_database_can_hold_is_simply_not_found(client, ana, name):
+    assert action(client, ana, 2**63 - 1, name).json() == error(404, "Video not found")
+
+
+def test_a_normal_video_id_still_works_for_post_unpost_and_delete(client, ana):
+    video_id = new_video(client, ana)
+    moderate(video_id)
+    for name, lifecycle in [("post", "posted"), ("unpost", "unposted"), ("delete", "deleted")]:
+        response = action(client, ana, video_id, name)
+        assert response.status_code == 200
+        assert response.json()["lifecycle_status"] == lifecycle
+
+
 # --- mine --------------------------------------------------------------------------------
 
 
@@ -810,6 +838,28 @@ def test_a_cursor_still_works_after_its_video_has_left_the_feed(client, ana):
     # Unposted between two pages: its id is still a video, so the next page still comes.
     sql("UPDATE intro_videos SET lifecycle_status = 'unposted' WHERE id = :id", id=ids[2])
     assert feed_ids(client, ana, cursor=first_page["next_cursor"]) == [ids[1], ids[0]]
+
+
+@pytest.mark.parametrize(
+    ("job_id", "detail"),
+    [
+        (0, "query → job_id: Input should be greater than or equal to 1"),
+        (-5, "query → job_id: Input should be greater than or equal to 1"),
+        # One more than the largest id the database can hold (BIGINT): it gave 500.
+        (2**63, "query → job_id: Input should be less than or equal to 9223372036854775807"),
+    ],
+)
+def test_the_feed_refuses_a_job_id_under_1_or_too_big_with_422(client, ana, job_id, detail):
+    add_video(ana.id)
+    response = client.get("/api/media/feed", params={"job_id": job_id}, headers=ana.headers)
+    assert response.json() == error(422, detail)
+
+
+def test_the_largest_job_id_and_a_real_one_still_give_the_feed(client, ana):
+    video_id = add_video(add_user("dan@example.com"))
+    # No job has the largest id the database can hold: the plain order, like any unknown job.
+    assert feed_ids(client, ana, job_id=2**63 - 1) == [video_id]
+    assert feed_ids(client, ana, job_id=make_company_with_job(ana)) == [video_id]
 
 
 def test_employers_see_only_videos_rated_a_or_b(client, ana):
