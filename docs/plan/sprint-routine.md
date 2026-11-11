@@ -1,6 +1,6 @@
 # PM-01 — sprint routine and outstanding agreements
 
-Owner: Zayid (@zayidelkhair / Trello @noobthinker). Updated November 10, 2026. Team timezone: Asia/Dubai (Abu Dhabi, UTC+4). [PM-01 card](https://trello.com/c/F551icOK), [PM-00 rules](https://trello.com/c/twqpeAfN), [active board](https://trello.com/b/E3788fBx/fttranscendence).
+Owner: Zayid (@zayidelkhair / Trello @noobthinker). Updated November 11, 2026. Team timezone: Asia/Dubai (Abu Dhabi, UTC+4). [PM-01 card](https://trello.com/c/F551icOK), [PM-00 rules](https://trello.com/c/twqpeAfN), [active board](https://trello.com/b/E3788fBx/fttranscendence).
 
 ## Confirmed plan
 
@@ -43,8 +43,8 @@ Blocked: CARD-ID — dependency, owner and the decision/help needed (or None)
 | Authorize the GitHub Power-Up repository connection for `Khalil-QadDoura/ft_transcendence` | Khalil (@Khalil-QadDoura), repository admin | Connected repository visible in the Power-Up; Zayid checks that a linked PR shows repository details on its card. |
 | Confirm the recurring slot, call link and calendar recipients | Zayid, with all five team members | Recorded agreement and calendar invitations. |
 | Confirm the project chat destination and daily cutoff, then pin the template | Zayid, with the team | Chat name/link and a link to the pinned update. |
-| Review the shared API client and auth-screen integration | Ahmad (FE-20) and Zayid (FE-04); Khalil reviews the backend contract | FE-20 [PR #22](https://github.com/Khalil-QadDoura/ft_transcendence/pull/22) is open as checked November 10. FE-04 [PR #17](https://github.com/Khalil-QadDoura/ft_transcendence/pull/17) still needs the shared client and its prerequisite PRs before merge. |
-| Review shared UI primitives | Ahmad (FE-21), cross-pair reviewer | FE-21 [PR #21](https://github.com/Khalil-QadDoura/ft_transcendence/pull/21) is open as checked November 10. An open PR is not a completed dependency. |
+| Review the shared API client and auth-screen integration | Ahmad (FE-20) and Zayid (FE-04); Khalil reviews the backend contract | FE-20 [PR #22](https://github.com/Khalil-QadDoura/ft_transcendence/pull/22) and FE-02 [PR #2](https://github.com/Khalil-QadDoura/ft_transcendence/pull/2) are merged. FE-04 [PR #17](https://github.com/Khalil-QadDoura/ft_transcendence/pull/17) integrates the shared client, targets main, and awaits renewed review; its local 127-test suite passed November 11. |
+| Review shared UI primitives | Ahmad (FE-21), cross-pair reviewer | FE-21 [PR #21](https://github.com/Khalil-QadDoura/ft_transcendence/pull/21) is merged; new screens should reuse the shared components. |
 
 BE-02 and corrected BE-03 are merged on main; frontend integration uses the current team backend contract. Card comments record any further API mismatch with the responsible owner.
 
