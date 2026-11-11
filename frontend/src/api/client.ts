@@ -162,7 +162,9 @@ export function scheduleProactiveRefresh(lifetimeMs: number): void {
   if (refreshTimerId !== null) clearTimeout(refreshTimerId);
   refreshTimerId = setTimeout(
     () => {
-      void refreshAccessToken();
+      void refreshAccessToken().catch(() => {
+        /* A retry is scheduled below. */
+      });
     },
     Math.max(1000, lifetimeMs - REFRESH_MARGIN_MS),
   );
@@ -180,7 +182,8 @@ async function rotateToken(
     cache: "no-store",
     referrerPolicy: "no-referrer",
   });
-  if (!response.ok) return null;
+  if (response.status === 401) return null;
+  if (!response.ok) throw await parseErrorResponse(response);
   const data: unknown = await response.json();
   if (
     !data ||
@@ -231,9 +234,30 @@ export function refreshAccessToken(
       });
       return pair.access_token;
     })
-    .catch(() => {
-      if (flight.version === sessionVersion) clearTokens();
-      return null;
+    .catch((error: unknown) => {
+      if (flight.version !== sessionVersion) return null;
+      if (
+        error instanceof ApiError &&
+        error.code === "invalid_token_response"
+      ) {
+        clearTokens();
+        return null;
+      }
+      // A transport outage/rate limit is not evidence that credentials were revoked.
+      // Keep this session and retry later; logout/new login cancels this timer.
+      if (refreshTimerId !== null) clearTimeout(refreshTimerId);
+      refreshTimerId = setTimeout(() => {
+        void refreshAccessToken(basePath).catch(() => {
+          /* Keep the retry bounded. */
+        });
+      }, 30_000);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError(
+            0,
+            "network_error",
+            "Session refresh is temporarily unavailable",
+          );
     })
     .finally(() => {
       if (activeRefresh === flight) activeRefresh = null;

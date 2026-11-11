@@ -1,3 +1,6 @@
+import copy from "./copy.en.json";
+import { Input } from "../../components/Input";
+import { Button } from "../../components/Button";
 import { useEffect, useRef, useState, type PropsWithChildren } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -14,7 +17,7 @@ const signupSchema = registerSchema
   .extend({ confirm: z.string() })
   .refine((data) => data.password === data.confirm, {
     path: ["confirm"],
-    message: "Passwords must match.",
+    message: copy.passwordsMustMatch,
   });
 type Fields = { email: string; password: string; confirm?: string };
 function fieldMessage(
@@ -26,32 +29,32 @@ function fieldMessage(
   if (error.message === "validation.server")
     return typeof error.types?.detail === "string"
       ? error.types.detail
-      : "Please check this value and try again.";
-  if (field === "email") return "Enter a valid email address.";
+      : copy.pleaseCheckThisValueAndTryAgain;
+  if (field === "email") return copy.enterAValidEmailAddress;
   if (error.message === "validation.tooLong")
-    return "Use no more than 128 characters.";
+    return copy.useNoMoreThan128Characters;
   if (
     !signup &&
     field === "password" &&
     error.message === "validation.tooShort"
   )
-    return "Enter your password.";
+    return copy.enterYourPassword;
   if (error.message?.startsWith("validation."))
-    return "Use 8–128 characters for your password.";
+    return copy.use8128CharactersForYourPassword;
   return error.message;
 }
 function requestMessage(error: unknown) {
   if (error instanceof AuthError) {
     if (error.status === 401)
-      return "That email and password don’t match. Please try again.";
+      return copy.thatEmailAndPasswordDontMatchPleaseTryAgain;
     if (error.status === 403)
-      return "Verify your email before signing in. Open the latest verification link in your inbox.";
+      return copy.verifyYourEmailBeforeSigningInOpenTheLatestVerification;
     if (error.status === 409)
-      return "This email already has an account. Try signing in.";
+      return copy.thisEmailAlreadyHasAnAccountTrySigningIn;
     if (error.status === 429)
-      return "Too many attempts. Please wait a few minutes and try again.";
+      return copy.tooManyAttemptsPleaseWaitAFewMinutesAndTry;
   }
-  return "We couldn’t reach your account. Please try again.";
+  return copy.weCouldntReachYourAccountPleaseTryAgain;
 }
 function AuthFrame({
   title,
@@ -63,32 +66,32 @@ function AuthFrame({
   }, [title]);
   return (
     <section className="auth-page">
-      <aside className="auth-story" aria-label="Welcome to WOZU">
-        <span className="eyebrow">YOUR NEXT CHAPTER STARTS HERE</span>
+      <aside className="auth-story" aria-label={copy.welcomeToWozu}>
+        <span className="eyebrow">{copy.yourNextChapterStartsHere}</span>
         <p className="auth-manifesto">
-          Good work.
+          {copy.goodWork}
           <br />
-          Great people.
+          {copy.greatPeople}
           <br />
-          <em>Your kind of place.</em>
+          <em>{copy.yourKindOfPlace}</em>
         </p>
         <div className="auth-art" aria-hidden="true">
           <span className="auth-orbit" />
           <span className="auth-spark">✳</span>
           <span className="auth-note">
-            A little
+            {copy.aLittle}
             <br />
-            <em>more human.</em>
+            <em>{copy.moreHuman}</em>
           </span>
         </div>
         <div className="auth-story-footer">
-          <span>SHOW UP AS YOU.</span>
+          <span>{copy.showUpAsYou}</span>
           <span aria-hidden="true">↗</span>
         </div>
       </aside>
       <div className="auth-panel">
         <div className="auth-content">
-          <span className="eyebrow">HELLO, HUMAN.</span>
+          <span className="eyebrow">{copy.helloHuman}</span>
           <h1>{title}</h1>
           <p className="auth-intro">{intro}</p>
           {children}
@@ -148,55 +151,54 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   if (sent)
     return (
       <AuthFrame
-        title="Check your inbox."
-        intro="One small step, then you’re in."
+        title={copy.checkYourInbox}
+        intro={copy.oneSmallStepThenYoureIn}
       >
         <div className="auth-result" role="status">
           <span className="auth-result-icon" aria-hidden="true">
             ↗
           </span>
-          <h2>Your next step is in your email.</h2>
+          <h2>{copy.yourNextStepIsInYourEmail}</h2>
           <p>
-            If registration can proceed, you’ll receive a verification link.
-            Check spam, and always use the newest link.
+            {copy.ifRegistrationCanProceedYoullReceiveAVerificationLinkCheck}
           </p>
         </div>
         {import.meta.env.DEV && (
           <p className="auth-hint">
-            Local development:{" "}
+            {copy.localDevelopment}{" "}
             <a href="https://localhost/mail" target="_blank" rel="noreferrer">
-              open the Mailpit inbox ↗
+              {copy.openTheMailpitInbox}
             </a>
             .
           </p>
         )}
         <Link className="button auth-submit" to={`/login${suffix}`}>
-          Continue to sign in <span aria-hidden="true">↗</span>
+          {copy.continueToSignIn}
+          <span aria-hidden="true">↗</span>
         </Link>
         <button className="auth-text-button" onClick={() => setSent(false)}>
-          Use a different email
+          {copy.useADifferentEmail}
         </button>
       </AuthFrame>
     );
   return (
     <AuthFrame
-      title={signup ? "Make your introduction." : "Welcome back."}
+      title={signup ? copy.makeYourIntroduction : copy.welcomeBack}
       intro={
         signup
-          ? "You bring the personality. We’ll help you find the possibilities."
-          : "Your people. Your possibilities. Pick up where you left off."
+          ? copy.youBringThePersonalityWellHelpYouFindThePossibilities
+          : copy.yourPeopleYourPossibilitiesPickUpWhereYouLeftOff
       }
     >
       {params.get("logout") === "local" && (
         <p className="auth-alert" role="alert">
-          You’re signed out here, but we couldn’t revoke the server session.
-          Close this tab on a shared device and try again when connected.
+          {copy.youreSignedOutHereButWeCouldntRevokeTheServer}
         </p>
       )}
       <form
         noValidate
         onSubmit={handleSubmit(submit)}
-        aria-label={signup ? "Create account" : "Sign in"}
+        aria-label={signup ? copy.createAccount : copy.signIn}
         aria-busy={isSubmitting}
       >
         {(
@@ -206,59 +208,47 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             ...(signup ? (["confirm"] as const) : []),
           ] as const
         ).map((name) => (
-          <div className="auth-field" key={name}>
-            <label htmlFor={`auth-${name}`}>
-              {name === "email"
-                ? "Email address"
-                : name === "confirm"
-                  ? "Confirm password"
-                  : "Password"}
-            </label>
-            <div className="auth-input-wrap">
-              <input
-                id={`auth-${name}`}
-                type={name === "email" ? "email" : show ? "text" : "password"}
-                autoComplete={
-                  name === "email"
-                    ? "email"
-                    : signup
-                      ? "new-password"
-                      : "current-password"
-                }
-                autoCapitalize="none"
-                spellCheck={false}
-                readOnly={isSubmitting}
-                aria-invalid={Boolean(errors[name])}
-                aria-describedby={
-                  errors[name]
-                    ? `${name}-error`
-                    : signup && name === "password"
-                      ? "password-hint"
-                      : undefined
-                }
-                {...register(name)}
-              />
-              {name === "password" && (
-                <button
-                  type="button"
-                  className="auth-reveal"
-                  onClick={() => setShow(!show)}
-                  aria-label={show ? "Hide password" : "Show password"}
-                  aria-pressed={show}
-                >
-                  {show ? "Hide" : "Show"}
-                </button>
-              )}
-            </div>
-            {signup && name === "password" && (
-              <small id="password-hint">
-                8–128 characters. Make it uniquely yours.
-              </small>
-            )}
-            {errors[name] && (
-              <p className="auth-field-error" id={`${name}-error`} role="alert">
-                {fieldMessage(errors[name], name, signup)}
-              </p>
+          <div className="my-5" key={name}>
+            <Input
+              id={`auth-${name}`}
+              label={
+                name === "email"
+                  ? copy.emailAddress
+                  : name === "confirm"
+                    ? copy.confirmPassword
+                    : copy.password
+              }
+              type={name === "email" ? "email" : show ? "text" : "password"}
+              autoComplete={
+                name === "email"
+                  ? "email"
+                  : signup
+                    ? "new-password"
+                    : "current-password"
+              }
+              autoCapitalize="none"
+              spellCheck={false}
+              readOnly={isSubmitting}
+              required
+              className="min-h-12 text-base"
+              error={fieldMessage(errors[name], name, signup)}
+              helperText={
+                signup && name === "password"
+                  ? copy["8128CharactersMakeItUniquelyYours"]
+                  : undefined
+              }
+              {...register(name)}
+            />
+            {name === "password" && (
+              <button
+                type="button"
+                className="mt-2 text-sm underline"
+                onClick={() => setShow(!show)}
+                aria-label={show ? copy.hidePassword : copy.showPassword}
+                aria-pressed={show}
+              >
+                {show ? copy.hide : copy.show}
+              </button>
             )}
           </div>
         ))}
@@ -267,29 +257,29 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             {fieldMessage(errors.root.server)}
           </p>
         )}
-        <button
-          className="button auth-submit"
+        <Button
+          className="w-full min-h-12 mt-4"
           type="submit"
-          disabled={isSubmitting}
+          isLoading={isSubmitting}
         >
           {isSubmitting
-            ? "Just a moment…"
+            ? copy.justAMoment
             : signup
-              ? "Create your account"
-              : "Sign in"}
+              ? copy.createYourAccount
+              : copy.signIn}
           <span aria-hidden="true">↗</span>
-        </button>
+        </Button>
       </form>
       <p className="auth-switch">
-        {signup ? "Already found us?" : "New around here?"}{" "}
+        {signup ? copy.alreadyFoundUs : copy.newAroundHere}{" "}
         <Link to={`${signup ? "/login" : "/register"}${suffix}`}>
-          {signup ? "Sign in" : "Create an account"}
+          {signup ? copy.signIn : copy.createAnAccount}
         </Link>
       </p>
       <p className="auth-hint">
-        Learn how we handle your information in our{" "}
-        <Link to="/privacy">Privacy Policy</Link> and{" "}
-        <Link to="/terms">Terms of Service</Link>.
+        {copy.learnHowWeHandleYourInformationInOur}{" "}
+        <Link to="/privacy">{copy.privacyPolicy}</Link>{" "}
+        {copy.and} <Link to="/terms">{copy.termsOfService}</Link>.
       </p>
     </AuthFrame>
   );
@@ -336,12 +326,12 @@ export function VerifyEmail() {
   const current = result?.token === token ? result : undefined;
   const checking = Boolean(token && !current);
   const title = checking
-    ? "A moment, please."
+    ? copy.aMomentPlease
     : current?.ok
-      ? "You’re verified."
-      : "Let’s try that again.";
+      ? copy.youreVerified
+      : copy.letsTryThatAgain;
   return (
-    <AuthFrame title={title} intro="A secure start to your next chapter.">
+    <AuthFrame title={title} intro={copy.aSecureStartToYourNextChapter}>
       <div
         className="auth-result"
         role={checking || current?.ok ? "status" : "alert"}
@@ -351,14 +341,14 @@ export function VerifyEmail() {
         </span>
         <p>
           {checking
-            ? "Checking your verification link…"
+            ? copy.checkingYourVerificationLink
             : current?.ok
-              ? "Your email is confirmed. You can now sign in."
+              ? copy.yourEmailIsConfirmedYouCanNowSignIn
               : !token
-                ? "This link is missing its verification token. Open the full link from your email."
+                ? copy.thisLinkIsMissingItsVerificationTokenOpenTheFull
                 : current?.retry
-                  ? "We couldn’t verify your email right now. Check your connection and try again."
-                  : "This link is invalid, expired or has been replaced. Use the latest email, or register again to request a new link."}
+                  ? copy.weCouldntVerifyYourEmailRightNowCheckYourConnection
+                  : copy.thisLinkIsInvalidExpiredOrHasBeenReplacedUse}
         </p>
       </div>
       {current?.retry && (
@@ -369,7 +359,7 @@ export function VerifyEmail() {
             setAttempt((n) => n + 1);
           }}
         >
-          Try verification again
+          {copy.tryVerificationAgain}
         </button>
       )}
       {!checking && (
@@ -377,7 +367,7 @@ export function VerifyEmail() {
           className="button auth-submit"
           to={current?.ok ? "/login" : "/register"}
         >
-          {current?.ok ? "Continue to sign in" : "Back to registration"}
+          {current?.ok ? copy.continueToSignIn : copy.backToRegistration}
           <span aria-hidden="true">↗</span>
         </Link>
       )}
@@ -405,7 +395,7 @@ export function LogoutButton() {
       disabled={pending}
       onClick={() => void logout()}
     >
-      {pending ? "Signing out…" : "Sign out"}
+      {pending ? copy.signingOut : copy.signOut}
     </button>
   );
 }

@@ -80,10 +80,14 @@ export function createAuthGateway(): AuthGateway {
     },
     restore() {
       if (!restoring) return Promise.resolve();
-      restoration ??= refreshAccessToken().then(() => {
-        restoring = false;
-        notify();
-      });
+      restoration ??= refreshAccessToken()
+        .then(() => {
+          restoring = false;
+          notify();
+        })
+        .finally(() => {
+          restoration = undefined;
+        });
       return restoration;
     },
     async register({ email, password }) {
