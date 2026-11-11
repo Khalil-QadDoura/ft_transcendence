@@ -32,7 +32,7 @@ The image renders every `/etc/nginx/templates/**/*.template` with envsubst into 
 | `/` | `frontend:80` | The frontend container does the SPA fallback; a missing `/assets/*` file is a 404 |
 | `/api/*` | `api:8000` | Full path kept; `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`; 1 MB body limit |
 | `/ws*` | `api:8000` | Upgrade headers, one-hour timeouts, no buffering |
-| `/files/*` | `minio:9000` | Host and URI unchanged for presigned signatures; 60 MB body limit, no buffering |
+| `/files/*` | `minio:9000` | Host and URI unchanged for presigned signatures; 60 MB body limit, no buffering; `Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff` on every answer (MinIO's own `nosniff` hidden), so an uploaded HTML file cannot run as our origin |
 | `/grafana/*` | `grafana:3000` | Full path kept (`serve_from_sub_path`), upgrade headers |
 | `/mail/*` | `mailpit:8025` | Full path kept (`MP_WEBROOT=/mail/`), upgrade headers |
 | `/_internal*`, `/metrics*`, `/api/_internal*`, `/api/metrics*` | none | 404, including the image's `/metrics/nginx`; matched on the decoded, normalized path |
