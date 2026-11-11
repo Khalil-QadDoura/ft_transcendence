@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Smoke test of the single HTTPS origin (INF-03), from the host, through the proxy:
 # - / serves the frontend with the SPA fallback; a missing asset is a 404, not index.html;
-# - /api/health answers; /ws reaches the API with a WebSocket handshake;
+# - /api/health answers; /ws completes a WebSocket handshake with the API (101, or FAIL);
 # - http:// redirects to https:// with path, query and host port kept; nginx's own
 #   trailing-slash redirects (/mail -> /mail/) keep the host port too;
 # - /_internal and /metrics, also under /api, are 404 from outside, even with the key,
 #   while the internal route works inside the Docker network;
 # - only the proxy publishes host ports.
 # Needs the stack up (`make`). Run it with `make https-check`. Exits 1 when a check fails.
-# Works with bash 3.2 (macOS).
+# WS_PATH (default /ws) moves the WebSocket check to another path, to see it fail:
+# `WS_PATH=/ws-missing make https-check`. Works with bash 3.2 (macOS).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -16,6 +17,11 @@ cd "$ROOT"
 CA="$ROOT/infra/proxy/certs/server.crt"
 # RFC 6455: the server proves it speaks WebSocket by hashing the client key with this GUID.
 WS_GUID=258EAFA5-E914-47DA-95CA-C5AB0DC85B11
+ws_path="${WS_PATH:-/ws}"
+case "$ws_path" in
+    /*) ;;
+    *) echo "https-check: WS_PATH must start with /" >&2; exit 1 ;;
+esac
 
 for service in proxy frontend api; do
     if [ -z "$(docker compose ps -q "$service")" ]; then
@@ -117,22 +123,26 @@ fi
 echo "WebSocket (/ws -> api:8000, HTTP/1.1 upgrade):"
 # A real handshake over TLS. HTTP/1.1 only: over HTTP/2 curl drops Upgrade and Connection.
 # No ticket on purpose: BE-06 accepts the socket first (101), then closes it with 1008.
+# Only 101 passes: 403 (route missing or rejected), 404, 426, 502, a timeout (000) or the
+# frontend's index.html all fail. After the 101 curl keeps reading the socket, so
+# --max-time is what ends the request; it also bounds a proxy or API that never answers.
 ws_key="$(openssl rand -base64 16)"
 ws_accept="$(printf '%s' "$ws_key$WS_GUID" | openssl dgst -sha1 -binary | openssl base64)"
-req "$base/ws" --http1.1 --max-time 5 -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+req "$base$ws_path" --http1.1 --max-time 3 -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
     -H 'Sec-WebSocket-Version: 13' -H "Sec-WebSocket-Key: $ws_key"
 if [ "$status" = 101 ]; then
     got="$(tr -d '\r' < "$work/headers" | sed -n 's/^[Ss]ec-[Ww]eb[Ss]ocket-[Aa]ccept: *//p')"
+    # The first frame, if any: bytes 3-4 of a close frame are its code (03f0 = 1008).
+    close="$(od -An -tx1 -j2 -N2 "$work/body" | tr -d ' \n')"
+    then_closed=""
+    [ "$close" = 03f0 ] && then_closed=", then close 1008 (no ticket)"
     if [ "$got" = "$ws_accept" ]; then
-        pass "wss://.../ws: 101 Switching Protocols, Sec-WebSocket-Accept matches"
+        pass "wss://...$ws_path: 101 Switching Protocols, Sec-WebSocket-Accept matches$then_closed"
     else
-        fail "wss://.../ws: 101 without the expected Sec-WebSocket-Accept"
+        fail "wss://...$ws_path: 101 without the expected Sec-WebSocket-Accept"
     fi
-elif { [ "$status" = 403 ] || [ "$status" = 404 ]; } && [ "${ctype%%;*}" != text/html ]; then
-    # The API itself refused it (an nginx error would be an HTML page): the proxy part works.
-    skip "wss://.../ws: no /ws route yet (BE-06); the upgrade reached the API ($status from uvicorn)"
 else
-    fail "wss://.../ws: $status $ctype, expected 101 (or the API's 403/404 before BE-06)"
+    fail "wss://...$ws_path: $status ${ctype:-no Content-Type}, expected 101 Switching Protocols"
 fi
 
 echo "Redirects:"
