@@ -124,6 +124,38 @@ test.each([
     expect(container.textContent).not.toContain("PRIVATE");
   },
 );
+
+test("registration explains an existing verified account and retains the sign-in destination", async () => {
+  vi.mocked(client.register).mockRejectedValue(
+    new AuthError(409, {
+      error: { code: "409", detail: "Email already registered" },
+    }),
+  );
+  await render("/register?next=%2Ffriends");
+  await fill("email", "ana@example.com");
+  await fill("password", "correct horse");
+  await fill("confirm", "correct horse");
+  await submit();
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "This email already has an account. Try signing in.",
+  );
+  expect(container.textContent).not.toContain("couldn’t reach");
+  expect(
+    container.querySelector('a[href="/login?next=%2Ffriends"]'),
+  ).not.toBeNull();
+  expect(
+    container.querySelector<HTMLButtonElement>('[type="submit"]')?.disabled,
+  ).toBe(false);
+});
+
+test("empty login password stays in the form without making a request", async () => {
+  await render("/login");
+  await fill("email", "ana@example.com");
+  await submit();
+  expect(client.login).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Enter your password.");
+  expect(document.activeElement?.id).toBe("auth-password");
+});
 test("backend 422 marks and focuses the permitted field", async () => {
   vi.mocked(client.login).mockRejectedValue(
     new AuthError(422, {
@@ -138,6 +170,9 @@ test("backend 422 marks and focuses the permitted field", async () => {
   expect(
     container.querySelector("#auth-email")?.getAttribute("aria-invalid"),
   ).toBe("true");
+  expect(container.querySelector("#email-error")?.textContent).toBe(
+    "invalid address",
+  );
 });
 test("pending submission is disabled and network failure remains retryable", async () => {
   let reject!: (error: Error) => void;

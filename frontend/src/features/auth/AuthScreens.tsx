@@ -17,13 +17,25 @@ const signupSchema = registerSchema
     message: "Passwords must match.",
   });
 type Fields = { email: string; password: string; confirm?: string };
-function fieldMessage(error?: { message?: string }, field?: string) {
+function fieldMessage(
+  error?: { message?: string; types?: Record<string, unknown> },
+  field?: string,
+  signup = true,
+) {
   if (!error) return "";
   if (error.message === "validation.server")
-    return "Please check this value and try again.";
+    return typeof error.types?.detail === "string"
+      ? error.types.detail
+      : "Please check this value and try again.";
   if (field === "email") return "Enter a valid email address.";
   if (error.message === "validation.tooLong")
     return "Use no more than 128 characters.";
+  if (
+    !signup &&
+    field === "password" &&
+    error.message === "validation.tooShort"
+  )
+    return "Enter your password.";
   if (error.message?.startsWith("validation."))
     return "Use 8–128 characters for your password.";
   return error.message;
@@ -34,6 +46,8 @@ function requestMessage(error: unknown) {
       return "That email and password don’t match. Please try again.";
     if (error.status === 403)
       return "Verify your email before signing in. Open the latest verification link in your inbox.";
+    if (error.status === 409)
+      return "This email already has an account. Try signing in.";
     if (error.status === 429)
       return "Too many attempts. Please wait a few minutes and try again.";
   }
@@ -243,7 +257,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             )}
             {errors[name] && (
               <p className="auth-field-error" id={`${name}-error`} role="alert">
-                {fieldMessage(errors[name], name)}
+                {fieldMessage(errors[name], name, signup)}
               </p>
             )}
           </div>
