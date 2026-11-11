@@ -1,0 +1,143 @@
+# WOZU Web: the whole stack, started by `make` (see Makefile and docs/infra/infrastructure.md).
+# Values come from .env (scripts/init-env.sh creates it from .env.example); no secret is
+# written here. Only the proxy publishes host ports; every other service is reachable only
+# on the internal network, through the proxy routes in infra/proxy/.
+name: wozu
+
+# Settings shared by the API and the worker (same image, same code).
+x-backend-env: &backend-env
+  ENV: ${ENV}
+  LOG_LEVEL: ${LOG_LEVEL}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+  TEST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_TEST_DB}
+  JWT_SECRET: ${JWT_SECRET}
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+  FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
+  SMTP_HOST: ${SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT}
+  MAIL_FROM: ${MAIL_FROM}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+  MINIO_EXTERNAL_ENDPOINT: ${MINIO_EXTERNAL_ENDPOINT}
+
+services:
+  # nginx + ModSecurity CRS (INF-01). Listens on 8080/8443 inside the container (uid 101
+  # cannot bind below 1024). Upstreams resolve per request, so it needs no depends_on.
+  proxy:
+    image: owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210@sha256:873ce68a658d2e3b61484a8a24d215f7d15456e7ce5aec5e7114bf000d743365
+    env_file: infra/proxy/proxy.env
+    environment:
+      SERVER_NAME: ${DOMAIN}
+      # The HTTP -> HTTPS redirect adds this port when it is not 443.
+      PUBLIC_HTTPS_PORT: ${HTTPS_PORT:-443}
+    ports:
+      - "${HTTP_PORT:-80}:8080"
+      - "${HTTPS_PORT:-443}:8443"
+    volumes:
+      - ./infra/proxy/templates/conf.d/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
+      # Created by infra/proxy/scripts/gen-cert.sh (`make up` runs it first).
+      - ./infra/proxy/certs:/etc/nginx/conf:ro
+    restart: unless-stopped
+
+  # FE-01 build: static files served by nginx on port 80, SPA fallback to index.html.
+  frontend:
+    build:
+      context: ./frontend
+      target: preview
+    volumes:
+      - ./infra/frontend/default.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  # FastAPI. The image runs `alembic upgrade head` before uvicorn, so it waits for the db.
+  # Healthy once /api/health answers (after the migrations), so `make` returns only then.
+  # The image has no curl; Python asks.
+  api:
+    build: ./backend
+    environment: *backend-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Celery worker + beat for video moderation. Enabled by BE-29: the backend has no Celery
+  # app yet, so the service is off by default and starts only with `--profile worker`.
+  worker:
+    profiles: ["worker"]
+    build: ./backend
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-B", "--loglevel=INFO"]
+    environment:
+      <<: *backend-env
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      MODERATION_FAIL_OPEN: ${MODERATION_FAIL_OPEN}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, built for amd64 and arm64 by
+  # one of its maintainers (every postgis/postgis tag is amd64 only), so Apple Silicon runs it
+  # natively. Pinned by tag and the digest of the multi-arch index.
+  # On a new volume the image runs its own 10_postgis.sh, then our script, which adds the
+  # test database (`make test` runs the same script for an older volume). Only the one file
+  # is mounted: a mounted directory would hide 10_postgis.sh.
+  db:
+    image: imresamu/postgis:15-3.4@sha256:44d4443d107a7750ea29a441dec0050cd7543178f011ae0620e4b572578e9300
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./infra/db/create-test-db.sh:/docker-entrypoint-initdb.d/20-create-test-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # The official minio/minio image left Docker Hub on 2025-10-23; pgsty/minio rebuilds the
+  # upstream releases. Pinned by tag and digest. The bucket and its policy come in INF-04.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  # Catches every outgoing email. SMTP on mailpit:1025, web inbox at /mail via the proxy.
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    environment:
+      MP_WEBROOT: /mail/
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  redis-data:
+  minio-data:

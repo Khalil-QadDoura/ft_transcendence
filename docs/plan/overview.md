@@ -253,6 +253,7 @@ Depends on: <CARD-ID>
 | 2026-11-04 | Trello board E3788fBx replaces 6Pob02M6; lists Backlog / To Do / In Progress / Review / Done; card ID as title prefix; branch `feat/<CARD-ID>-<short-name>` ([board.md](board.md)) | Final card plan | Decided |
 | 2026-11-04 | Root README placeholder is replaced by DOC-03; its author agreed | Final card plan | Decided |
 | 2026-11-05 | Front proxy: nginx + ModSecurity v3 + OWASP CRS from day one (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-01 PR |
+| 2026-11-08 | Compose and Makefile: `pgsty/minio`, `imresamu/postgis`, worker profile until BE-29, `fclean` keeps `.env`, host ports from `.env` (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-02 PR |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
@@ -262,3 +263,13 @@ Depends on: <CARD-ID>
 - **Reason:** module M13 needs ModSecurity as the only front door, and switching proxies late costs more than choosing now. Running the WAF from the first route also shows false positives while the app is being built, not on the eve of the defense.
 - **Alternatives considered:** Caddy, the reference's proxy, has the simplest configuration and automatic TLS, but no ModSecurity image from the CRS project; a WAF would mean a custom build with a third-party module. Traefik has convenient Docker label routing, but a WAF is only available through a plugin, and it adds a second routing model to explain at the defense.
 - **Owner:** byul-byul. **Approval:** Tech Lead, through review of the INF-01 PR.
+
+**Compose, Makefile and secrets, 2026-11-08 (INF-02)**
+
+- **MinIO image:** `pgsty/minio`, pinned by release tag and digest. The official `minio/minio` and `minio/mc` images were removed from Docker Hub on 2025-10-23; `pgsty/minio` rebuilds the upstream releases for amd64 and arm64. `minio-init` (bucket and policy) moves to INF-04, which also picks its client image.
+- **Database image:** `imresamu/postgis:15-3.4`, pinned by tag and digest, for native arm64 on the team's Macs. Every `postgis/postgis` tag is amd64 only, so Apple Silicon would run the database emulated; `imresamu/postgis` is built from the docker-postgis sources by one of its maintainers for amd64 and arm64, with the same PostgreSQL 15 and PostGIS 3.4.
+- **Worker:** defined in compose behind the `worker` profile until BE-29 adds the Celery app, so a fresh `make` does not start a container that crashes. BE-29 removes the profile line.
+- **`make fclean` keeps `.env`:** it holds the hand-added `OPENAI_API_KEY`; deleting it would also make the next run generate new passwords. `fclean` removes containers, volumes, the images built here and the certificate.
+- **Host ports:** 443 and 80 by default, changed with `HTTPS_PORT` / `HTTP_PORT` in `.env`; the HTTP → HTTPS redirect carries a non-default HTTPS port.
+- **Variable names follow the backend code:** the JWT key is `JWT_SECRET` (BE-03), not `SECRET_KEY`; compose builds `DATABASE_URL` from `POSTGRES_*`, so the password is written once.
+- **Owner:** byul-byul. **Approval:** Tech Lead, through review of the INF-02 PR.
