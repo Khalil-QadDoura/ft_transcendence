@@ -7,3 +7,9 @@ Public forgot/reset pages call the shared API client. Forgot success never varie
 FE-03 schemas/validation and Ahmad’s Input/Button/Modal primitives are reused. Reset tokens stay out of logs and request referrers. The shared client owns auth/refresh/session/cache invalidation.
 
 The settings language shortcut is pending integration of FE-06 #31. This is a dependency to complete before marking the card Done, alongside parent approval/merge and human review.
+
+## November 11 language and review integration
+
+Settings now includes the same five-language selector as the header. It changes document lang/dir, persists this device's preference and updates API Accept-Language without submitting password/deletion forms. Account/auth interface text is extracted into feature English resources for FE-07 translations. This supersedes the previously pending language shortcut.
+
+PR #34 now uses `integration/FE-05-prerequisites` as its review base, combining #17 authentication and #31 localization without putting either feature into main early. **Do not merge into that integration branch.** Merge the approved parents into main, then update/retarget this PR and rerun checks. Khalil and Ahmad review the integration. Final owner practice and approval remain separate gates.

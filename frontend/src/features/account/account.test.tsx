@@ -1,3 +1,4 @@
+import i18n from "../../i18n";
 import { beforeEach, afterEach, expect, test, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -22,6 +23,8 @@ afterEach(async () => {
   await act(() => root.unmount());
   container.remove();
   clearTokens();
+  await i18n.changeLanguage("en");
+  localStorage.removeItem("wozu_language");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -149,4 +152,24 @@ test("400 change-password preserves tokens; 204 clears them", async () => {
   await accountApi.change("correct", "new-password");
   expect(getAccessToken()).toBeNull();
   expect(fetchMock.mock.calls).toHaveLength(2);
+});
+
+test("settings changes the shared device language without submitting account forms", async () => {
+  const change = vi.spyOn(accountApi, "change");
+  const remove = vi.spyOn(accountApi, "remove");
+  const router = await render("/settings");
+  const select = container.querySelector("select")!;
+  await act(() => {
+    select.value = "ar";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(document.documentElement.lang).toBe("ar");
+  expect(document.documentElement.dir).toBe("rtl");
+  expect(localStorage.getItem("wozu_language")).toBe("ar");
+  expect(container.querySelector("#settings-language")?.textContent).toBe(
+    "اللغة",
+  );
+  expect(router.state.location.pathname).toBe("/settings");
+  expect(change).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
 });
