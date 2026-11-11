@@ -44,7 +44,7 @@ The API mounts its internal routes at `/_internal` and BE-30 plans `/metrics` at
 
 nginx's own trailing-slash redirects (`/mail` → `/mail/`) send a relative `Location` (`absolute_redirect off`): an absolute one drops a non-default host port, because the image sets `port_in_redirect off` and nginx only knows its listen port 8443 anyway. `infra/frontend/default.conf` does the same for the frontend container's `/assets` → `/assets/`.
 
-`make https-check` (`smoke-test.sh` in this folder) checks every route above against the running stack; see "One origin over HTTPS" in infrastructure.md.
+`make https-check` (`smoke-test.sh` in this folder) checks every route above against the running stack; `/ws` passes only with `101 Switching Protocols` to a ticketless handshake. See "One origin over HTTPS" in infrastructure.md.
 
 ## Ports
 
