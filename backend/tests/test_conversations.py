@@ -13,19 +13,37 @@ Covers:
 """
 
 import asyncio
+import json
+import time
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database, sql
+import httpx2
+import redis
+from conftest import (
+    TEST_DATABASE_URL,
+    TEST_REDIS_URL,
+    alembic,
+    build_app,
+    needs_database,
+    needs_redis,
+    running_server,
+    sql,
+)
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+from websockets.sync.client import connect as ws_connect
 
 from app.auth import security
 from app.auth.deps import get_current_user
 from app.conversations import repo as conversations_repo
 from app.conversations import service as conversations_service
 from app.conversations.models import Conversation, ConversationParticipant, Message
+from app.realtime import service as realtime_service
 from app.users.models import User
 
 AUTH_SECRET = "test-only-jwt-secret-0123456789abcdef"
@@ -465,7 +483,7 @@ def test_remove_participant_rules(client):
 
 
 def test_send_message_and_broadcast(client):
-    """Sends message, updates state, and broadcasts payload."""
+    """Sends message, updates state, and broadcasts payload via BE-06 send_to_user."""
     client.app.dependency_overrides[get_current_user] = lambda: USER_A
     fake_c = _fake_conv(id=1)
     fake_m = _fake_message(id=100, conv_id=1, author_id=10, content="Hello Bob!")
@@ -475,11 +493,9 @@ def test_send_message_and_broadcast(client):
         patch(
             "app.conversations.repo.get_active_participant_ids", new_callable=AsyncMock
         ) as m_parts,
-        patch(
-            "app.realtime.connection_manager.manager.send_to_user", new_callable=AsyncMock
-        ) as m_ws,
+        patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
     ):
-        m_send.return_value = (fake_c, [fake_m])
+        m_send.return_value = (fake_c, [fake_m], True)
         m_parts.return_value = [10, 20]
 
         resp = client.post(
@@ -493,6 +509,8 @@ def test_send_message_and_broadcast(client):
     assert len(data["items"]) == 1
     assert data["items"][0]["content"] == "Hello Bob!"
     assert m_ws.await_count == 2
+    assert {call.args[1] for call in m_ws.await_args_list} == {10, 20}
+    assert all(call.args[2] == "message" for call in m_ws.await_args_list)
 
 
 def test_edit_message_within_window(client):
@@ -507,7 +525,7 @@ def test_edit_message_within_window(client):
         patch("app.conversations.repo.get_message", new_callable=AsyncMock) as m_msg,
         patch("app.conversations.repo.edit_message", new_callable=AsyncMock) as m_edit,
         patch("app.conversations.repo.get_active_participant_ids", new_callable=AsyncMock) as m_ids,
-        patch("app.realtime.connection_manager.manager.send_to_user", new_callable=AsyncMock),
+        patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
     ):
         m_part.return_value = p
         m_msg.return_value = fake_m
@@ -522,6 +540,8 @@ def test_edit_message_within_window(client):
 
     assert resp.status_code == 200
     assert resp.json()["content"] == "Edited"
+    assert m_ws.await_count == 2
+    assert all(call.args[2] == "message_updated" for call in m_ws.await_args_list)
 
 
 def test_edit_message_after_window_expired(client):
@@ -572,7 +592,7 @@ def test_edit_another_users_message_forbidden(client):
 
 
 def test_soft_delete_message(client):
-    """Author can soft delete their own message."""
+    """Author can soft delete their own message and broadcast message_deleted."""
     client.app.dependency_overrides[get_current_user] = lambda: USER_A
     p = _fake_participant(user_id=10)
     fake_m = _fake_message(id=10, conv_id=1, author_id=10, content="To be deleted")
@@ -580,9 +600,11 @@ def test_soft_delete_message(client):
     with (
         patch("app.conversations.repo.get_participant", new_callable=AsyncMock) as m_part,
         patch("app.conversations.repo.get_message", new_callable=AsyncMock) as m_msg,
-        patch("app.conversations.repo.soft_delete_message", new_callable=AsyncMock) as m_del,
+        patch(
+            "app.conversations.repo.soft_delete_message", new_callable=AsyncMock, return_value=True
+        ) as m_del,
         patch("app.conversations.repo.get_active_participant_ids", new_callable=AsyncMock) as m_ids,
-        patch("app.realtime.connection_manager.manager.send_to_user", new_callable=AsyncMock),
+        patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
     ):
         m_part.return_value = p
         m_msg.return_value = fake_m
@@ -592,6 +614,8 @@ def test_soft_delete_message(client):
 
     assert resp.status_code == 204
     m_del.assert_awaited_once()
+    assert m_ws.await_count == 2
+    assert all(call.args[2] == "message_deleted" for call in m_ws.await_args_list)
 
 
 def test_mark_read_advances_pointer_and_notifies(client):
@@ -604,9 +628,7 @@ def test_mark_read_advances_pointer_and_notifies(client):
             "app.conversations.repo.get_active_participant_ids", new_callable=AsyncMock
         ) as m_parts,
         patch("app.conversations.repo.get_total_unread", new_callable=AsyncMock) as m_unread,
-        patch(
-            "app.realtime.connection_manager.manager.send_to_user", new_callable=AsyncMock
-        ) as m_ws,
+        patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
     ):
         m_parts.return_value = [10, 20]
         m_unread.return_value = 0
@@ -622,6 +644,273 @@ def test_mark_read_advances_pointer_and_notifies(client):
     call_args = m_read.await_args[0]
     assert call_args[1:] == (1, USER_B.id, 100)
     assert m_ws.await_count == 2
+    sent_by_uid = {call.args[1]: call.args[3] for call in m_ws.await_args_list}
+    assert sent_by_uid == {
+        10: {"conversation_id": 1, "unread_count": None},
+        20: {"conversation_id": 1, "unread_count": 0},
+    }
+
+
+def test_send_message_idempotent_retry_skips_broadcast(client):
+    """Retrying with the same idempotency_key returns existing message without WS re-broadcast."""
+    client.app.dependency_overrides[get_current_user] = lambda: USER_A
+    fake_c = _fake_conv(id=1)
+    fake_m = _fake_message(id=100, conv_id=1, author_id=10, content="Hello Bob!")
+
+    with (
+        patch("app.conversations.service.send_message", new_callable=AsyncMock) as m_send,
+        patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
+    ):
+        m_send.return_value = (fake_c, [fake_m], False)
+
+        resp = client.post(
+            "/api/conversations/1/messages",
+            json={"content": "Hello Bob!", "idempotency_key": "idem-dup"},
+            headers=AUTH_HEADER_A,
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["items"][0]["id"] == 100
+    assert m_ws.await_count == 0
+
+
+def test_send_message_concurrent_idempotency_integrity_error_returns_existing():
+    """Concurrent IntegrityError on idempotency_key rolls back and returns existing without WS."""
+    p = _fake_participant(conv_id=1, user_id=10)
+    existing_m = _fake_message(id=77, conv_id=1, author_id=10, content="Original")
+    mock_session = AsyncMock()
+    mock_redis = AsyncMock()
+
+    async def run():
+        with (
+            patch(
+                "app.conversations.repo.get_participant",
+                new_callable=AsyncMock,
+                return_value=p,
+            ),
+            patch(
+                "app.conversations.repo.find_by_idempotency_key",
+                new_callable=AsyncMock,
+                side_effect=[None, existing_m],
+            ),
+            patch(
+                "app.conversations.repo.insert_message",
+                new_callable=AsyncMock,
+                side_effect=IntegrityError("INSERT", {}, Exception("duplicate key")),
+            ),
+            patch(
+                "app.conversations.repo.get_conversation",
+                new_callable=AsyncMock,
+                return_value=_fake_conv(id=1),
+            ),
+            patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
+        ):
+            items = await conversations_service.send_message_and_broadcast(
+                mock_session,
+                mock_redis,
+                conv_id=1,
+                user_id=10,
+                content="Original",
+                idempotency_key="idem-race",
+            )
+            return items, m_ws.await_count
+
+    items, ws_count = asyncio.run(run())
+    mock_session.rollback.assert_awaited_once()
+    assert len(items) == 1
+    assert items[0].id == 77
+    assert ws_count == 0
+
+
+def test_send_message_invalid_reply_target_returns_404(client):
+    """reply_to_id must point to a non-deleted message in the same conversation."""
+    client.app.dependency_overrides[get_current_user] = lambda: USER_A
+    p = _fake_participant(conv_id=1, user_id=10)
+    other_conv_msg = _fake_message(id=50, conv_id=99, author_id=20)
+    deleted_msg = _fake_message(id=51, conv_id=1, author_id=20)
+    deleted_msg.deleted_at = datetime.now(UTC)
+
+    for target in (None, other_conv_msg, deleted_msg):
+        with (
+            patch("app.conversations.repo.get_participant", new_callable=AsyncMock, return_value=p),
+            patch(
+                "app.conversations.repo.get_message", new_callable=AsyncMock, return_value=target
+            ),
+            patch("app.conversations.repo.insert_message", new_callable=AsyncMock) as m_ins,
+            patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
+        ):
+            resp = client.post(
+                "/api/conversations/1/messages",
+                json={"content": "Reply", "reply_to_id": 50},
+                headers=AUTH_HEADER_A,
+            )
+        assert resp.status_code == 404
+        assert m_ins.await_count == 0
+        assert m_ws.await_count == 0
+
+
+def test_edit_and_delete_soft_deleted_message_return_404(client):
+    """Editing or deleting an already soft-deleted message fails with 404."""
+    client.app.dependency_overrides[get_current_user] = lambda: USER_A
+    p = _fake_participant(conv_id=1, user_id=10)
+    deleted_m = _fake_message(id=10, conv_id=1, author_id=10, content="Gone")
+    deleted_m.deleted_at = datetime.now(UTC)
+
+    with (
+        patch("app.conversations.repo.get_participant", new_callable=AsyncMock, return_value=p),
+        patch("app.conversations.repo.get_message", new_callable=AsyncMock, return_value=deleted_m),
+        patch("app.conversations.repo.edit_message", new_callable=AsyncMock) as m_edit,
+        patch("app.conversations.repo.soft_delete_message", new_callable=AsyncMock) as m_del,
+        patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
+    ):
+        r_patch = client.patch(
+            "/api/conversations/1/messages/10",
+            json={"content": "Should fail"},
+            headers=AUTH_HEADER_A,
+        )
+        r_delete = client.delete("/api/conversations/1/messages/10", headers=AUTH_HEADER_A)
+
+    assert r_patch.status_code == 404
+    assert r_delete.status_code == 404
+    assert m_edit.await_count == 0
+    assert m_del.await_count == 0
+    assert m_ws.await_count == 0
+
+
+def test_edit_and_delete_already_deleted_race_return_404(client):
+    """If atomic DB UPDATE finds deleted_at already set, service returns 404 and skips WS."""
+    client.app.dependency_overrides[get_current_user] = lambda: USER_A
+    p = _fake_participant(conv_id=1, user_id=10)
+    live_m = _fake_message(id=10, conv_id=1, author_id=10, content="Live")
+
+    with (
+        patch("app.conversations.repo.get_participant", new_callable=AsyncMock, return_value=p),
+        patch("app.conversations.repo.get_message", new_callable=AsyncMock, return_value=live_m),
+        patch("app.conversations.repo.edit_message", new_callable=AsyncMock, return_value=None),
+        patch(
+            "app.conversations.repo.soft_delete_message",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
+    ):
+        r_patch = client.patch(
+            "/api/conversations/1/messages/10",
+            json={"content": "Lost race"},
+            headers=AUTH_HEADER_A,
+        )
+        r_delete = client.delete("/api/conversations/1/messages/10", headers=AUTH_HEADER_A)
+
+    assert r_patch.status_code == 404
+    assert r_delete.status_code == 404
+    assert m_ws.await_count == 0
+
+
+def test_mark_read_rejects_non_positive_last_message_id(client):
+    """POST /read enforces last_message_id > 0."""
+    client.app.dependency_overrides[get_current_user] = lambda: USER_B
+    for invalid_id in (0, -5):
+        resp = client.post(
+            "/api/conversations/1/read",
+            json={"last_message_id": invalid_id},
+            headers=AUTH_HEADER_B,
+        )
+        assert resp.status_code == 422
+
+
+class _FakeSessionCtx:
+    def __init__(self, session):
+        self.session = session
+
+    async def __aenter__(self):
+        return self.session
+
+    async def __aexit__(self, *_args):
+        return False
+
+
+def test_ws_receipt_frames_handle_delivered_read_and_invalid_inputs():
+    """WS delivered/read frames persist receipts, broadcast events, and ignore bad inputs."""
+    mock_session = AsyncMock()
+    mock_redis = AsyncMock()
+    fake_app = SimpleNamespace(
+        state=SimpleNamespace(session_factory=lambda: _FakeSessionCtx(mock_session))
+    )
+    msg = _fake_message(id=100, conv_id=1, author_id=10, status="sent")
+    delivered_msg = _fake_message(id=100, conv_id=1, author_id=10, status="delivered")
+    part_b = _fake_participant(conv_id=1, user_id=20)
+
+    async def run():
+        # Malformed payloads do not even open a DB session.
+        for kind, payload in (
+            ("delivered", {"type": "delivered", "message_id": True}),
+            ("delivered", {"type": "delivered", "message_id": 0}),
+            ("delivered", {"type": "delivered", "message_id": "100"}),
+            ("read", {"type": "read", "conversation_id": 1, "last_message_id": -1}),
+            ("read", {"type": "read", "conversation_id": False, "last_message_id": 100}),
+        ):
+            await realtime_service.handle_receipt_frame(fake_app, mock_redis, 20, kind, payload)
+
+        with (
+            patch("app.conversations.repo.get_message", new_callable=AsyncMock, return_value=msg),
+            patch(
+                "app.conversations.repo.get_participant",
+                new_callable=AsyncMock,
+                return_value=part_b,
+            ),
+            patch(
+                "app.conversations.repo.mark_delivered",
+                new_callable=AsyncMock,
+                side_effect=[delivered_msg, None],
+            ),
+            patch(
+                "app.conversations.repo.get_active_participant_ids",
+                new_callable=AsyncMock,
+                return_value=[10, 20],
+            ),
+            patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
+        ):
+            await realtime_service.handle_receipt_frame(
+                fake_app, mock_redis, 20, "delivered", {"type": "delivered", "message_id": 100}
+            )
+            assert m_ws.await_count == 2
+            assert all(call.args[2] == "message_status" for call in m_ws.await_args_list)
+            assert m_ws.await_args_list[0].args[3] == {
+                "message_id": 100,
+                "status": "delivered",
+            }
+            # Duplicate/author delivered returns None -> rollback, no broadcast
+            m_ws.reset_mock()
+            await realtime_service.handle_receipt_frame(
+                fake_app, mock_redis, 20, "delivered", {"type": "delivered", "message_id": 100}
+            )
+            assert m_ws.await_count == 0
+
+        with (
+            patch(
+                "app.conversations.service.mark_read_and_broadcast",
+                new_callable=AsyncMock,
+                side_effect=[None, PermissionError("forbidden")],
+            ) as m_read,
+        ):
+            await realtime_service.handle_receipt_frame(
+                fake_app,
+                mock_redis,
+                20,
+                "read",
+                {"type": "read", "conversation_id": 1, "last_message_id": 100},
+            )
+            # PermissionError / LookupError on outsider read receipt is swallowed cleanly
+            await realtime_service.handle_receipt_frame(
+                fake_app,
+                mock_redis,
+                20,
+                "read",
+                {"type": "read", "conversation_id": 999, "last_message_id": 100},
+            )
+            assert m_read.await_count == 2
+
+    asyncio.run(run())
 
 
 def test_openapi_contains_conversations_routes(client):
@@ -918,3 +1207,365 @@ def test_concurrent_get_or_create_direct_is_atomic():
     assert id_ab == id_ba
     direct_count = sql("SELECT COUNT(*) FROM conversations WHERE type = 'direct'")[0][0]
     assert direct_count == 1
+
+
+# ── BE-24 Real PostgreSQL + Redis E2E Tests ──────────────────────────────────
+
+
+@contextmanager
+def _ws_redis():
+    client = redis.Redis.from_url(TEST_REDIS_URL, decode_responses=True)
+    for key in client.scan_iter("ws:*"):
+        client.delete(key)
+    try:
+        yield client
+    finally:
+        for key in client.scan_iter("ws:*"):
+            client.delete(key)
+        client.close()
+
+
+def _wait_ws_listener(redis_client: redis.Redis, user_id: int, count: int = 1) -> None:
+    deadline = time.monotonic() + 5.0
+    while redis_client.pubsub_numsub(f"ws:user:{user_id}")[0][1] < count:
+        assert time.monotonic() < deadline, f"WS listener for user {user_id} did not subscribe"
+        time.sleep(0.01)
+
+
+@contextmanager
+def _open_ws(address: str, token: str):
+    resp = httpx2.post(
+        f"http://{address}/api/ws/ticket",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=5.0,
+    )
+    assert resp.status_code == 200
+    ticket = resp.json()["ticket"]
+    with ws_connect(f"ws://{address}/ws?ticket={ticket}", open_timeout=5.0) as ws:
+        yield ws
+
+
+def _next_ws_frame(ws) -> dict:
+    return json.loads(ws.recv(timeout=5.0))
+
+
+def _nothing_ws(ws, seconds: float = 0.25) -> bool:
+    try:
+        ws.recv(timeout=seconds)
+    except TimeoutError:
+        return True
+    return False
+
+
+def _seed_active_user(email: str) -> tuple[int, str]:
+    sql(
+        "INSERT INTO users (email, password_hash, is_email_verified, status, token_version) "
+        "VALUES (:email, 'hash', TRUE, 'active', 1)",
+        email=email,
+    )
+    uid = sql("SELECT id FROM users WHERE email = :email", email=email)[0][0]
+    token, _ = security.create_token(
+        AUTH_SECRET, user_id=uid, scope="access", lifetime=timedelta(minutes=15), ver=1
+    )
+    return uid, token
+
+
+@needs_database
+@needs_redis
+def test_messages_real_db_and_ws_broadcast_lifecycle():
+    """End-to-end message lifecycle across PostgreSQL, Redis pub/sub, REST, and WS frames."""
+    alembic("upgrade", "head")
+    sql(
+        "TRUNCATE users, companies, jobs, conversations, conversation_participants, messages "
+        "RESTART IDENTITY CASCADE"
+    )
+    alice_id, alice_token = _seed_active_user("ws_alice@example.com")
+    bob_id, bob_token = _seed_active_user("ws_bob@example.com")
+    alice_headers = {"Authorization": f"Bearer {alice_token}"}
+    bob_headers = {"Authorization": f"Bearer {bob_token}"}
+
+    app = build_app(database_url=TEST_DATABASE_URL, redis_url=TEST_REDIS_URL)
+    with (
+        _ws_redis() as rdb,
+        running_server(app) as address,
+        httpx2.Client(base_url=f"http://{address}", timeout=5.0) as http,
+    ):
+        r_conv = http.post(
+            "/api/conversations",
+            json={"type": "direct", "peer_user_id": bob_id},
+            headers=alice_headers,
+        )
+        assert r_conv.status_code == 201
+        conv_id = r_conv.json()["id"]
+
+        r_ai = http.post("/api/conversations", json={"type": "ai"}, headers=alice_headers)
+        assert r_ai.status_code == 201
+        ai_conv_id = r_ai.json()["id"]
+
+        with _open_ws(address, alice_token) as alice_ws, _open_ws(address, bob_token) as bob_ws:
+            _wait_ws_listener(rdb, alice_id)
+            _wait_ws_listener(rdb, bob_id)
+
+            # 1. Send + live WS broadcast
+            r_m1 = http.post(
+                f"/api/conversations/{conv_id}/messages",
+                json={"content": "Hello Bob", "idempotency_key": "k-1"},
+                headers=alice_headers,
+            )
+            assert r_m1.status_code == 200
+            m1 = r_m1.json()["items"][0]
+            for ws in (alice_ws, bob_ws):
+                frame = _next_ws_frame(ws)
+                assert frame["type"] == "message"
+                assert frame["payload"]["id"] == m1["id"]
+                assert frame["payload"]["content"] == "Hello Bob"
+
+            # 2. Idempotent retry returns same message and emits no duplicate WS frame
+            r_m1_dup = http.post(
+                f"/api/conversations/{conv_id}/messages",
+                json={"content": "Hello Bob", "idempotency_key": "k-1"},
+                headers=alice_headers,
+            )
+            assert r_m1_dup.status_code == 200
+            assert r_m1_dup.json()["items"][0]["id"] == m1["id"]
+            assert _nothing_ws(alice_ws)
+            assert _nothing_ws(bob_ws)
+
+            # 3. Send m2, m3, m4 and verify oldest->newest before_id pagination
+            sent_msgs = [m1]
+            for idx in range(2, 5):
+                r_mx = http.post(
+                    f"/api/conversations/{conv_id}/messages",
+                    json={"content": f"Message {idx}"},
+                    headers=alice_headers,
+                )
+                assert r_mx.status_code == 200
+                sent_msgs.append(r_mx.json()["items"][0])
+                assert _next_ws_frame(alice_ws)["type"] == "message"
+                assert _next_ws_frame(bob_ws)["type"] == "message"
+
+            p1 = http.get(
+                f"/api/conversations/{conv_id}/messages",
+                params={"limit": 2},
+                headers=bob_headers,
+            ).json()
+            assert [m["id"] for m in p1["items"]] == [sent_msgs[2]["id"], sent_msgs[3]["id"]]
+            assert p1["prev_before_id"] == sent_msgs[2]["id"]
+
+            p2 = http.get(
+                f"/api/conversations/{conv_id}/messages",
+                params={"limit": 2, "before_id": p1["prev_before_id"]},
+                headers=bob_headers,
+            ).json()
+            assert [m["id"] for m in p2["items"]] == [sent_msgs[0]["id"], sent_msgs[1]["id"]]
+            assert p2["prev_before_id"] is None
+
+            # 4. Cross-conversation reply_to_id fails 404
+            r_cross = http.post(
+                f"/api/conversations/{ai_conv_id}/messages",
+                json={"content": "Cross", "reply_to_id": m1["id"]},
+                headers=alice_headers,
+            )
+            assert r_cross.status_code == 404
+
+            # 5. Author's own delivered WS frame is ignored; peer's transitions to delivered
+            alice_ws.send(json.dumps({"type": "delivered", "message_id": m1["id"]}))
+            assert _nothing_ws(alice_ws)
+            assert _nothing_ws(bob_ws)
+
+            bob_ws.send(json.dumps({"type": "delivered", "message_id": m1["id"]}))
+            for ws in (alice_ws, bob_ws):
+                st = _next_ws_frame(ws)
+                assert st == {
+                    "type": "message_status",
+                    "payload": {"message_id": m1["id"], "status": "delivered"},
+                }
+            assert (
+                sql("SELECT status FROM messages WHERE id = :id", id=m1["id"])[0][0] == "delivered"
+            )
+
+            # 6. Edit within window pushes message_updated
+            r_edit = http.patch(
+                f"/api/conversations/{conv_id}/messages/{m1['id']}",
+                json={"content": "Hello Bob (edited)"},
+                headers=alice_headers,
+            )
+            assert r_edit.status_code == 200
+            for ws in (alice_ws, bob_ws):
+                upd = _next_ws_frame(ws)
+                assert upd["type"] == "message_updated"
+                assert upd["payload"]["id"] == m1["id"]
+                assert upd["payload"]["content"] == "Hello Bob (edited)"
+                assert upd["payload"]["edited_at"] is not None
+
+            # 7. Unread count + WS read frame + monotonic pointer protection
+            assert http.get("/api/conversations/unread", headers=bob_headers).json() == {
+                "total_unread": 4
+            }
+            bob_ws.send(
+                json.dumps(
+                    {
+                        "type": "read",
+                        "conversation_id": conv_id,
+                        "last_message_id": sent_msgs[2]["id"],
+                    }
+                )
+            )
+            bob_upd = _next_ws_frame(bob_ws)
+            alice_upd = _next_ws_frame(alice_ws)
+            assert bob_upd == {
+                "type": "conversation_updated",
+                "payload": {"conversation_id": conv_id, "unread_count": 1},
+            }
+            assert alice_upd == {
+                "type": "conversation_updated",
+                "payload": {"conversation_id": conv_id, "unread_count": None},
+            }
+            assert (
+                sql(
+                    "SELECT last_read_message_id FROM conversation_participants "
+                    "WHERE conversation_id = :cid AND user_id = :uid",
+                    cid=conv_id,
+                    uid=bob_id,
+                )[0][0]
+                == sent_msgs[2]["id"]
+            )
+
+            # Stale read pointer must not regress last_read_message_id
+            bob_ws.send(
+                json.dumps(
+                    {
+                        "type": "read",
+                        "conversation_id": conv_id,
+                        "last_message_id": m1["id"],
+                    }
+                )
+            )
+            _next_ws_frame(bob_ws)
+            _next_ws_frame(alice_ws)
+            assert (
+                sql(
+                    "SELECT last_read_message_id FROM conversation_participants "
+                    "WHERE conversation_id = :cid AND user_id = :uid",
+                    cid=conv_id,
+                    uid=bob_id,
+                )[0][0]
+                == sent_msgs[2]["id"]
+            )
+
+            # Complete reading up to m4 via REST
+            r_read_all = http.post(
+                f"/api/conversations/{conv_id}/read",
+                json={"last_message_id": sent_msgs[3]["id"]},
+                headers=bob_headers,
+            )
+            assert r_read_all.status_code == 204
+            assert _next_ws_frame(bob_ws) == {
+                "type": "conversation_updated",
+                "payload": {"conversation_id": conv_id, "unread_count": 0},
+            }
+            assert _next_ws_frame(alice_ws) == {
+                "type": "conversation_updated",
+                "payload": {"conversation_id": conv_id, "unread_count": None},
+            }
+            assert http.get("/api/conversations/unread", headers=bob_headers).json() == {
+                "total_unread": 0
+            }
+            assert sql("SELECT status FROM messages WHERE id = :id", id=sent_msgs[3]["id"])[0][
+                0
+            ] == ("read")
+
+            # 8. Soft delete removes message from history & pushes message_deleted
+            r_del = http.delete(
+                f"/api/conversations/{conv_id}/messages/{sent_msgs[1]['id']}",
+                headers=alice_headers,
+            )
+            assert r_del.status_code == 204
+            for ws in (alice_ws, bob_ws):
+                assert _next_ws_frame(ws) == {
+                    "type": "message_deleted",
+                    "payload": {"id": sent_msgs[1]["id"], "conversation_id": conv_id},
+                }
+
+            listed_ids = [
+                m["id"]
+                for m in http.get(
+                    f"/api/conversations/{conv_id}/messages", headers=bob_headers
+                ).json()["items"]
+            ]
+            assert sent_msgs[1]["id"] not in listed_ids
+            assert (
+                http.post(
+                    f"/api/conversations/{conv_id}/messages",
+                    json={"content": "Reply deleted", "reply_to_id": sent_msgs[1]["id"]},
+                    headers=alice_headers,
+                ).status_code
+                == 404
+            )
+            assert (
+                http.delete(
+                    f"/api/conversations/{conv_id}/messages/{sent_msgs[1]['id']}",
+                    headers=alice_headers,
+                ).status_code
+                == 404
+            )
+
+
+@needs_database
+def test_messages_real_db_concurrent_idempotency_and_edit_window():
+    """Concurrent sends with identical idempotency_key insert 1 row; >15m edits return 409."""
+    alembic("upgrade", "head")
+    sql(
+        "TRUNCATE users, conversations, conversation_participants, messages "
+        "RESTART IDENTITY CASCADE"
+    )
+    alice_id, alice_token = _seed_active_user("msg_race_alice@example.com")
+    bob_id, _ = _seed_active_user("msg_race_bob@example.com")
+    alice_headers = {"Authorization": f"Bearer {alice_token}"}
+
+    async def run():
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        try:
+            async with session_factory() as s:
+                conv = await conversations_service.get_or_create_direct(
+                    s, me_id=alice_id, peer_id=bob_id
+                )
+
+            async def fire():
+                async with session_factory() as s:
+                    return await conversations_service.send_message(
+                        s,
+                        conv_id=conv.id,
+                        user_id=alice_id,
+                        content="Concurrent",
+                        idempotency_key="same-race-key",
+                    )
+
+            results = await asyncio.gather(*(fire() for _ in range(5)))
+            msg_ids = {msgs[0].id for _, msgs, _ in results}
+            created_count = sum(1 for _, _, created in results if created)
+            return conv.id, msg_ids, created_count
+        finally:
+            await engine.dispose()
+
+    conv_id, msg_ids, created_count = asyncio.run(run())
+    assert len(msg_ids) == 1
+    assert created_count == 1
+    winner_id = next(iter(msg_ids))
+
+    row_count = sql("SELECT COUNT(*) FROM messages WHERE conversation_id = :cid", cid=conv_id)[0][0]
+    assert row_count == 1
+
+    # Backdate created_at beyond 15 minutes and verify 409 Conflict via HTTP
+    sql(
+        "UPDATE messages SET created_at = NOW() - INTERVAL '16 minutes' WHERE id = :id",
+        id=winner_id,
+    )
+    with TestClient(build_app(database_url=TEST_DATABASE_URL)) as test_client:
+        r_expired = test_client.patch(
+            f"/api/conversations/{conv_id}/messages/{winner_id}",
+            json={"content": "Too late"},
+            headers=alice_headers,
+        )
+        assert r_expired.status_code == 409
