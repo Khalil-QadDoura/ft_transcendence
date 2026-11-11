@@ -16,8 +16,22 @@ x-backend-env: &backend-env
   SMTP_HOST: ${SMTP_HOST}
   SMTP_PORT: ${SMTP_PORT}
   MAIL_FROM: ${MAIL_FROM}
-  MINIO_BUCKET: ${MINIO_BUCKET}
+  # Object storage (INF-04). Server-side reads and writes use the internal endpoint over
+  # plain HTTP; presigned URLs are signed for the external one, so the browser reaches
+  # them through the proxy at /files. The region is given so the SDK never asks the
+  # endpoint for it (https://localhost inside a container is the container itself).
+  # Root credentials until INF-13 moves a dedicated service account to Vault.
+  MINIO_ENDPOINT: minio:9000
   MINIO_EXTERNAL_ENDPOINT: ${MINIO_EXTERNAL_ENDPOINT}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+  MINIO_REGION: ${MINIO_REGION:-us-east-1}
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+
+# The official minio/minio and minio/mc images left Docker Hub on 2025-10-23; pgsty/minio
+# rebuilds the upstream releases (amd64 + arm64) and ships mc too, so the server and
+# minio-init share one image. Pinned by tag and digest.
+x-minio-image: &minio-image pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
 
 services:
   # nginx + ModSecurity CRS (INF-01). Listens on 8080/8443 inside the container (uid 101
@@ -50,6 +64,8 @@ services:
   # FastAPI. The image runs `alembic upgrade head` before uvicorn, so it waits for the db.
   # Healthy once /api/health answers (after the migrations), so `make` returns only then.
   # The image has no curl; Python asks.
+  # It also waits for minio-init: upload URLs need the bucket, and a one-shot that a
+  # service depends on this way is the only kind `up --wait` accepts as exited.
   api:
     build: ./backend
     environment: *backend-env
@@ -58,6 +74,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
       interval: 5s
@@ -118,10 +136,10 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # The official minio/minio image left Docker Hub on 2025-10-23; pgsty/minio rebuilds the
-  # upstream releases. Pinned by tag and digest. The bucket and its policy come in INF-04.
+  # S3 API on minio:9000, reached from the browser only through the proxy at /files (the
+  # bucket name is the route prefix). No host ports, console included.
   minio:
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    image: *minio-image
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -129,6 +147,21 @@ services:
     volumes:
       - minio-data:/data
     restart: unless-stopped
+
+  # One-shot: waits for MinIO, creates the private bucket and its anonymous policy, exits 0
+  # (infra/minio/init-bucket.sh). Idempotent, so it runs on every `make`.
+  minio-init:
+    image: *minio-image
+    entrypoint: ["bash", "/init-bucket.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    volumes:
+      - ./infra/minio/init-bucket.sh:/init-bucket.sh:ro
+    depends_on:
+      - minio
+    restart: "no"
 
   # Catches every outgoing email. SMTP on mailpit:1025, web inbox at /mail via the proxy.
   mailpit:

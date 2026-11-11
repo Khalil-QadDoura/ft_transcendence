@@ -7,7 +7,7 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
 
-.PHONY: all env certs up down logs test fclean re
+.PHONY: all env certs up down logs test files-check fclean re
 
 all: env up
 
@@ -50,6 +50,11 @@ test: env
 	docker build -q --target build -t wozu-frontend-test ./frontend
 	docker run --rm wozu-frontend-test \
 		sh -c 'npm run lint && npm run format:check && npm run typecheck && npm test'
+
+# Presigned upload and download through https://<host>/files and the bucket policy, against
+# the running stack; ends with a snippet for the Chrome console (INF-04).
+files-check:
+	@./infra/minio/smoke-test.sh
 
 # Removes containers, volumes (database, files), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
