@@ -9,7 +9,8 @@ app/
   main.py        app factory: settings, logging, middleware, error handlers, routers, lifespan
   core/          config (env), errors, logging (JSON), limiter, request_id, internal (/_internal guard),
                  mailer (SMTP, or Brevo's API when BREVO_API_KEY is set),
-                 redis_client (each app's Redis client, get_redis)
+                 redis_client (each app's Redis client, get_redis),
+                 storage (MinIO: signed links, file checks), queue (Celery tasks on Redis)
   db/            base (Base + naming convention), session (each app's engine, get_session),
                  mixins (TimestampMixin, AuditMixin), models (imports every table model)
   health/        GET /api/health and the internal database check
@@ -23,7 +24,10 @@ app/
                  authenticate_ws(), send_to_user() through Redis pub/sub, presence in Redis,
                  plus constants (ticket lifetime, presence TTL); connection_manager.py is
                  BE-23's manager.send_to_user(), publishing on the same per-user channel
-  friends/ jobs/ media/ conversations/ applications/ game/
+  media/         /api/media: intro video upload-url, confirm, mine, post, unpost, delete,
+                 feed (BE-07), plus constants (video limits, link lifetimes)
+  worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
+  friends/ jobs/ conversations/ applications/ game/
                  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
@@ -58,9 +62,9 @@ docker build -t wozu-backend .     # runtime image only: no tests, no test tools
 ```
 
 The database tests (`tests/test_schema.py`, `tests/test_auth.py`, `tests/test_password.py`,
-`tests/test_users.py`) need an empty PostgreSQL with PostGIS. They delete every table (schema)
-or every user (auth, password, users), so they only use `TEST_DATABASE_URL`, and only if its
-database name contains `test`:
+`tests/test_users.py`, `tests/test_media.py`) need an empty PostgreSQL with PostGIS. They delete
+every table (schema) or every user (auth, password, users, media), so they only use
+`TEST_DATABASE_URL`, and only if its database name contains `test`:
 
 ```sh
 docker run -d --name wozu-test-db -p 5432:5432 -e POSTGRES_PASSWORD=test \
@@ -77,6 +81,11 @@ docker run -d --name wozu-test-redis -p 6379:6379 redis:7-alpine
 TEST_DATABASE_URL=... TEST_REDIS_URL=redis://localhost:6379/1 pytest -q
 ```
 
+The media tests also need a MinIO and a Redis, again only through `TEST_*` variables (they empty
+the `media-test` bucket and the `celery` queue); the docstring of `tests/test_media.py` shows the
+two `docker run` lines. Without `TEST_MINIO_ENDPOINT`, `TEST_MINIO_ACCESS_KEY`,
+`TEST_MINIO_SECRET_KEY` and `TEST_REDIS_URL` they are skipped.
+
 ## Conventions
 
 - **Errors** always look like `{"error": {"code": "<status>", "detail": ...}}`. Raise `HTTPException(status_code, detail)`; validation errors report only the first failing field, e.g. `"body → email: Field required"`.
@@ -86,6 +95,8 @@ TEST_DATABASE_URL=... TEST_REDIS_URL=redis://localhost:6379/1 pytest -q
 - **Answers**: a route returns its `...Out` schema, e.g. `UserOut.model_validate(user)`, never the table model, so only the fields listed in the schema leave the server (never `password_hash` or `token_version`).
 - **Partial updates (PATCH)**: every field of the request schema has a default and the schema has `extra="forbid"`; the service applies only `data.model_dump(exclude_unset=True)`. A field that is not sent keeps its value, and an unknown field gets 422 (see `app/users/`).
 - **Email**: a route takes `mailer: Annotated[Mailer, Depends(get_mailer)]` and sends with `background.add_task(mailer.send, to, subject, body)`, so the answer does not wait for the mail server; a failed send is logged. Tests replace `get_mailer` with a fake; the `smtp_server` fixture in `tests/conftest.py` is a real SMTP server for tests that send through the real mailer. Locally, emails land in Mailpit (INF-05) at `https://localhost/mail`.
+- **Files** never pass through the API: a route returns a link signed for `MINIO_EXTERNAL_ENDPOINT`, the browser PUTs the file there, then a `confirm` route checks the file in storage itself (`Storage.size`, `Storage.first_bytes` from `app.core.storage`). MinIO calls wait for the network, so routes run them with `asyncio.to_thread`.
+- **Background tasks for the worker**: a route takes `queue: Annotated[TaskQueue, Depends(get_queue)]` and runs `background.add_task(queue.moderate_video, ...)`: the task lands on the Redis queue after the answer, and a failure is logged (like the emails).
 - **Live events**: to push something to a user's open sockets (every tab, on every API worker), a
   route takes `redis: RedisClient` (see `app/realtime/routes.py`) and, after the commit, calls
   `await send_to_user(redis, user_id, "event_type", payload)` from `app.realtime.service`; the
@@ -124,9 +135,9 @@ A test needing application tables must run Alembic first; do not use `create_all
 with the test's `db` session, so setup queries and requests share one isolated transaction.
 Route-test apps made with `build_app()` use a recording mailbox via `get_mailer`;
 SMTP/Brevo adapter tests still exercise the real Mailer with their explicit local fakes.
-There are no global MinIO/Celery mocks: those services are not integrated in this slice.
+There are no MinIO or Celery mocks: `tests/test_media.py` uses a real MinIO and Redis.
 
-The backend CI job provisions PostgreSQL 15 + PostGIS, runs lint/format checks and the
+The backend CI job provisions PostgreSQL 15 + PostGIS, Redis and MinIO, runs lint/format checks and the
 complete backend suite, and fails if any test is skipped. This provides BE-20 evidence;
 INF-06 still owns the full stack checks and repository protection settings.
 
