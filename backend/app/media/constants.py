@@ -1,4 +1,4 @@
-"""The fixed numbers and names of intro videos, in one place."""
+"""The fixed numbers and names of intro videos, avatars and company logos, in one place."""
 
 # The rules of an intro video (api-contract.md, "Media").
 MAX_DURATION_SEC = 30
@@ -33,3 +33,33 @@ MAX_ID = 2**63 - 1
 EMPLOYER_FEED_RATINGS = ("A", "B")
 # With job_id: the applicants still waiting for an answer come first.
 WAITING_APPLICATION_STATUSES = ("submitted", "viewed")
+
+# --- Avatars and company logos (BE-08) -----------------------------------------------------
+
+# The two folders anyone may download from without a signed link (the bucket's anonymous
+# policy, INF-04). An avatar is avatars/<user id>/<uuid>.<ext>, a logo logos/<company id>/...
+# Only the server writes there: no upload link ever points into them.
+AVATARS_FOLDER = "avatars"
+LOGOS_FOLDER = "logos"
+# The browser uploads into this private folder instead, e.g. staging/avatars/<user id>/...
+# Nobody can download from it. confirm checks the file there, then the server writes a copy
+# of it under a new name in the public folder.
+STAGING_FOLDER = "staging"
+# The picture types we accept: extension -> the Content-Type the server stores with the public
+# copy, which MinIO sends back to everyone who downloads it.
+PICTURE_TYPES = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+# The name Pillow (the image library) gives each type.
+PICTURE_FORMATS = {"jpg": "JPEG", "png": "PNG", "webp": "WEBP"}
+DEFAULT_PICTURE_EXTENSION = "jpg"
+# Neither the contract nor the reference has a limit; 5 MiB takes any phone photo as it is.
+MAX_PICTURE_BYTES = 5 * 1024 * 1024  # 5 MiB = 5 242 880 bytes
+# The row lock that a picture confirm and the deletion of its account or company take
+# (SQLAlchemy's name for PostgreSQL's SELECT ... FOR NO KEY UPDATE). Like FOR UPDATE, two
+# requests cannot hold it on the same row at once, but it still lets PostgreSQL check that
+# other rows point at a real row (a foreign key). With FOR UPDATE, DELETE /companies, whose
+# second UPDATE of the company has PostgreSQL check that its users exist, and a logo confirm
+# holding the owner's row would each wait for the other forever (a deadlock).
+ROW_LOCK = {"key_share": True}
+# A small file can still be a huge picture that takes gigabytes of memory to decode (a
+# "decompression bomb"). 25 million pixels is a 24-megapixel camera photo (6000 x 4000).
+MAX_PICTURE_PIXELS = 25_000_000

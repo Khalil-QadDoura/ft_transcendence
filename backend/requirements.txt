@@ -15,3 +15,4 @@ redis==8.1.0  # Redis client: WebSocket tickets, pub/sub and presence
 minio==7.2.20  # file storage client (videos), the version INF-04's smoke test uses
 celery[redis]==5.7.0  # background tasks on Redis (video moderation)
 kombu[redis]==5.7.0  # Celery's link to Redis; 5.7 is the first that accepts redis 8 (above)
+Pillow==13.0.0  # opens avatars and logos to check that they really are pictures (BE-08)

@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     minio_access_key: str = ""
     minio_secret_key: str = ""
 
+    # avatar_url of a user who has no picture (BE-08). By default a path on our own site, where
+    # the API serves a plain grey picture; a full address (https://...) works too.
+    default_avatar_url: str = "/api/media/avatar/default.svg"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -1,25 +1,40 @@
-"""The rules of intro videos. Routes call these functions; these call the repo and storage."""
+"""The rules of intro videos, avatars and company logos. Routes call these functions; these
+call the repo and storage."""
 
 import asyncio
+import io
 import re
 from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, HTTPException
+from PIL import Image
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.deps import unauthorized
+from app.auth.service import INVALID_TOKEN
+from app.companies import service as companies
+from app.companies.models import Company
 from app.core.queue import TaskQueue
-from app.core.storage import Storage
+from app.core.storage import Storage, remove_files
 from app.media import repo
 from app.media.constants import (
+    AVATARS_FOLDER,
+    LOGOS_FOLDER,
     MAX_ACTIVE_VIDEOS,
+    MAX_PICTURE_BYTES,
+    MAX_PICTURE_PIXELS,
     MAX_SIZE_BYTES,
     MP4_CONTENT_TYPE,
     MP4_EXTENSION,
     MP4_SIGNATURE,
     MP4_SIGNATURE_END,
     MP4_SIGNATURE_START,
+    PICTURE_FORMATS,
+    PICTURE_TYPES,
+    ROW_LOCK,
+    STAGING_FOLDER,
     UUID_PATTERN,
 )
 from app.media.models import IntroVideo
@@ -29,6 +44,7 @@ from app.media.schemas import (
     FeedVideoOut,
     MyVideoOut,
     MyVideosOut,
+    PictureUploadUrlOut,
     UploadUrlIn,
     UploadUrlOut,
 )
@@ -47,6 +63,12 @@ ALREADY_POSTED = "This video is already posted"
 NOT_POSTED = "This video is not posted"
 # Written like the other 422s of the API ("<where> → <field>: <message>").
 UNKNOWN_CURSOR = "query → cursor: No video has this id: use the next_cursor of the page before"
+ONLY_PICTURES = "Only jpg, png or webp pictures are accepted"
+NO_PICTURE = "No uploaded file at this object_key: PUT the picture to put_url first"
+PICTURE_TOO_BIG = f"The picture is larger than {MAX_PICTURE_BYTES // (1024 * 1024)} MiB"
+NOT_THAT_PICTURE = "The uploaded file is not a {} picture"
+TOO_MANY_PIXELS = f"The picture has more than {MAX_PICTURE_PIXELS // 1_000_000} million pixels"
+NO_COMPANY = "You have no company"
 
 
 def object_key_for(user_id: int) -> str:
@@ -253,3 +275,193 @@ async def get_feed(
     ]
     next_cursor = items[-1].id if len(rows) > limit else None
     return FeedOut(items=items, next_cursor=next_cursor)
+
+
+# --- Avatars and company logos (BE-08) -----------------------------------------------------
+
+
+def create_picture_upload_url(
+    storage: Storage, folder: str, owner_id: int, ext: str, expires_sec: int
+) -> PictureUploadUrlOut:
+    """A new key in the owner's private staging folder (staging/avatars/<user id>/ or
+    staging/logos/<company id>/) and a signed link to PUT one jpg, png or webp picture there
+    (415 for anything else). Nobody can download from staging/: the picture becomes public only
+    when confirm has checked it and the server has copied it into the public folder."""
+    ext = ext.lower()  # "PNG" is fine too; the key is always written in small letters
+    if ext not in PICTURE_TYPES:
+        raise HTTPException(status_code=415, detail=ONLY_PICTURES)
+    object_key = f"{STAGING_FOLDER}/{folder}/{owner_id}/{uuid4()}.{ext}"
+    return PictureUploadUrlOut(
+        object_key=object_key,
+        put_url=storage.upload_url(object_key, timedelta(seconds=expires_sec)),
+        expires_sec=expires_sec,
+        max_bytes=MAX_PICTURE_BYTES,
+    )
+
+
+def is_my_staging_key(folder: str, owner_id: int, key: str) -> bool:
+    """True only for a key upload-url could have made for this owner:
+    staging/<folder>/<owner id>/<uuid>.<jpg, png or webp>. fullmatch: the whole key must fit, so
+    a file of another user or company, a public file, or a path trick such as "../" never does."""
+    extensions = "|".join(PICTURE_TYPES)
+    pattern = rf"{STAGING_FOLDER}/{folder}/{owner_id}/{UUID_PATTERN}\.({extensions})"
+    return re.fullmatch(pattern, key) is not None
+
+
+async def discard_upload(storage: Storage, folder: str, owner_id: int, staging_key: str) -> None:
+    """Delete an upload that will never be published. Only one in the owner's own staging
+    folder: the key comes from the request, so it could name anybody's file."""
+    if is_my_staging_key(folder, owner_id, staging_key):
+        await remove_files(storage, [staging_key])
+
+
+def check_picture_file(ext: str, data: bytes) -> None:
+    """Refuse the file unless it really is a picture of this type. Pillow recognises the type
+    from the first bytes, whatever the file is called, then decodes every pixel: a file that
+    only starts like a picture, or is cut short, fails. CPU work: run it in a worker thread."""
+    try:
+        with Image.open(io.BytesIO(data), formats=[PICTURE_FORMATS[ext]]) as picture:
+            # The size in pixels is at the start of the file: a huge picture is refused before
+            # it is decoded.
+            too_big = picture.width * picture.height > MAX_PICTURE_PIXELS
+            if not too_big:
+                picture.load()  # decodes every pixel
+    except Image.DecompressionBombError:  # Pillow's own limit, far above ours
+        too_big = True
+    except Exception:  # Pillow raises several kinds of errors for a file it cannot read
+        raise HTTPException(status_code=415, detail=NOT_THAT_PICTURE.format(ext)) from None
+    if too_big:
+        raise HTTPException(status_code=413, detail=TOO_MANY_PIXELS)
+
+
+async def publish_picture(storage: Storage, folder: str, owner_id: int, staging_key: str) -> str:
+    """Check the picture uploaded at staging_key and publish it: the server writes a copy of it
+    at a new key, <folder>/<owner id>/<new uuid>.<ext>, which anyone may download, and returns
+    that key. The uploaded file is deleted, whether it is accepted or refused."""
+    # 1. The key. Its extension must be jpg, png or webp...
+    ext = staging_key.rsplit(".", 1)[-1]
+    if ext not in PICTURE_TYPES:
+        raise HTTPException(status_code=415, detail=ONLY_PICTURES)
+    # ...and the whole key one that upload-url made for this owner: nobody can confirm a file of
+    # another user or company, a public file, or a path trick such as "../".
+    if not is_my_staging_key(folder, owner_id, staging_key):
+        raise HTTPException(status_code=400, detail=NOT_YOUR_KEY)
+
+    # 2. The file in storage itself (stat_object), not what the browser says about it. The
+    # MinIO calls wait for the network, so they run in a worker thread.
+    stored = await asyncio.to_thread(storage.stat, staging_key)
+    if stored is None:  # never uploaded, uploaded somewhere else, or already confirmed
+        raise HTTPException(status_code=400, detail=NO_PICTURE)
+    try:
+        if stored.size > MAX_PICTURE_BYTES:
+            raise HTTPException(status_code=413, detail=PICTURE_TOO_BIG)
+        # 3. Read the file once and check those very bytes: they are the ones published, even
+        # if the upload link is used again meanwhile. At most the limit + 1 byte, so a file
+        # made bigger since stat is refused without being read whole.
+        data = await asyncio.to_thread(storage.read, staging_key, MAX_PICTURE_BYTES + 1)
+        data = data or b""  # None: the file is gone since stat
+        if len(data) > MAX_PICTURE_BYTES:
+            raise HTTPException(status_code=413, detail=PICTURE_TOO_BIG)
+        await asyncio.to_thread(check_picture_file, ext, data)
+    finally:
+        # 4. The uploaded file is never needed again, refused or accepted. Deleting it now also
+        # means the same upload cannot be confirmed, and published, a second time.
+        await remove_files(storage, [staging_key])
+
+    # 5. The public copy: written by the server, at a new key that no upload link has ever
+    # pointed at, with the Content-Type of the type it checked (never the uploader's).
+    public_key = f"{folder}/{owner_id}/{uuid4()}.{ext}"
+    await asyncio.to_thread(storage.put, public_key, data, PICTURE_TYPES[ext])
+    return public_key
+
+
+async def lock_my_account(session: AsyncSession, user: User) -> bool:
+    """Lock my row until the commit (ROW_LOCK), read it again, and say whether my account is
+    still active. The picture confirms and the account deletion all take this lock, so for
+    one account they run one after the other, and the second sees what the first saved:
+    a second confirm of the same upload finds it already gone, a confirm after the deletion
+    finds the account deleted. Like the video limit's lock (repo.lock_user), but refresh also
+    reads the row again (status, avatar_object_key) instead of trusting the earlier read."""
+    await session.refresh(user, with_for_update=ROW_LOCK)
+    return user.status == "active"
+
+
+async def confirm_avatar(
+    session: AsyncSession, storage: Storage, user: User, staging_key: str
+) -> None:
+    """Publish the checked picture as my avatar. The file of my old avatar is deleted: its
+    public link must not keep working once I have changed my picture."""
+    # The sign-in check passed when the request came in, but my account may have been deleted
+    # while this request waited. A deleted account gets nothing published, and the same 401 as
+    # on any request; its upload is deleted, as on any refusal.
+    if not await lock_my_account(session, user):
+        await discard_upload(storage, AVATARS_FOLDER, user.id, staging_key)
+        raise unauthorized(INVALID_TOKEN)
+    new_key = await publish_picture(storage, AVATARS_FOLDER, user.id, staging_key)
+    old_key = user.avatar_object_key
+    user.avatar_object_key = new_key
+    await session.commit()  # the new avatar is saved first, then the old file goes
+    if old_key:
+        await remove_files(storage, [old_key])
+
+
+async def find_my_company(session: AsyncSession, user: User) -> Company:
+    """My company that is not deleted (BE-21 finds it), or 404: only an employer has a logo."""
+    company = await companies.get_my_company(session, user.id)
+    if company is None:
+        raise HTTPException(status_code=404, detail=NO_COMPANY)
+    return company
+
+
+async def create_logo_upload_url(
+    session: AsyncSession, storage: Storage, user: User, ext: str, expires_sec: int
+) -> PictureUploadUrlOut:
+    """Like the avatar's, in my company's staging folder: staging/logos/<company id>/."""
+    company = await find_my_company(session, user)
+    return create_picture_upload_url(storage, LOGOS_FOLDER, company.id, ext, expires_sec)
+
+
+async def confirm_logo(
+    session: AsyncSession, storage: Storage, user: User, staging_key: str
+) -> None:
+    """Publish the checked picture as my company's logo; the file of the old logo is deleted."""
+    company = await find_my_company(session, user)
+    # Two locks, always in this order, as the account deletion takes them: my row, then my
+    # company's. (Two requests that each held one and waited for the other would wait forever.)
+    # My account first, like the avatar: deleting my account empties the logo too.
+    if not await lock_my_account(session, user):
+        await discard_upload(storage, LOGOS_FOLDER, company.id, staging_key)
+        raise unauthorized(INVALID_TOKEN)
+    # Then my company's row, read again: DELETE /companies takes this lock too, so a company
+    # deleted while this request waited is seen here, and gets the usual 404.
+    await session.refresh(company, with_for_update=ROW_LOCK)
+    if company.status != "active" or company.owner_user_id != user.id:
+        await discard_upload(storage, LOGOS_FOLDER, company.id, staging_key)
+        raise HTTPException(status_code=404, detail=NO_COMPANY)
+    new_key = await publish_picture(storage, LOGOS_FOLDER, company.id, staging_key)
+    old_key = company.logo_object_key
+    company.logo_object_key = new_key
+    company.updated_by_id = user.id  # who last changed the company (AuditMixin, BE-02)
+    await session.commit()
+    if old_key:
+        await remove_files(storage, [old_key])
+
+
+async def forget_pictures(session: AsyncSession, user: User) -> list[str]:
+    """For an account being deleted: empty its avatar and its company's logo (saved with the
+    caller's commit). Returns the keys of their files, for remove_files once that is saved.
+
+    It locks my row, then my company's, until that commit: the locks of the picture confirms,
+    in the same order. Each row is read again before its key: a confirm that came first has
+    saved its new picture, which is then the file deleted; one that comes later waits, then
+    finds my account deleted and is refused."""
+    await session.refresh(user, with_for_update=ROW_LOCK)  # the lock of lock_my_account
+    keys = [user.avatar_object_key]
+    user.avatar_object_key = None
+    company = await companies.get_my_company(session, user.id)
+    if company is not None:
+        await session.refresh(company, with_for_update=ROW_LOCK)
+        # Nobody can change or remove this logo any more once its only owner is gone.
+        keys.append(company.logo_object_key)
+        company.logo_object_key = None
+    return [key for key in keys if key]

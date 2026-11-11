@@ -2,8 +2,27 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.storage import Storage, remove_files
+from app.media import service as media
 from app.users.models import User
-from app.users.schemas import UserUpdate
+from app.users.schemas import UserOut, UserUpdate
+
+
+def to_user_out(storage: Storage, user: User) -> UserOut:
+    """The profile we send back. Every field is read from my row, except avatar_url: storage
+    turns avatar_object_key into an address the browser can open."""
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        position=user.position,
+        birth_date=user.birth_date,
+        bio=user.bio,
+        avatar_object_key=user.avatar_object_key,
+        avatar_url=storage.avatar_url(user.avatar_object_key),
+        is_email_verified=user.is_email_verified,
+    )
 
 
 async def update_profile(session: AsyncSession, user: User, data: UserUpdate) -> User:
@@ -17,12 +36,18 @@ async def update_profile(session: AsyncSession, user: User, data: UserUpdate) ->
     return user
 
 
-async def delete_account(session: AsyncSession, user: User) -> None:
+async def delete_account(session: AsyncSession, storage: Storage, user: User) -> None:
     """Soft delete: the row stays, only its status becomes "deleted".
 
     That one change is enough to lock the account: login (auth/service.py) and every
     protected request and refresh (auth/deps.py, auth/service.py) check that the status is
     "active", so the user's tokens stop working at once and logging in again gets 401.
+
+    The pictures cannot just be hidden: anyone who kept the address of a file under avatars/
+    or logos/ could still download it. So the avatar and the logo of my company are emptied,
+    and once that is saved, their files are deleted from storage at once (BE-08).
     """
+    old_files = await media.forget_pictures(session, user)
     user.status = "deleted"
     await session.commit()
+    await remove_files(storage, old_files)
