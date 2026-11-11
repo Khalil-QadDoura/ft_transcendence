@@ -1,10 +1,10 @@
 """The /api/media endpoints. Each one needs the logged-in user (CurrentUser), except the
 default avatar picture."""
 
-from pathlib import Path
+import pathlib
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentUser
@@ -42,10 +42,13 @@ Queue = Annotated[TaskQueue, Depends(get_queue)]
 # How long a signed link works: ?expires_sec=60 to 3600 (by default 300 to watch a video,
 # 900 to upload a picture).
 ExpiresSec = Annotated[int, Query(ge=MIN_URL_EXPIRES_SEC, le=MAX_URL_EXPIRES_SEC)]
+# An id in the address: 1 or more and small enough to be an id (BIGINT), else 422 before
+# the database is asked (a bigger number made the database fail: 500).
+VideoId = Annotated[int, Path(ge=1, le=MAX_ID)]
 
 # The picture of users who have none (DEFAULT_AVATAR_URL points here): a grey head and
 # shoulders, read once when the app starts.
-DEFAULT_AVATAR = (Path(__file__).parent / "default-avatar.svg").read_bytes()
+DEFAULT_AVATAR = (pathlib.Path(__file__).parent / "default-avatar.svg").read_bytes()
 # Browsers may keep it for a day instead of asking again for every avatar on a page.
 DEFAULT_AVATAR_CACHE = "public, max-age=86400"
 
@@ -82,19 +85,19 @@ async def list_my_videos(
 
 
 @router.post("/intro-video/{video_id}/post")
-async def post_video(user: CurrentUser, video_id: int, session: Session) -> VideoStatusOut:
+async def post_video(user: CurrentUser, video_id: VideoId, session: Session) -> VideoStatusOut:
     """Show this approved video in the feed; my previous posted video becomes "unposted"."""
     return VideoStatusOut.model_validate(await service.post_video(session, user, video_id))
 
 
 @router.post("/intro-video/{video_id}/unpost")
-async def unpost_video(user: CurrentUser, video_id: int, session: Session) -> VideoStatusOut:
+async def unpost_video(user: CurrentUser, video_id: VideoId, session: Session) -> VideoStatusOut:
     """Take my posted video out of the feed."""
     return VideoStatusOut.model_validate(await service.unpost_video(session, user, video_id))
 
 
 @router.post("/intro-video/{video_id}/delete")
-async def delete_video(user: CurrentUser, video_id: int, session: Session) -> VideoStatusOut:
+async def delete_video(user: CurrentUser, video_id: VideoId, session: Session) -> VideoStatusOut:
     """Delete my video (a soft delete): the row stays, marked "deleted"."""
     return VideoStatusOut.model_validate(await service.delete_video(session, user, video_id))
 
@@ -105,9 +108,10 @@ async def get_feed(
     session: Session,
     storage: Files,
     limit: Annotated[int, Query(ge=1, le=FEED_MAX_LIMIT)] = FEED_DEFAULT_LIMIT,
-    # 1 or more and small enough to be an id, else 422 before the database is asked.
+    # cursor and job_id: 1 or more and small enough to be an id, else 422 before the
+    # database is asked.
     cursor: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
-    job_id: int | None = None,
+    job_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
     expires_sec: ExpiresSec = VIEW_URL_EXPIRES_SEC,
 ) -> FeedOut:
     """The posted videos. ?cursor=<next_cursor> gives the next page; ?job_id= orders it for
