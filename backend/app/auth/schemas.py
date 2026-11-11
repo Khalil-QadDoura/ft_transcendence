@@ -54,3 +54,7 @@ class ChangePasswordIn(BaseModel):
     # No minimum, as at login: a wrong current password simply fails.
     current_password: str = Field(max_length=PASSWORD_MAX_LENGTH)
     new_password: NewPassword
+
+
+class ForgotPasswordIn(BaseModel):
+    email: Email

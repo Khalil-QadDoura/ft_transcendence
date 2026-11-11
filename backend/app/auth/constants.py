@@ -6,6 +6,10 @@ from datetime import timedelta
 ACCESS_TOKEN_LIFETIME = timedelta(minutes=15)
 REFRESH_TOKEN_LIFETIME = timedelta(days=30)
 EMAIL_VERIFY_TOKEN_LIFETIME = timedelta(hours=24)
+PASSWORD_RESET_TOKEN_LIFETIME = timedelta(hours=1)
+
+# A password reset token is this many random bytes, written as 64 URL-safe characters.
+PASSWORD_RESET_TOKEN_BYTES = 48
 
 # Every token says what it is for (its "scope" claim), so one kind cannot be used as another.
 ACCESS_SCOPE = "access"
@@ -21,3 +25,4 @@ REGISTER_RATE_LIMIT = "5/minute"
 LOGIN_RATE_LIMIT = "10/minute"
 REFRESH_RATE_LIMIT = "20/minute"
 CHANGE_PASSWORD_RATE_LIMIT = "5/minute"
+FORGOT_PASSWORD_RATE_LIMIT = "3/minute"

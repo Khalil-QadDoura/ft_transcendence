@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import service
 from app.auth.constants import (
     CHANGE_PASSWORD_RATE_LIMIT,
+    FORGOT_PASSWORD_RATE_LIMIT,
     LOGIN_RATE_LIMIT,
     REFRESH_RATE_LIMIT,
     REGISTER_RATE_LIMIT,
@@ -15,6 +16,7 @@ from app.auth.constants import (
 from app.auth.deps import CurrentUser
 from app.auth.schemas import (
     ChangePasswordIn,
+    ForgotPasswordIn,
     LoginIn,
     LogoutIn,
     MessageOut,
@@ -80,3 +82,20 @@ async def change_password(
 ) -> None:
     """Change my password. All my tokens stop working, on every device: I log in again."""
     await service.change_password(session, user, data)
+
+
+@router.post("/forgot-password", status_code=202)
+@limiter.limit(FORGOT_PASSWORD_RATE_LIMIT)
+async def forgot_password(
+    request: Request,
+    data: ForgotPasswordIn,
+    session: Session,
+    mailer: Annotated[Mailer, Depends(get_mailer)],
+    background: BackgroundTasks,
+) -> MessageOut:
+    """Ask for a reset link by email. Always the same 202, whether the email has an account
+    or not, so nobody can use this to find out which emails have one."""
+    await service.forgot_password(
+        session, request.app.state.settings, mailer, background, data.email
+    )
+    return MessageOut(message="If this email has an account, a reset link is on its way")

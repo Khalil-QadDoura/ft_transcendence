@@ -5,11 +5,16 @@ skipped without it (conftest.py says how to start one). The users are made up: t
 straight to the database, already verified, and log in through the real /api/auth/login.
 """
 
+import hashlib
+import re
+from datetime import timedelta
+
 import pytest
 from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database, sql
 from fastapi.testclient import TestClient
 
 from app.auth import security
+from app.core.limiter import limiter
 
 pytestmark = needs_database
 
@@ -17,6 +22,7 @@ PASSWORD = "correct horse battery"
 NEW_PASSWORD = "a brand new password"
 # Argon2 is slow on purpose, so the hash is made once and shared by every test user.
 PASSWORD_HASH = security.hash_password(PASSWORD)
+FORGOT_ANSWER = {"message": "If this email has an account, a reset link is on its way"}
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -77,6 +83,22 @@ def change_password(client, access_token: str, current=PASSWORD, new=NEW_PASSWOR
 def stored_password_and_version() -> tuple[str, int]:
     [(password_hash, version)] = sql("SELECT password_hash, token_version FROM users")
     return password_hash, version
+
+
+def forgot_password(client, email="ana@example.com"):
+    return client.post("/api/auth/forgot-password", json={"email": email})
+
+
+def sent_emails(client) -> list[dict]:
+    """The emails the app sent (build_app puts a test mailbox in place of the mailer)."""
+    return client.app.state.test_mailbox.sent
+
+
+def reset_token_in(email: dict) -> str:
+    """The token of the email's link, which must open the frontend's /reset-password page."""
+    match = re.search(r"https://localhost/reset-password\?token=(\S+)", email["body"])
+    assert match, email["body"]
+    return match.group(1)
 
 
 # --- POST /api/auth/change-password ---------------------------------------------------------
@@ -155,4 +177,81 @@ def test_change_password_allows_5_requests_a_minute_per_ip(client, ana):
     assert response.status_code == 429
     assert response.json() == {
         "error": {"code": "429", "detail": "Rate limit exceeded: 5 per 1 minute"}
+    }
+
+
+# --- POST /api/auth/forgot-password ---------------------------------------------------------
+
+
+def test_forgot_password_answers_202_and_emails_a_link_to_the_frontend(client):
+    make_user()
+    response = forgot_password(client, "Ana@Example.com")  # emails are compared in lower case
+    assert response.status_code == 202
+    assert response.json() == FORGOT_ANSWER
+
+    [email] = sent_emails(client)
+    assert email["to"] == "ana@example.com"
+    assert email["subject"] == "Reset your WOZU password"
+    assert "The link works once, for 60 minutes." in email["body"]
+    # The token: 64 random characters that can go into a link as they are.
+    assert re.fullmatch(r"[A-Za-z0-9_-]{64}", reset_token_in(email))
+
+
+def test_only_a_hash_of_the_reset_token_is_stored_for_1_hour(client):
+    make_user()
+    forgot_password(client)
+    token = reset_token_in(sent_emails(client)[0])
+
+    [(user_id, stored, lifetime, used_at)] = sql(
+        "SELECT user_id, token, expires_at - created_at, used_at FROM password_reset_tokens"
+    )
+    assert user_id == 1
+    # The database has the token's SHA-256, never the token: reading the table gives no link.
+    assert stored != token
+    assert stored == hashlib.sha256(token.encode()).hexdigest()
+    assert abs(lifetime - timedelta(hours=1)) < timedelta(seconds=5)
+    assert used_at is None
+
+
+def test_each_request_gets_its_own_new_token(client):
+    make_user()
+    forgot_password(client)
+    forgot_password(client)
+    first, second = (reset_token_in(email) for email in sent_emails(client))
+    assert first != second
+    assert sql("SELECT count(*) FROM password_reset_tokens") == [(2,)]
+
+
+def test_forgot_password_answers_the_same_202_for_unknown_unverified_and_deleted_emails(client):
+    make_user("ana@example.com")
+    make_user("ben@example.com", verified=False)
+    make_user("cara@example.com")
+    sql("UPDATE users SET status = 'deleted' WHERE email = 'cara@example.com'")
+    known = forgot_password(client, "ana@example.com")
+
+    for email in ("nobody@example.com", "ben@example.com", "cara@example.com"):
+        limiter.reset()  # 4 requests in this test, over the limit of 3 a minute
+        response = forgot_password(client, email)
+        # The same answer as for a real account: nobody learns whether an email has one.
+        assert (response.status_code, response.json()) == (known.status_code, known.json())
+        assert (response.status_code, response.json()) == (202, FORGOT_ANSWER)
+    # Only Ana got an email and a reset token.
+    assert [email["to"] for email in sent_emails(client)] == ["ana@example.com"]
+    assert sql("SELECT user_id FROM password_reset_tokens") == [(1,)]
+
+
+def test_forgot_password_with_a_bad_email_is_422(client):
+    response = forgot_password(client, "ana")
+    assert response.status_code == 422
+    assert response.json()["error"]["detail"].startswith("body → email: value is not a valid")
+    assert sent_emails(client) == []
+
+
+def test_forgot_password_allows_3_requests_a_minute_per_ip(client):
+    for number in range(3):
+        assert forgot_password(client, f"user{number}@example.com").status_code == 202
+    response = forgot_password(client, "user3@example.com")
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": {"code": "429", "detail": "Rate limit exceeded: 3 per 1 minute"}
     }

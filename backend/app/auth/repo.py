@@ -1,4 +1,5 @@
-"""Database queries of sign-up and login: users and their refresh tokens. No HTTP, no rules."""
+"""Database queries of sign-up, login and passwords: users, their refresh tokens and their
+password reset tokens. No HTTP, no rules."""
 
 from datetime import datetime
 
@@ -6,7 +7,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.models import RefreshToken
+from app.auth.models import PasswordResetToken, RefreshToken
 from app.users.models import User
 
 
@@ -92,3 +93,11 @@ async def set_password(session: AsyncSession, user_id: int, password_hash: str) 
         .values(password_hash=password_hash, token_version=User.token_version + 1)
         .returning(User)
     )
+
+
+def add_password_reset_token(
+    session: AsyncSession, user_id: int, token_hash: str, expires_at: datetime
+) -> None:
+    """Remember a reset link, saved with the next commit. The `token` column gets the token's
+    hash (security.hash_reset_token), never the token itself."""
+    session.add(PasswordResetToken(user_id=user_id, token=token_hash, expires_at=expires_at))

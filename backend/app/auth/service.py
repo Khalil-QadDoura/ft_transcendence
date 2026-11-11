@@ -1,6 +1,7 @@
-"""The rules of sign-up and login. Routes call these functions; these call the repo."""
+"""The rules of sign-up, login and passwords. Routes call these functions; these call the repo."""
 
 import asyncio
+from datetime import UTC, datetime
 
 import jwt
 from fastapi import BackgroundTasks, HTTPException
@@ -12,6 +13,7 @@ from app.auth.constants import (
     ACCESS_TOKEN_LIFETIME,
     EMAIL_VERIFY_SCOPE,
     EMAIL_VERIFY_TOKEN_LIFETIME,
+    PASSWORD_RESET_TOKEN_LIFETIME,
     REFRESH_SCOPE,
     REFRESH_TOKEN_LIFETIME,
 )
@@ -35,6 +37,17 @@ Open this link to verify your email address:
 {link}
 
 If you did not sign up, you can ignore this email.
+"""
+
+RESET_SUBJECT = "Reset your WOZU password"
+RESET_BODY = """\
+Someone asked to reset the password of your WOZU account.
+
+Open this link to choose a new password:
+{link}
+
+The link works once, for {minutes} minutes.
+If you did not ask for this, you can ignore this email: your password stays the same.
 """
 
 
@@ -172,3 +185,31 @@ async def change_password(session: AsyncSession, user: User, data: ChangePasswor
     password_hash = await asyncio.to_thread(security.hash_password, data.new_password)
     await repo.set_password(session, user.id, password_hash)
     await session.commit()
+
+
+async def forgot_password(
+    session: AsyncSession,
+    settings: Settings,
+    mailer: Mailer,
+    background: BackgroundTasks,
+    email: str,
+) -> None:
+    """Email a reset link if this email belongs to an account that can log in."""
+    user = await repo.get_user_by_email(session, email)
+    # No account, a deleted one, or one not verified yet (signing up again is how that one gets
+    # a new password, BE-03): no email. The route gives the same 202 either way.
+    if user is None or user.status != "active" or not user.is_email_verified:
+        return
+    token = security.new_reset_token()
+    expires_at = datetime.now(UTC) + PASSWORD_RESET_TOKEN_LIFETIME
+    # Only the token's hash is stored: the token itself exists only in the email.
+    repo.add_password_reset_token(session, user.id, security.hash_reset_token(token), expires_at)
+    await session.commit()
+
+    # The link opens the frontend's page, which asks for the new password and then calls
+    # POST /api/auth/reset-password with the token.
+    link = f"{settings.frontend_base_url.rstrip('/')}/reset-password?token={token}"
+    minutes = int(PASSWORD_RESET_TOKEN_LIFETIME.total_seconds() // 60)
+    body = RESET_BODY.format(link=link, minutes=minutes)
+    # Sent after the answer has gone out, as at sign-up.
+    background.add_task(mailer.send, user.email, RESET_SUBJECT, body)
