@@ -101,3 +101,21 @@ def add_password_reset_token(
     """Remember a reset link, saved with the next commit. The `token` column gets the token's
     hash (security.hash_reset_token), never the token itself."""
     session.add(PasswordResetToken(user_id=user_id, token=token_hash, expires_at=expires_at))
+
+
+async def use_password_reset_token(
+    session: AsyncSession, token_hash: str
+) -> PasswordResetToken | None:
+    """Mark the reset link used and return its row, as one database step, only if it is
+    known, not used yet and not expired. Returns None otherwise: if the same link comes
+    twice, even at the same moment, only one call wins."""
+    return await session.scalar(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.token == token_hash,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > func.now(),
+        )
+        .values(used_at=func.now())
+        .returning(PasswordResetToken)
+    )

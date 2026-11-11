@@ -12,6 +12,7 @@ from app.auth.constants import (
     LOGIN_RATE_LIMIT,
     REFRESH_RATE_LIMIT,
     REGISTER_RATE_LIMIT,
+    RESET_PASSWORD_RATE_LIMIT,
 )
 from app.auth.deps import CurrentUser
 from app.auth.schemas import (
@@ -22,6 +23,7 @@ from app.auth.schemas import (
     MessageOut,
     RefreshIn,
     RegisterIn,
+    ResetPasswordIn,
     TokenPairOut,
     VerifyOut,
 )
@@ -99,3 +101,11 @@ async def forgot_password(
         session, request.app.state.settings, mailer, background, data.email
     )
     return MessageOut(message="If this email has an account, a reset link is on its way")
+
+
+@router.post("/reset-password", status_code=204)
+@limiter.limit(RESET_PASSWORD_RATE_LIMIT)
+async def reset_password(request: Request, data: ResetPasswordIn, session: Session) -> None:
+    """Called by the frontend's /reset-password page with the token from the email's link
+    and the new password. All the user's tokens stop working."""
+    await service.reset_password(session, data)

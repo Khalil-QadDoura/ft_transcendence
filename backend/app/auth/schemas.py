@@ -58,3 +58,8 @@ class ChangePasswordIn(BaseModel):
 
 class ForgotPasswordIn(BaseModel):
     email: Email
+
+
+class ResetPasswordIn(BaseModel):
+    token: str  # from the email's link: <FRONTEND_BASE_URL>/reset-password?token=...
+    new_password: NewPassword

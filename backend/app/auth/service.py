@@ -17,7 +17,14 @@ from app.auth.constants import (
     REFRESH_SCOPE,
     REFRESH_TOKEN_LIFETIME,
 )
-from app.auth.schemas import ChangePasswordIn, LoginIn, RegisterIn, TokenPairOut, VerifyOut
+from app.auth.schemas import (
+    ChangePasswordIn,
+    LoginIn,
+    RegisterIn,
+    ResetPasswordIn,
+    TokenPairOut,
+    VerifyOut,
+)
 from app.core.config import Settings
 from app.core.mailer import Mailer
 from app.users.models import User
@@ -213,3 +220,17 @@ async def forgot_password(
     body = RESET_BODY.format(link=link, minutes=minutes)
     # Sent after the answer has gone out, as at sign-up.
     background.add_task(mailer.send, user.email, RESET_SUBJECT, body)
+
+
+async def reset_password(session: AsyncSession, data: ResetPasswordIn) -> None:
+    """Set a new password with the token of a reset link. Each link works once."""
+    # The database has only hashes, so the token is hashed the same way to find its row.
+    row = await repo.use_password_reset_token(session, security.hash_reset_token(data.token))
+    if row is None:  # unknown, already used or expired
+        raise HTTPException(status_code=400, detail=INVALID_LINK)
+    password_hash = await asyncio.to_thread(security.hash_password, data.new_password)
+    # token_version + 1, as for a change: every token made before stops working.
+    if await repo.set_password(session, row.user_id, password_hash) is None:
+        # The account was deleted after the email was sent. Nothing is saved (no commit).
+        raise HTTPException(status_code=400, detail=INVALID_LINK)
+    await session.commit()  # the link's used_at and the new password, together

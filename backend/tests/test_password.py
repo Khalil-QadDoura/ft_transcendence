@@ -255,3 +255,113 @@ def test_forgot_password_allows_3_requests_a_minute_per_ip(client):
     assert response.json() == {
         "error": {"code": "429", "detail": "Rate limit exceeded: 3 per 1 minute"}
     }
+
+
+# --- POST /api/auth/reset-password ----------------------------------------------------------
+
+INVALID_LINK = {"error": {"code": "400", "detail": "Invalid or expired link"}}
+
+
+def reset_password(client, token: str, new=NEW_PASSWORD):
+    return client.post("/api/auth/reset-password", json={"token": token, "new_password": new})
+
+
+def ask_for_a_reset_link(client, email="ana@example.com") -> str:
+    """POST /forgot-password, then read the token from the newest email's link."""
+    assert forgot_password(client, email).status_code == 202
+    return reset_token_in(sent_emails(client)[-1])
+
+
+def test_the_whole_reset_journey(client, ana):
+    # 1. Ana forgot her password: she asks for a link and gets an email.
+    token = ask_for_a_reset_link(client)
+    # 2. The link opens the frontend's page; it sends the token and her new password.
+    response = reset_password(client, token)
+    assert response.status_code == 204
+    assert response.content == b""
+    # 3. The new password works, the old one does not.
+    assert login(client).status_code == 401
+    assert login(client, password=NEW_PASSWORD).status_code == 200
+
+    password_hash, version = stored_password_and_version()
+    assert security.verify_password(NEW_PASSWORD, password_hash)
+    assert version == 2  # token_version + 1
+    assert sql("SELECT used_at IS NOT NULL FROM password_reset_tokens") == [(True,)]
+
+
+def test_after_a_reset_every_old_token_of_the_user_is_refused(client, ana):
+    laptop, phone = ana, login(client).json()  # logged in on two devices
+    assert reset_password(client, ask_for_a_reset_link(client)).status_code == 204
+
+    for device in (laptop, phone):
+        assert get_me(client, device["access_token"]).status_code == 401
+        assert refresh(client, device["refresh_token"]).status_code == 401
+
+
+def test_a_reset_link_works_only_once(client, ana):
+    token = ask_for_a_reset_link(client)
+    assert reset_password(client, token).status_code == 204
+
+    again = reset_password(client, token, new="someone else's password")
+    assert again.status_code == 400
+    assert again.json() == INVALID_LINK
+    assert login(client, password="someone else's password").status_code == 401
+    assert login(client, password=NEW_PASSWORD).status_code == 200
+
+
+def test_an_expired_reset_link_is_400_and_changes_nothing(client, ana):
+    token = ask_for_a_reset_link(client)
+    # As if the hour had passed.
+    sql("UPDATE password_reset_tokens SET expires_at = now() - interval '1 second'")
+
+    response = reset_password(client, token)
+    assert response.status_code == 400
+    assert response.json() == INVALID_LINK
+    assert stored_password_and_version() == (PASSWORD_HASH, 1)
+    assert get_me(client, ana["access_token"]).status_code == 200
+
+
+def test_a_wrong_reset_token_is_400_and_changes_nothing(client, ana):
+    token = ask_for_a_reset_link(client)
+    [(stored_hash,)] = sql("SELECT token FROM password_reset_tokens")
+    # Made up, empty, a real-looking token we never sent, and the value in the database
+    # (someone who read the table still cannot use it).
+    for wrong in ("not-a-token", "", security.new_reset_token(), stored_hash):
+        response = reset_password(client, wrong)
+        assert response.status_code == 400
+        assert response.json() == INVALID_LINK
+    assert stored_password_and_version() == (PASSWORD_HASH, 1)
+    # None of them used up the real link.
+    assert reset_password(client, token).status_code == 204
+
+
+def test_a_bad_new_password_is_422_and_does_not_use_up_the_link(client, ana):
+    token = ask_for_a_reset_link(client)
+    response = reset_password(client, token, new="short")
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "422",
+            "detail": "body → new_password: String should have at least 8 characters",
+        }
+    }
+    assert reset_password(client, token).status_code == 204
+
+
+def test_a_reset_link_stops_working_once_the_account_is_deleted(client, ana):
+    token = ask_for_a_reset_link(client)
+    sql("UPDATE users SET status = 'deleted'")
+    response = reset_password(client, token)
+    assert response.status_code == 400
+    assert response.json() == INVALID_LINK
+    assert stored_password_and_version() == (PASSWORD_HASH, 1)
+
+
+def test_reset_password_allows_5_requests_a_minute_per_ip(client):
+    for _ in range(5):
+        assert reset_password(client, "not-a-token").status_code == 400
+    response = reset_password(client, "not-a-token")
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": {"code": "429", "detail": "Rate limit exceeded: 5 per 1 minute"}
+    }
