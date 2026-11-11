@@ -10,7 +10,7 @@ from datetime import timedelta
 
 import httpx2
 import pytest
-from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database
+from conftest import TEST_DATABASE_URL, alembic, build_app, needs_database, sql
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -42,20 +42,6 @@ class FakeMailer:
 
     def send(self, to: str, subject: str, body: str) -> None:
         self.sent.append({"to": to, "subject": subject, "body": body})
-
-
-def sql(statement: str, **params) -> list:
-    """Run one SQL statement on the test database; returns its rows."""
-
-    async def run() -> list:
-        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
-        async with engine.begin() as connection:
-            result = await connection.execute(text(statement), params)
-            rows = result.all() if result.returns_rows else []
-        await engine.dispose()
-        return rows
-
-    return asyncio.run(run())
 
 
 @pytest.fixture(scope="module", autouse=True)

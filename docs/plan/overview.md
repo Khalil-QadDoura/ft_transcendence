@@ -218,9 +218,12 @@ Depends on: <CARD-ID>
 - Commit message: `<type>(<scope>): <summary> (<CARD-ID>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (BE-10)`.
 - Small PRs (under \~400 changed lines), one card each. Squash merge keeps one clear commit per card on `main`.
 - Everyone commits their own work from their own account; pair work uses `Co-authored-by:` lines.
-- Weekly sync (30 min, PM leads) + async daily update in the team chat: done, next, blocked.
+- Weekly sync (30 min, PM leads) + async daily update in the team chat: done, next, blocked. Proposed slots and outstanding confirmations are tracked in [sprint-routine.md](sprint-routine.md).
+- Review and live-change rule, set by the PO on 2026-11-08: every PR receives a review within 24 hours from someone in the other pair. After each merge, the owner makes one small live change and records what changed and how it was checked.
 
 ## Related documents and decisions
+
+- [Sprint routine](sprint-routine.md): weekly sync, daily update, open team agreements (PM-01).
 
 - ft\_transcendence — Backend Reference (WOZU) — for the backend pair: architecture, schema, business rules, 25 issues, port order.
 - ft\_transcendence — API Contract — for both pairs: every endpoint, WebSocket events, planned contract changes.
@@ -246,7 +249,7 @@ Depends on: <CARD-ID>
 | 2026-11-04 | Front proxy: nginx + ModSecurity CRS (INF-01) | Final card plan | Decided |
 | 2026-11-04 | Languages (M10): AR, EN, AZ, TR, RU; RTL (M11) on AR | Final card plan | Decided |
 | 2026-11-04 | Turing Duel rules: rooms of up to 5 with at least 1 human; hidden random bots (none, or 1–4); anonymous "Player 1…N"; one 3-minute room timer; start on the 5th join, "Start now" or timer expiry with 2+; +1 / −1 / 0 per guess. Full text in "Turing Duel rules"; input for DOC-08 | byul-byul | Decided |
-| 2026-11-04 | Schedule: S1 Nov 4–10, S2 Nov 11–17, S3 Nov 18–24, S4 Nov 25–28; card due date = sprint end 18:00 Asia/Baku; code freeze Nov 26; first defense Sunday Nov 29; max score has priority over the date | Final card plan | Decided |
+| 2026-11-04 | Schedule: S1 Nov 4–10, S2 Nov 11–17, S3 Nov 18–24, S4 Nov 25–28; card due date = sprint end 18:00 Asia/Dubai (Abu Dhabi); code freeze Nov 26; first defense Sunday Nov 29; max score has priority over the date | Final card plan | Decided |
 | 2026-11-04 | Trello board E3788fBx replaces 6Pob02M6; lists Backlog / To Do / In Progress / Review / Done; card ID as title prefix; branch `feat/<CARD-ID>-<short-name>` ([board.md](board.md)) | Final card plan | Decided |
 | 2026-11-04 | Root README placeholder is replaced by DOC-03; its author agreed | Final card plan | Decided |
 | 2026-11-05 | Front proxy: nginx + ModSecurity v3 + OWASP CRS from day one (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-01 PR |

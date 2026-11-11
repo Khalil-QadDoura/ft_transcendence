@@ -36,10 +36,10 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | POST | `/auth/forgot-password` | — | `{email}` | 202 always | — |
 | POST | `/auth/reset-password` | — | `{token, new_password}` | 204; all tokens revoked | 400 invalid / expired |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
-| PATCH | `/users/me` | Bearer | `{first_name, last_name, position, birth_date, bio?}` all required except bio; age ≥ 18 | 200 `UserOut` | 422 |
-| DELETE | `/users/me` | Bearer | — | 204 (soft delete) | — |
+| PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
+| DELETE | `/users/me` | Bearer | — | 204 (soft delete) | 401 |
 
-`UserOut` = `{id, email, phone, username, first_name, last_name, position, birth_date, bio, avatar_object_key, is_email_verified, is_phone_verified, account_number}`; `account_number` is computed as `WZ-000123`.
+`UserOut` = `{id, email, first_name, last_name, position, birth_date, bio, avatar_object_key, is_email_verified}` (new backend, BE-05; `avatar_url` comes with BE-08). The reference also sends `phone`, `username`, `is_phone_verified` and `account_number` (`WZ-000123`); the new backend drops them.
 
 Sign-up and login in the new backend (BE-03):
 
@@ -47,6 +47,11 @@ Sign-up and login in the new backend (BE-03):
 - The verification email links to the frontend page `<FRONTEND_BASE_URL>/verify-email?token=…` (valid 24 h); that page calls `GET /api/auth/verify?token=…`. The link carries `ver` (`users.token_version`), so **only the newest link is valid**: it verifies the account with the newest password, and every older link answers 400. Opening the newest link twice answers 200 with `updated: false`. A link and a sign-up arriving together are handled one after the other by the database, so a sign-up never changes an account that has just been verified (that sign-up gets 409).
 - Access token: JWT (HS256), 15 min, claims `sub` (user id), `scope` (`access`), `ver` (`users.token_version`), `jti`, `iat`, `exp`. Refresh token: JWT, 30 days, stored by its `jti` in `refresh_tokens`; each refresh revokes it and returns a new pair (rotation), and a reused one gets 401.
 - A deleted account gets the same 401 as a wrong password at login, and 401 on every protected route.
+
+The profile in the new backend (BE-05):
+
+- `PATCH /users/me` changes only the fields that are sent: a field left out keeps its value, and `{}` changes nothing (200). `first_name` and `last_name` 1–50 characters, `position` 1–100, `bio` up to 500; spaces around them are removed. `birth_date` is `YYYY-MM-DD`, and the user must be at least 18 full years old today, else 422 `"body → birth_date: You must be at least 18 years old"`. Only `bio` accepts `null` (it empties the bio). Any other field (`email`, `status`, `phone`, …) gets 422 `"body → <field>: Extra inputs are not permitted"`, and then nothing is changed. No body at all gets 422.
+- `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409).
 
 ## Friends, profiles and conversations
 
@@ -190,8 +195,8 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through Caddy: no CORS, no mixed content |
 | \[ \] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
 | \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
-| \[ \] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
-| \[ \] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
+| \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
+| \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
 | \[ \] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
 | \[ \] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` | Access tokens no longer in URLs and logs |
 | \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` | Live edits, online dots, no polling for moderation |

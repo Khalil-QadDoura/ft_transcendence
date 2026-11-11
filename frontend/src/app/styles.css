@@ -1,22 +1,50 @@
 @import "tailwindcss";
 @import "@fontsource-variable/manrope";
+
 @theme {
   --font-sans: "Manrope Variable", sans-serif;
   --color-ink: #262b25;
+  --color-ink-muted: #576054;
   --color-paper: #f4f2ed;
+  --color-paper-subtle: #eae6de;
+  --color-surface: #ffffff;
   --color-lime: #d7ef72;
+  --color-lime-dark: #b8d44c;
+  --color-brand: #262b25;
+  --color-brand-accent: #d7ef72;
+  --color-border: #dcd8cf;
+  --color-border-subtle: #eae6de;
+
+  --color-danger: #dc2626;
+  --color-danger-subtle: #fef2f2;
+  --color-success: #16a34a;
+  --color-success-subtle: #f0fdf4;
+  --color-warning: #d97706;
+  --color-warning-subtle: #fffbeb;
+  --color-info: #2563eb;
+  --color-info-subtle: #eff6ff;
+
+  --radius-xs: 0.125rem;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
 }
+
 body {
   margin: 0;
   background: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-sans);
 }
+
 main {
   max-width: 72rem;
   margin: auto;
   padding: 4rem 1.5rem;
 }
+
 h1 {
   font-size: clamp(3rem, 7vw, 6rem);
   line-height: 1;
