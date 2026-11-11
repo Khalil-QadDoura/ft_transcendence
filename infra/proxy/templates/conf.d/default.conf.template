@@ -51,6 +51,11 @@ server {
     # upload during a MinIO outage would be answered 413 instead of 502.
     client_max_body_size 60m;
 
+    # nginx's own redirects (/mail -> /mail/, also /files, /api, /grafana) send a relative
+    # Location. An absolute one carries no port (the image sets port_in_redirect off), so
+    # with HTTPS_PORT=18443 /mail would land on https://localhost/mail/.
+    absolute_redirect off;
+
     # Inherited by every location below, so no location sets its own proxy_set_header.
     # Host stays as the browser sent it, port included: MinIO presigned signatures and
     # the Grafana origin check both depend on it.
