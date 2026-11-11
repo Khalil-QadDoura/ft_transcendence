@@ -38,12 +38,15 @@ logs:
 # container and the code mounted read-only. The tests get only the test database: db starts
 # first (also from a stopped stack), the script that runs on a new volume creates the test
 # database when it is missing, and pytest sees DATABASE_URL = TEST_DATABASE_URL, as in CI.
+# The WebSocket tests get Redis database 1 (TEST_REDIS_URL, set only here); the app uses 0,
+# and the tests delete only their own ws: keys.
 # Frontend: the checks of its CI job, in the build stage of its image.
 test: env
-	$(COMPOSE) up -d --wait db
+	$(COMPOSE) up -d --wait db redis
 	$(COMPOSE) exec -T db /docker-entrypoint-initdb.d/20-create-test-db.sh
 	$(COMPOSE) run --rm --build --user root -v $(CURDIR)/backend:/src:ro -w /src \
-		-e PIP_ROOT_USER_ACTION=ignore -e PIP_DISABLE_PIP_VERSION_CHECK=1 api \
+		-e PIP_ROOT_USER_ACTION=ignore -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+		-e TEST_REDIS_URL=redis://redis:6379/1 api \
 		sh -c 'pip install -q -r requirements-dev.txt && ruff check --no-cache . \
 		&& ruff format --check --no-cache . \
 		&& DATABASE_URL="$$TEST_DATABASE_URL" pytest -q -p no:cacheprovider'
