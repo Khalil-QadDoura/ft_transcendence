@@ -7,6 +7,8 @@ import structlog
 from fastapi import APIRouter, Depends, FastAPI
 
 from app.auth import routes as auth
+from app.companies import routes as companies
+from app.conversations import routes as conversations
 from app.core.config import Settings, get_settings
 from app.core.errors import add_error_handlers
 from app.core.internal import require_internal_key
@@ -55,6 +57,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(health.router)
     api.include_router(auth.router)
     api.include_router(users.router)
+    api.include_router(companies.router)
+    api.include_router(conversations.router)
     app.include_router(api)
 
     # Internal routes: left out of the OpenAPI spec and locked by X-Internal-Key.

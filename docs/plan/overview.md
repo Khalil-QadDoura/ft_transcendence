@@ -173,7 +173,7 @@ The biggest risks are environment ones, not code: email, OpenAI and HTTPS upload
 | Risk | Effect at defense | Fix | Owner |
 | --- | --- | --- | --- |
 | Email verification needs a Brevo API key; without it the link only goes to the server log | Evaluator cannot finish sign-up | Mailpit container (local mail catcher with a web inbox) + SMTP sender; links point to frontend pages | Infra + BE |
-| Uploads go to `minio:9000` over HTTP | Avatar and video upload fail in the browser; HTTPS rule broken | MinIO behind nginx TLS at `/files` (INF-04) + bucket CORS; backend checks the object exists on confirm | Infra + BE |
+| Uploads go to `minio:9000` over HTTP | Avatar and video upload fail in the browser; HTTPS rule broken | MinIO behind nginx TLS at `/files` on the same origin, no CORS needed (INF-04); backend checks the object exists on confirm | Infra + BE |
 | Moderation needs a funded OpenAI key; on API errors it approves everything | Moderation module looks like it does nothing | Real key in `.env` on defense day; demo one approved and one rejected video | BE |
 | Chrome logs every 4xx response as a console error | "No console errors" fails, e.g. `GET /companies/me` returns 404 for job seekers | Normal flows return 200 with empty data; refresh tokens before expiry | BE + FE |
 | Self-signed certificate on localhost | One browser warning; WebSocket fails if served from another origin | Serve frontend, `/api` and `/ws` from one origin through nginx (INF-03) | Infra |
@@ -253,6 +253,8 @@ Depends on: <CARD-ID>
 | 2026-11-04 | Trello board E3788fBx replaces 6Pob02M6; lists Backlog / To Do / In Progress / Review / Done; card ID as title prefix; branch `feat/<CARD-ID>-<short-name>` ([board.md](board.md)) | Final card plan | Decided |
 | 2026-11-04 | Root README placeholder is replaced by DOC-03; its author agreed | Final card plan | Decided |
 | 2026-11-05 | Front proxy: nginx + ModSecurity v3 + OWASP CRS from day one (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-01 PR |
+| 2026-11-08 | Compose and Makefile: `pgsty/minio`, `imresamu/postgis`, worker profile until BE-29, `fclean` keeps `.env`, host ports from `.env` (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-02 PR |
+| 2026-11-09 | File storage at `/files`: `minio-init` on the `pgsty/minio` image, private bucket with anonymous download on `avatars/` and `logos/` only, signing region `us-east-1` (details below) | byul-byul | Decided, except the public prefixes: proposed to Khalil (BE-08) in the INF-04 PR |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
@@ -262,3 +264,21 @@ Depends on: <CARD-ID>
 - **Reason:** module M13 needs ModSecurity as the only front door, and switching proxies late costs more than choosing now. Running the WAF from the first route also shows false positives while the app is being built, not on the eve of the defense.
 - **Alternatives considered:** Caddy, the reference's proxy, has the simplest configuration and automatic TLS, but no ModSecurity image from the CRS project; a WAF would mean a custom build with a third-party module. Traefik has convenient Docker label routing, but a WAF is only available through a plugin, and it adds a second routing model to explain at the defense.
 - **Owner:** byul-byul. **Approval:** Tech Lead, through review of the INF-01 PR.
+
+**Compose, Makefile and secrets, 2026-11-08 (INF-02)**
+
+- **MinIO image:** `pgsty/minio`, pinned by release tag and digest. The official `minio/minio` and `minio/mc` images were removed from Docker Hub on 2025-10-23; `pgsty/minio` rebuilds the upstream releases for amd64 and arm64. `minio-init` (bucket and policy) moves to INF-04, which also picks its client image.
+- **Database image:** `imresamu/postgis:15-3.4`, pinned by tag and digest, for native arm64 on the team's Macs. Every `postgis/postgis` tag is amd64 only, so Apple Silicon would run the database emulated; `imresamu/postgis` is built from the docker-postgis sources by one of its maintainers for amd64 and arm64, with the same PostgreSQL 15 and PostGIS 3.4.
+- **Worker:** defined in compose behind the `worker` profile until BE-29 adds the Celery app, so a fresh `make` does not start a container that crashes. BE-29 removes the profile line.
+- **`make fclean` keeps `.env`:** it holds the hand-added `OPENAI_API_KEY`; deleting it would also make the next run generate new passwords. `fclean` removes containers, volumes, the images built here and the certificate.
+- **Host ports:** 443 and 80 by default, changed with `HTTPS_PORT` / `HTTP_PORT` in `.env`; the HTTP → HTTPS redirect carries a non-default HTTPS port.
+- **Variable names follow the backend code:** the JWT key is `JWT_SECRET` (BE-03), not `SECRET_KEY`; compose builds `DATABASE_URL` from `POSTGRES_*`, so the password is written once.
+- **Owner:** byul-byul. **Approval:** Tech Lead, through review of the INF-02 PR.
+
+**File storage at `/files`, 2026-11-09 (INF-04)**
+
+- **Bucket init:** a one-shot `minio-init` service on the pinned `pgsty/minio` server image, which ships `mc` of the same release; no second image to pin. Idempotent, waits up to 60 s for MinIO; `api` starts after it completes, which also keeps `docker compose up --wait` green.
+- **Access:** bucket `files` (the proxy route), private. Uploads and video reads only through presigned URLs. Anonymous download, without listing, on `avatars/` and `logos/`: proposed to Khalil for BE-08 (`avatar_url`, `logo_url`) in the INF-04 PR.
+- **Same origin:** files and frontend are both `https://localhost`, so no CORS rules.
+- **Signing:** the API signs for `MINIO_EXTERNAL_ENDPOINT` with `MINIO_REGION=us-east-1`, so the SDK makes no region lookup against an address that inside a container is the container itself; all server-side reads and writes use `minio:9000`.
+- **Owner:** byul-byul. **Approval:** Tech Lead, through review of the INF-04 PR.

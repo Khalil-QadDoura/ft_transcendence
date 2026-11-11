@@ -1,6 +1,6 @@
 # ft\_transcendence — Infrastructure
 
-Oct 27, 2026 · updated Nov 4, 2026 · @byul-byul
+Oct 27, 2026 · updated Nov 10, 2026 · @byul-byul
 
 ## TL;DR
 
@@ -9,6 +9,7 @@ Infra owns four mandatory items and five module points. The reference already ha
 - **Mandatory:** one command starts everything; every browser connection is HTTPS; `.env` stays out of Git with a complete `.env.example`; the evaluator can sign up without a paid email service.
 - **Modules:** Prometheus + Grafana (Major, 2, core); WAF / ModSecurity + Vault (Major, 2, buffer); health check, status page and backups (Minor, 1, buffer).
 - **Front proxy decided (2026-11-04, INF-01):** nginx + ModSecurity v3 + OWASP Core Rule Set is the only front door instead of Caddy. Configuration: [infra/proxy/](../../infra/proxy/README.md).
+- **File storage decided (2026-11-09, INF-04):** MinIO on the same origin at `/files`, private bucket `files` created by the one-shot `minio-init`, uploads and video reads through presigned URLs; see File storage over HTTPS.
 - **One origin for everything** (`https://localhost` at the defense): frontend at `/`, API at `/api`, WebSockets at `/ws`, files at `/files`, Grafana at `/grafana`, Mailpit at `/mail`. One certificate warning, no CORS, no mixed content.
 
 ## Front proxy (decided 2026-11-04)
@@ -17,19 +18,19 @@ nginx + ModSecurity v3 + OWASP Core Rule Set (CRS), image `owasp/modsecurity-crs
 
 ## Services
 
-Only the proxy publishes ports to the host; everything else stays on the internal Docker network. Pin every image tag (the reference uses `minio/minio:latest`).
+Only the proxy publishes ports to the host; everything else stays on the internal Docker network. Pin every image tag (the reference uses `minio/minio:latest`). All services are in the root `docker-compose.yml` (compose project `wozu`) since INF-02; INF-07 pins the remaining images by digest and adds the full health checks.
 
 | Service | Image | Purpose | Published | Status |
 | --- | --- | --- | --- | --- |
-| `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210` | TLS, single origin, routing, WAF | 443 (80 → redirect) | Config in `infra/proxy/`; joins compose in INF-02 |
-| `frontend` | Multi-stage: Node build → static files served by the proxy or `nginx:alpine` | React app | no | New |
-| `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start | no | Exists |
-| `worker` | Same image as `api`, command `celery … worker -B` | Video moderation + beat for stuck videos | no | Exists, beat missing |
-| `db` | `postgis/postgis:15-3.4` | PostgreSQL + PostGIS | no | Exists |
-| `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker | no | Exists |
-| `minio` | `minio/minio` (pinned release) | Object storage for videos, avatars, logos | no (proxied at `/files`) | Exists, not proxied |
-| `minio-init` | `minio/mc` | One-shot: create bucket `files`, set policies | no | New |
-| `mailpit` | `axllent/mailpit` | Catches all outgoing mail, web inbox | no (proxied at `/mail`) | New |
+| `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210`, by digest | TLS, single origin, routing, WAF | 443 (80 → redirect); host ports set by `HTTPS_PORT` / `HTTP_PORT` | In compose (INF-02) |
+| `frontend` | Built from `frontend/` (FE-01 Dockerfile, stage `preview`: Node build → `nginx:1.28-alpine`); site config `infra/frontend/default.conf` mounted for the SPA fallback | React app | no | In compose (INF-02) |
+| `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start; waits for `db` and `redis` to be healthy | no | In compose, `/api/health` health check (Python `urllib`; the image has no curl) |
+| `worker` | Same image as `api`, command `celery -A app.worker.celery_app worker -B` | Video moderation + beat for stuck videos | no | In compose behind the `worker` profile (off by default) until BE-29 adds the Celery app |
+| `db` | `imresamu/postgis:15-3.4`, by digest (PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, amd64 + arm64; every `postgis/postgis` tag is amd64 only, so Apple Silicon would run it emulated) | PostgreSQL + PostGIS; app database `POSTGRES_DB` and test database `POSTGRES_TEST_DB` | no | In compose, `pg_isready` health check |
+| `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker | no | In compose, `redis-cli ping` health check |
+| `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, by digest (the official `minio/minio` and `minio/mc` images left Docker Hub on 2025-10-23) | Object storage for videos, avatars, logos | no, console included (proxied at `/files`) | In compose |
+| `minio-init` | Same image as `minio`, which ships `mc` | One-shot: create bucket `files`, set its anonymous policy, exit 0 | no | In compose (INF-04); `api` starts after it completes |
+| `mailpit` | `axllent/mailpit:v1.33.1` | Catches all outgoing mail, web inbox | no (proxied at `/mail`) | In compose (INF-02) |
 | `prometheus` | `prom/prometheus` | Metrics scraping, alert rules | no | New (module) |
 | `grafana` | `grafana/grafana` | Dashboards, provisioned from files | no (proxied at `/grafana`) | New (module) |
 | exporters | `postgres-exporter`, `redis-exporter`, `cadvisor` or `node-exporter` | DB, Redis, container metrics | no | New (module) |
@@ -47,13 +48,13 @@ Everything the browser touches goes through one host and one certificate. Locall
 | `/` | `frontend:80` | The frontend container does the SPA fallback to `index.html` for client routes |
 | `/api/*` | `api:8000` | FastAPI includes all routers under the `/api` prefix; the proxy does not strip paths |
 | `/ws`, `/ws/game` | `api:8000` | WebSocket upgrade: HTTP/1.1, `Upgrade` and `Connection` headers, long read timeout |
-| `/files/*` | `minio:9000` | Bucket `files`; Host header passed through unchanged so presigned signatures match; 60 MB body limit |
+| `/files/*` | `minio:9000` | Bucket `files`; URI and Host header passed through unchanged so presigned signatures match; 60 MB body limit |
 | `/grafana/*` | `grafana:3000` | `GF_SERVER_ROOT_URL=https://localhost/grafana/`, `serve_from_sub_path=true`, login required |
 | `/mail/*` | `mailpit:8025` | `MP_WEBROOT=/mail/` |
 | `/_internal/*`, `/metrics` | blocked | Prometheus scrapes them inside the Docker network only |
 | `http://` any | redirect to `https://` |  |
 
-The table translates one-to-one to the `location` blocks in `infra/proxy/templates/conf.d/default.conf.template`. ModSecurity covers all of them and runs in `DetectionOnly` until INF-11 switches it to blocking. The image runs unprivileged and listens on 8080 and 8443 inside the container, so compose publishes `443:8443` and `80:8080`. `infra/proxy/README.md` lists which files are ours and which come from the image.
+The table translates one-to-one to the `location` blocks in `infra/proxy/templates/conf.d/default.conf.template`. ModSecurity covers all of them and runs in `DetectionOnly` until INF-11 switches it to blocking. The image runs unprivileged and listens on 8080 and 8443 inside the container, so compose publishes `443:8443` and `80:8080`. `HTTPS_PORT` and `HTTP_PORT` in `.env` change the host side; the redirect then carries the HTTPS port (`http://localhost:8080/` → `https://localhost:8443/`). `infra/proxy/README.md` lists which files are ours and which come from the image.
 
 ## File storage over HTTPS
 
@@ -65,12 +66,52 @@ Recommendation: serve the bucket on the same origin at `/files/*` and presign UR
 | B. Separate port, e.g. `https://<domain>:9443` | Second TLS listener → MinIO | Clean separation | Second self-signed warning the evaluator must also accept, or uploads fail silently; CORS needed |
 | C. Upload through the API | Browser posts multipart to `/api/media/...`; API streams to MinIO | Server sees the bytes (real size, type, duration checks) | 50 MB requests through the API, more backend work |
 
-**Required with option A:**
+Option A is implemented in INF-04 (2026-11-09).
 
-- The worker must download videos with the internal MinIO client (`minio:9000`), not through the external presigned URL: inside a container `https://localhost` is the container itself. The reference downloads via the external URL (`moderation_task.py`), so this is a backend card (BE-29).
-- `minio-init` creates the bucket and keeps it private; all access goes through presigned URLs (GET 5 min, PUT 15 min).
-- On `confirm`, the API calls `stat_object` to check the file exists and its real size.
-- Avatars need a stable read path: either short-lived presigned GET URLs returned in API responses, or a public-read prefix `files/avatars/*` (no secrets in avatars). byul-byul picks one with Khalil (Tech Lead); BE-08 returns `avatar_url` and `logo_url`.
+**Request path.** The browser sends `PUT https://localhost/files/<key>?X-Amz-…`; the proxy's `location /files/` passes it to `minio:9000` with the URI exactly as sent: no prefix strip, no rewrite, no decoding. MinIO uses path-style addressing, where the first path segment is the bucket, so the bucket is named `files` and the route prefix and the bucket name are the same thing. `MINIO_DOMAIN` stays unset (no virtual-host style). Changing `MINIO_BUCKET` therefore also needs a new proxy route; `.env.example` says to keep it `files`.
+
+**Host header.** A presigned URL signs the `host` header (`X-Amz-SignedHeaders=host`), and MinIO recomputes the signature from the Host it receives. The proxy sets `Host $http_host`, the value the browser sent, port included. `$host` would drop a non-default port (`localhost:8443` → `localhost`), and every URL signed for `https://localhost:8443` would fail with `SignatureDoesNotMatch`. So with a non-default `HTTPS_PORT`, `MINIO_EXTERNAL_ENDPOINT` must carry the same port (`https://localhost:8443`); checked with `HTTPS_PORT=8443`.
+
+**No CORS.** The frontend and the files are both on `https://localhost` (same scheme, host and port), so an upload with `fetch` is a same-origin request: no preflight, and the bucket has no CORS configuration.
+
+**Region.** The API signs with `MINIO_REGION=us-east-1`. Without a region, the MinIO Python SDK first asks the endpoint for the bucket region (`GET /files?location=`). For the signing client that endpoint is `https://localhost`, which inside the api container is the container itself, so the call fails and no URL is signed (checked with `minio` 7.2.20). us-east-1 is the region MinIO reports when the server sets none.
+
+**Two clients (contract for BE-07, BE-08, BE-29).** The backend has no storage settings yet; compose already passes these to `api` and `worker` (names as in the reference `minio_client.py`):
+
+| Variable | Value | Set in |
+| --- | --- | --- |
+| `MINIO_ENDPOINT` | `minio:9000` (plain HTTP inside the Docker network) | compose, like the `db` host in `DATABASE_URL` |
+| `MINIO_EXTERNAL_ENDPOINT` | `https://localhost` (with the port when it is not 443) | `.env` |
+| `MINIO_BUCKET` | `files` | `.env` |
+| `MINIO_REGION` | `us-east-1` | `.env` (compose falls back to `us-east-1` for an older `.env`) |
+| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | `.env`; INF-13 replaces them with a dedicated service account read from Vault |
+
+| Client | Built from | Used for |
+| --- | --- | --- |
+| internal | `MINIO_ENDPOINT`, `secure=False` | Everything the server does itself: `stat_object` on `confirm` (real size, file exists), the worker's video download (BE-29; the reference downloads through the external URL, which cannot work from a container), deletes |
+| external | `MINIO_EXTERNAL_ENDPOINT` + `MINIO_REGION`, `secure=True` | Signing only: `presigned_put_object` (15 min), `presigned_get_object` (5 min). It never sends a request |
+
+**Bucket init.** The one-shot `minio-init` service runs `infra/minio/init-bucket.sh` on every `make`:
+
+1. Waits for MinIO with `mc ready` under a 60-second `timeout`; exits 1 if MinIO never comes up.
+2. Creates the bucket with `mc mb --ignore-existing` when it is missing, else logs "already exists".
+3. Replaces the anonymous policy with `mc anonymous set-json`, prints it and exits 0.
+
+- **Image:** the `minio` server image itself, `pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372`, defined once in compose (`x-minio-image`). It ships `/usr/bin/mc` of the same release (checked with `mc --version`) for amd64 and arm64, so there is one image to pin and bump instead of two, and no `minio/*` or `pgsty/mc` image.
+- **Credentials** reach `mc` only through `MC_HOST_wozu` in the container environment: never on a command line, in a config file or in the log. They must be URL-safe; `init-env.sh` generates hex.
+- **Restart and `make`:** `restart: "no"`. `api` depends on it with `condition: service_completed_successfully`. The API hands out URLs for the bucket, so it should start after the bucket exists; and `docker compose up --wait` accepts an exited container only when another service depends on it that way. Without it, `make up` fails with `container wozu-minio-init-1 exited (0)`.
+
+**Read access (proposal to Khalil for BE-08, pending his review of the INF-04 PR).** The bucket is private; the policy grants anonymous `s3:GetObject` on two prefixes only:
+
+| Keys | Anonymous access | How the frontend reads them |
+| --- | --- | --- |
+| `avatars/*`, `logos/*` | Download only: no listing, no upload | Stable URL `https://<host>/files/avatars/<uid>/<uuid>.jpg` in `avatar_url` / `logo_url` |
+| Everything else, e.g. `users/<uid>/intro/<uuid>.mp4` | None | Presigned GET from the API, 5 min |
+| The bucket itself | No listing for anyone (`s3:ListBucket` is not granted) | — |
+
+Every write needs a presigned PUT. Reasons: avatars and logos are shown publicly anyway (profiles, friends lists, job cards); a stable URL lets the browser cache the image and never expires inside an open page; the API does not sign one URL per avatar in every list response. Videos stay private: they are personal data under moderation (privacy policy). The reference already uses the keys `avatars/{uid}/{uuid}.{ext}` and `logos/{cid}/{uuid}.{ext}`, so BE-08 needs no key change; the list is `PUBLIC_PREFIXES` in `init-bucket.sh`. If Khalil prefers signed GETs for avatars too, `PUBLIC_PREFIXES` becomes empty and the bucket is fully private.
+
+**Check:** `make files-check` (`infra/minio/smoke-test.sh`) runs against the running stack: it signs URLs the way the API will (from a container on the compose network, `minio` SDK, the api container's `MINIO_*` values), then from the host over HTTPS with the proxy certificate checks a presigned PUT and GET (200, same content), a tampered signature (403 `SignatureDoesNotMatch`), anonymous GET under `avatars/` (200), anonymous GET of a video, listing and anonymous PUT (403 each). It ends by printing a snippet for the Chrome console with fresh presigned URLs, which shows a same-origin upload from the browser with no CORS error. It needs network access to install the SDK. The script removes its own test objects; the browser check leaves one 5-byte object, `videos/inf04-browser.txt`, which the next run overwrites.
 
 ## Email without a paid service
 
@@ -85,43 +126,43 @@ Add Mailpit and send mail over plain SMTP from the API; the evaluator opens `htt
 
 `make` must take a fresh clone to a running site: it creates `.env` from `.env.example` with random secrets when missing, then builds and starts the stack. The only value a human must add is `OPENAI_API_KEY` (moderation module).
 
-```makefile
-all: env up
+| Target | What it does |
+| --- | --- |
+| `make` (`all`) | `env` + `up` |
+| `make env` | `scripts/init-env.sh`: when `.env` is missing, copies `.env.example` and fills the empty secrets (`JWT_SECRET`, `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) with `openssl rand -hex 32`; prints their names, never the values; never overwrites an existing `.env` |
+| `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait`, which returns once `db`, `redis` and `api` are healthy and `minio-init` has exited 0 |
+| `make down` | stops and removes the containers, keeps volumes |
+| `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
+| `make test` | starts `db` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db` and `redis` running |
+| `make files-check` | smoke test of `/files` against the running stack, ends with a Chrome console snippet (see File storage over HTTPS) |
+| `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
+| `make re` | `fclean` + `all` |
 
-env:
-	@test -f .env || ./scripts/init-env.sh   # copies .env.example, fills SECRET_KEY, DB and MinIO passwords with openssl rand
+`down`, `logs` and `fclean` use `--profile '*'`, so they also reach services that are off by default (`worker`).
 
-up:
-	docker compose up -d --build
+**Test database.** The backend tests delete what they find, so they run only on `POSTGRES_TEST_DB` (`wozu_test`), never on the app database `POSTGRES_DB`. `infra/db/create-test-db.sh` creates it, owned by `POSTGRES_USER`, with PostGIS (the schema has a `geography` column). It runs in the `db` container from two places: the image runs it once when the `db-data` volume is new (mounted as the single file `/docker-entrypoint-initdb.d/20-create-test-db.sh`, after the image's own `10_postgis.sh`), and `make test` runs it on every call (`docker compose exec`), so a volume created before the script gets the database too. It is idempotent, reads the names from the container environment, connects over the local socket (no password) and refuses a name that equals `POSTGRES_DB` or lacks `test` (the fixtures skip such a database). The tables come from the fixtures, which run `alembic` on `TEST_DATABASE_URL`.
 
-down:
-	docker compose down
-
-logs:
-	docker compose logs -f api worker
-
-test:
-	docker compose run --rm api pytest -q
-
-fclean: down
-	docker compose down -v --rmi local
-
-re: fclean all
-```
-
-**`.env.example` additions to the reference file**
+**`.env.example` additions to the reference file** (every variable in `.env.example` has a comment there)
 
 | Variable | Example | Used by |
 | --- | --- | --- |
-| `DOMAIN` | `localhost` | proxy, links |
+| `DOMAIN` | `localhost` | proxy (`server_name`), links |
+| `HTTPS_PORT` / `HTTP_PORT` | `443` / `80` | host ports of the proxy |
 | `FRONTEND_BASE_URL` | `https://localhost` | email links |
-| `MINIO_EXTERNAL_ENDPOINT` | `https://localhost` | presigned URLs |
-| `MINIO_BUCKET` | `files` | api, worker, minio-init |
+| `JWT_SECRET` | generated | api (BE-03 reads this name; the card said `SECRET_KEY`) |
+| `INTERNAL_API_KEY` | generated | api, `/_internal/*` |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `wozu` / generated / `wozu` | db; compose builds `DATABASE_URL` for api and worker from them |
+| `POSTGRES_TEST_DB` | `wozu_test` | db (`infra/db/create-test-db.sh` creates it on a new volume, `make test` when it is missing); compose builds `TEST_DATABASE_URL` for the tests from it |
+| `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | `wozu` / generated | minio, minio-init; api and worker as `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` until INF-13 |
+| `MINIO_EXTERNAL_ENDPOINT` | `https://localhost` | api, worker: presigned URLs (with the port when `HTTPS_PORT` is not 443) |
+| `MINIO_BUCKET` | `files` | api, worker, minio-init; must match the `/files` route |
+| `MINIO_REGION` | `us-east-1` | api, worker: signing without a region lookup |
 | `SMTP_HOST` / `SMTP_PORT` / `MAIL_FROM` | `mailpit` / `1025` / `no-reply@wozu.local` | api |
-| `TEST_DATABASE_URL` | separate database `wozu_test` | tests |
 | `GRAFANA_ADMIN_PASSWORD` | generated | grafana |
 | `OPENAI_API_KEY` | empty, filled by hand | worker |
 | `MODERATION_FAIL_OPEN` | `false` on defense day | worker |
+
+Compose passes each service only the variables it needs (`environment:`), not the whole `.env`.
 
 **Rules:** `.env` and `scripts/*.local` in `.gitignore`; nothing secret in `docker-compose.yml`, images or logs; with the Vault module, secrets move from `.env` to Vault and `.env` keeps only the Vault address and AppRole credentials.
 
@@ -144,6 +185,8 @@ Each checklist mirrors the subject's bullets for that module; every box must be 
 - [ ] Vault in server mode (not dev mode) with file storage; init and unseal by a startup script; unseal keys kept out of Git
 - [ ] API, worker and DB credentials, JWT secret, OpenAI and MinIO keys read from Vault (AppRole or Vault Agent rendering an env file); none left in `.env`
 - [ ] Policies give each service read access only to its own path
+
+For INF-11, from INF-04: presigned uploads must keep working once `MODSEC_RULE_ENGINE=On`. `PUT` stays in `ALLOWED_METHODS` (CRS rule 911100 scores it otherwise) and the upload content types in `ALLOWED_REQUEST_CONTENT_TYPE` (rule 920420); see "For INF-11" in [infra/proxy/README.md](../../infra/proxy/README.md). `/files` keeps its 60 MB body limit (`client_max_body_size 60m`) and `SecRequestBodyLimitAction ProcessPartial`. `make files-check` and the browser snippet must still pass with blocking on.
 
 **M14 — Health checks, status page, backups, disaster recovery (Minor, 1, buffer)**
 

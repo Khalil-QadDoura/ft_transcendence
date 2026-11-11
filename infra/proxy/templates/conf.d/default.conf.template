@@ -12,12 +12,19 @@ map $http_upgrade $connection_upgrade {
     ''      close;
 }
 
+# Host port for HTTPS (compose sets it from HTTPS_PORT in .env). The redirect names it
+# unless it is the default 443; $host never carries a port.
+map "${PUBLIC_HTTPS_PORT}" $https_port_suffix {
+    "443"   "";
+    default ":${PUBLIC_HTTPS_PORT}";
+}
+
 # Plain HTTP only redirects.
 server {
     listen ${PORT} default_server;
     server_name ${SERVER_NAME};
 
-    return 301 https://$host$request_uri;
+    return 301 https://$host$https_port_suffix$request_uri;
 }
 
 server {

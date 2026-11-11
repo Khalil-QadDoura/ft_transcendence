@@ -18,7 +18,7 @@ The image renders every `/etc/nginx/templates/**/*.template` with envsubst into 
 | --- | --- | --- |
 | `templates/conf.d/default.conf.template` | **Ours**, mounted from this folder | Listeners, TLS, routing table |
 | `/etc/nginx/conf/server.{crt,key}` | **Ours**, generated into `certs/`, image default path | Certificate and key |
-| Environment | **Ours**, `proxy.env` | Rule engine mode, OCSP stapling off |
+| Environment | **Ours**, `proxy.env` | Rule engine mode, OCSP stapling off, default HTTPS port for the redirect |
 | `templates/nginx.conf.template` | Image | Loads the ModSecurity module, sets `resolver` from `/etc/resolv.conf` (`127.0.0.11` in Docker) |
 | `templates/conf.d/modsecurity.conf.template` | Image | `modsecurity on` + `modsecurity_rules_file`, at `http` level, so it covers every location |
 | `templates/modsecurity.d/*`, `/opt/owasp-crs` | Image | ModSecurity settings and the CRS rules |
@@ -42,7 +42,7 @@ Upstream names resolve per request, so the proxy starts with any upstream missin
 
 ## Ports
 
-The image runs as the unprivileged `nginx` user (uid 101) and cannot bind below 1024, so it listens on 8080 and 8443 inside the container. The host publishes the ports from infrastructure.md: `80:8080`, `443:8443`. The redirect targets port 443, so a different host port for HTTPS would need a change in the template as well.
+The image runs as the unprivileged `nginx` user (uid 101) and cannot bind below 1024, so it listens on 8080 and 8443 inside the container. The host publishes the ports from infrastructure.md: `80:8080`, `443:8443` by default, or `HTTP_PORT` / `HTTPS_PORT` from `.env`. Compose passes the HTTPS host port to the template as `PUBLIC_HTTPS_PORT`; the redirect adds it to the URL when it is not 443 (`http://localhost:8080/` → `https://localhost:8443/`).
 
 ## Certificate
 
@@ -53,21 +53,11 @@ infra/proxy/scripts/gen-cert.sh --force   # replaces it
 
 Writes `certs/server.crt` and `certs/server.key` (git-ignored): CN `localhost`, SAN `DNS:localhost`, `IP:127.0.0.1`, 825 days. Browsers warn because nothing they trust signed it; the warning is accepted once per browser profile. The key is mode 0644 on purpose: the container reads the bind mount as uid 101, and on Linux a 0600 key owned by the host user fails with "Permission denied".
 
-## Wiring for INF-02
+## In compose
 
-```yaml
-proxy:
-  image: owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210
-  env_file: infra/proxy/proxy.env
-  ports:
-    - "80:8080"
-    - "443:8443"
-  volumes:
-    - ./infra/proxy/templates/conf.d/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
-    - ./infra/proxy/certs:/etc/nginx/conf:ro
-```
+The `proxy` service in the root `docker-compose.yml` (INF-02) mounts the template and `certs/`, reads `proxy.env`, and sets `SERVER_NAME` (from `DOMAIN`) and `PUBLIC_HTTPS_PORT`.
 
-`gen-cert.sh` must run before `docker compose up`; the `make` target is the natural place. Without `certs/server.key` the image tries to generate its own certificate inside the read-only mount, fails with "Read-only file system", and the container exits with code 1.
+`gen-cert.sh` must run before `docker compose up`; `make up` runs it first. Without `certs/server.key` the image tries to generate its own certificate inside the read-only mount, fails with "Read-only file system", and the container exits with code 1.
 
 ## Trying it without the stack
 

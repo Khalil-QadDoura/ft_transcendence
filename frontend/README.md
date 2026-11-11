@@ -46,4 +46,4 @@ FE-03 adds [shared form validation](docs/form-validation.md): per-domain Zod sch
 
 Shell styles are in `@layer base`, below Tailwind utilities, so shared components retain their own sizes, colors and focus styles.
 
-FE-04 connects [auth screens to the FE-20 shared client](docs/auth-screens.md), including persisted refresh, reload restoration, bearer requests and logout revocation. FE-03, FE-20 and FE-21 are merged; FE-04 is stacked on FE-02 #2 until that layout prerequisite lands. Retarget FE-04 to main and recheck before merging.
+FE-04 connects [auth screens to the FE-20 shared client](docs/auth-screens.md), including persisted refresh, reload restoration, bearer requests and logout revocation. FE-02, FE-03, FE-20 and FE-21 are merged. FE-04 targets main and awaits cross-pair review.
