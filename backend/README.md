@@ -19,11 +19,11 @@ app/
   users/         /api/users/me: read, partial update, soft delete (BE-05), plus
                  constants (minimum age, field lengths)
   companies/     CRUD, /companies/me returns 200 null for job seekers (BE-21)
-  realtime/      POST /api/ws/ticket and the WebSocket at /ws (BE-06): one-time tickets,
+  realtime/      POST /api/ws/ticket and the WebSocket at /ws (BE-06, BE-24): one-time tickets,
                  authenticate_ws(), send_to_user() through Redis pub/sub, presence in Redis,
-                 plus constants (ticket lifetime, presence TTL); connection_manager.py is
-                 BE-23's manager.send_to_user(), publishing on the same per-user channel
-  friends/ jobs/ media/ conversations/ applications/ game/
+                 delivered / read frames, plus constants (ticket lifetime, presence TTL)
+  conversations/ direct chats, participants, idempotent messages, edits/deletes, read state (BE-23, BE-24)
+  friends/ jobs/ media/ applications/ game/
                  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
