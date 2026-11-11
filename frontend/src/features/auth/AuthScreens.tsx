@@ -260,6 +260,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             )}
           </div>
         ))}
+        {!signup && (
+          <Link
+            className="inline-block min-h-11 py-3 underline"
+            to="/forgot-password"
+          >
+            {copy.forgotPassword}
+          </Link>
+        )}
         {errors.root?.server && (
           <p className="auth-alert" role="alert">
             {fieldMessage(errors.root.server)}

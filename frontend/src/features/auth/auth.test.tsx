@@ -500,3 +500,14 @@ test("temporary restoration failure preserves the protected route and offers ret
     "Your saved sign-in has been kept",
   );
 });
+
+test("login offers a clickable recovery route without submitting credentials", async () => {
+  const router = await render("/login");
+  const link = container.querySelector<HTMLAnchorElement>(
+    'a[href="/forgot-password"]',
+  )!;
+  expect(link.textContent).toBe("Forgot password?");
+  await act(() => link.click());
+  expect(router.state.location.pathname).toBe("/forgot-password");
+  expect(client.login).not.toHaveBeenCalled();
+});
