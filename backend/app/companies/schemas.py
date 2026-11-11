@@ -105,6 +105,9 @@ class CompanyOut(BaseModel):
     name: str
     description: str | None = None
     logo_object_key: str | None = None
+    # Not a column (BE-08): the public address of the logo, for <img src>, or None without
+    # one. service.to_company_out() fills it in from logo_object_key.
+    logo_url: str | None = None
     status: str
     country: str | None = None
     city: str | None = None

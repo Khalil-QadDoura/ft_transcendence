@@ -6,7 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.companies import repo
 from app.companies.models import Company
-from app.companies.schemas import CompanyCreate, CompanyUpdate
+from app.companies.schemas import CompanyCreate, CompanyOut, CompanyUpdate
+from app.core.storage import Storage, remove_files
+
+
+def to_company_out(storage: Storage, company: Company) -> CompanyOut:
+    """The company we send back, with logo_url (BE-08): storage turns logo_object_key into the
+    logo's public address (making it does not connect to MinIO), or None without a logo."""
+    company_out = CompanyOut.model_validate(company)
+    company_out.logo_url = storage.logo_url(company.logo_object_key)
+    return company_out
 
 
 async def get_my_company(session: AsyncSession, user_id: int) -> Company | None:
@@ -64,12 +73,23 @@ async def patch_my_company(session: AsyncSession, user_id: int, payload: Company
     return await repo.update_company(session, company, update_data)
 
 
-async def delete_my_company(session: AsyncSession, user_id: int) -> None:
-    """Soft-deletes the user's active company. Idempotent if no active company exists."""
-    company = await repo.get_active_by_owner_id(session, user_id)
+async def delete_my_company(session: AsyncSession, storage: Storage, user_id: int) -> None:
+    """Soft-deletes the user's active company. Idempotent if no active company exists.
+
+    The logo cannot just be hidden: anyone who kept its public address could still download
+    it. So the logo is emptied with the soft delete, then its file is deleted at once (BE-08).
+    """
+    # Locked until the commit, as a logo confirm locks it: a confirm that came first has saved
+    # its new logo, which is then the file deleted; one that comes later waits, then finds the
+    # company deleted.
+    company = await repo.get_active_by_owner_id(session, user_id, lock=True)
     if not company:
         return
+    logo_key = company.logo_object_key
+    company.logo_object_key = None  # saved by the soft delete's commit
     await repo.soft_delete(session, company)
+    if logo_key:
+        await remove_files(storage, [logo_key])
 
 
 async def get_active_company_id(session: AsyncSession, user_id: int) -> int:
