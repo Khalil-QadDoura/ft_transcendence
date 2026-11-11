@@ -4,8 +4,9 @@ The files really go up to MinIO with an HTTP PUT, as the browser does, and confi
 there; the moderation task really lands on a Redis queue. The users and the files are made up:
 the "videos" are a few bytes that start like an MP4 file.
 
-These tests use only TEST_* variables, and skip without them. They empty every table, the
-"media-test" bucket and the queue, so use throwaway containers:
+These tests use only TEST_* variables, and skip without them. They empty the users table (and
+every table that points at it), the "media-test" bucket and the queue, so use throwaway
+containers:
     docker run -d --name wozu-test-minio -p 9000:9000 -e MINIO_ROOT_USER=test \\
         -e MINIO_ROOT_PASSWORD=test-secret pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
     docker run -d --name wozu-test-redis -p 6379:6379 redis:7-alpine

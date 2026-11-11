@@ -1,4 +1,5 @@
-"""Database queries of /api/media: the intro_videos table. No HTTP, no rules."""
+"""Database queries of /api/media: the intro_videos table, and for the feed the companies, jobs
+and applications tables. No HTTP, no rules."""
 
 from sqlalchemy import and_, case, exists, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
