@@ -4,7 +4,7 @@
  */
 
 import { apiClient } from "../../api/client";
-import type { JobListResponse, JobSearchFilters } from "./types";
+import type { Job, JobListResponse, JobSearchFilters } from "./types";
 
 /**
  * Fetch open jobs from GET /api/jobs/open with query filters.
@@ -75,6 +75,41 @@ export function calculateDistanceKm(
 
 function toRad(degrees: number): number {
   return (degrees * Math.PI) / 180;
+}
+
+/**
+ * Fetch a single job by id from GET /api/jobs/{id}.
+ */
+export async function fetchJobDetail(id: number | string): Promise<Job> {
+  return apiClient<Job>(`/jobs/${id}`, {
+    method: "GET",
+  });
+}
+
+/**
+ * Record a view for a job: POST /api/jobs/{id}/view (counted once per user per 24h).
+ */
+export async function recordJobView(id: number | string): Promise<void> {
+  try {
+    await apiClient<void>(`/jobs/${id}/view`, {
+      method: "POST",
+    });
+  } catch {
+    // Silently fail view recording without interrupting the user experience
+  }
+}
+
+/**
+ * Apply to a job: POST /api/jobs/{id}/apply with optional cover note (<= 1000 chars).
+ */
+export async function applyToJob(
+  id: number | string,
+  coverNote?: string,
+): Promise<{ id: number; status: string }> {
+  return apiClient<{ id: number; status: string }>(`/jobs/${id}/apply`, {
+    method: "POST",
+    body: coverNote ? { cover_note: coverNote } : {},
+  });
 }
 
 /**
