@@ -91,3 +91,27 @@ test("requests use the active language and respect explicit overrides", async ()
     new Headers(fetchMock.mock.calls[1][1].headers).get("Accept-Language"),
   ).toBe("en");
 });
+
+test("domain copy falls back to English and component labels react to translations", async () => {
+  const { Pagination } = await import("../components/Pagination");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(() =>
+      root.render(
+        <Pagination currentPage={2} totalPages={5} onPageChange={() => {}} />,
+      ),
+    );
+    expect(container.textContent).toContain("Page 2 of 5");
+    i18n.addResource("ar", "screens", "controls.previous", "السابق");
+    await act(() => i18n.changeLanguage("ar"));
+    expect(container.textContent).toContain("السابق");
+    expect(container.textContent).toContain("Page 2 of 5");
+    expect(i18n.t("routes.profile", { ns: "screens" })).toBe("Your story.");
+  } finally {
+    await act(() => root.unmount());
+    i18n.removeResourceBundle("ar", "screens");
+    container.remove();
+  }
+});

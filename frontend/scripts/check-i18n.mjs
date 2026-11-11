@@ -11,6 +11,9 @@ const keys = (value, prefix = "") =>
       ? keys(child, `${prefix}${key}.`)
       : [`${prefix}${key}`],
   );
+const plan = JSON.parse(
+  readFileSync(join(root, "src/i18n/translation-plan.json"), "utf8"),
+);
 let failed = false;
 for (const namespace of readdirSync(join(root, "src/i18n/en")).filter((name) =>
   name.endsWith(".json"),
@@ -19,6 +22,12 @@ for (const namespace of readdirSync(join(root, "src/i18n/en")).filter((name) =>
     JSON.parse(readFileSync(join(root, "src/i18n/en", namespace), "utf8")),
   );
   for (const language of ["ar", "az", "tr", "ru"]) {
+    if (
+      plan.englishFallbackNamespaces[namespace.replace(".json", "")]?.includes(
+        language,
+      )
+    )
+      continue;
     const target = join(root, "src/i18n", language, namespace);
     try {
       const translated = keys(JSON.parse(readFileSync(target, "utf8")));
@@ -35,13 +44,16 @@ for (const namespace of readdirSync(join(root, "src/i18n/en")).filter((name) =>
     }
   }
 }
-// Report existing literals for FE-07. Key parity above is the CI gate; this report is a migration inventory.
+// Gate production JSX text. Dev-only component fixtures and fixed brand names are excluded.
+// Approved legal Markdown and its English copy resource stay unchanged until PO review.
 let literals = 0;
 function scan(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const file = join(dir, entry.name);
-    if (entry.isDirectory()) scan(file);
-    else if (file.endsWith(".tsx") && !file.includes(".test.")) {
+    if (entry.isDirectory()) {
+      if (relative(root, file).replaceAll("\\", "/") !== "src/features/dev")
+        scan(file);
+    } else if (file.endsWith(".tsx") && !file.includes(".test.")) {
       const source = ts.createSourceFile(
         file,
         readFileSync(file, "utf8"),
@@ -51,7 +63,9 @@ function scan(dir) {
       );
       function visit(node) {
         if (
-          (ts.isJsxText(node) && /[\p{L}]/u.test(node.text.trim())) ||
+          (ts.isJsxText(node) &&
+            /[\p{L}]/u.test(node.text.trim()) &&
+            !/^(wozu|WOZU|WOZU ✳)$/.test(node.text.trim())) ||
           (ts.isJsxAttribute(node) &&
             /^(placeholder|title|aria-label|alt)$/.test(
               node.name.getText(source),
@@ -60,10 +74,11 @@ function scan(dir) {
             ts.isStringLiteral(node.initializer))
         ) {
           literals++;
+          failed = true;
           const line =
             source.getLineAndCharacterOfPosition(node.getStart(source)).line +
             1;
-          console.warn(
+          console.error(
             `${relative(root, file)}:${line}: JSX text needs translation: ${node.getText(source).trim().slice(0, 90)}`,
           );
         }
@@ -75,6 +90,6 @@ function scan(dir) {
 }
 scan(join(root, "src"));
 console.log(
-  `Translation keys: ${failed ? "FAIL" : "PASS"}; ${literals} JSX literals flagged for FE-07.`,
+  `Translation keys: ${failed ? "FAIL" : "PASS"}; ${literals} unextracted production JSX literals.`,
 );
 if (failed) process.exitCode = 1;
