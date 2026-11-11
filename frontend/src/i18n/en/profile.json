@@ -36,6 +36,7 @@
   "removePreview": "Cancel photo",
   "photoSaved": "Your photo has been updated.",
   "photoError": "We couldn’t save your photo. Please try again.",
+  "photoInvalid": "This file isn’t a valid JPG, PNG or WebP image. Choose another photo.",
   "photoType": "Choose a JPG, PNG or WebP image.",
   "photoSize": "Choose a non-empty image no larger than 5 MB.",
   "preview": "Preview of your selected photo",

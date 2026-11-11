@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ProfilePage } from "./ProfilePage";
 import { profileApi, type Profile } from "./api";
 import { ApiError } from "../../api/client";
+import { avatarApi } from "./avatar";
 
 const original: Profile = {
   id: 42,
@@ -67,6 +68,52 @@ async function submit() {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 }
+
+test.each([415, 503])(
+  "avatar rejection %s distinguishes invalid bytes from retryable failures",
+  async (status) => {
+    vi.spyOn(profileApi, "get").mockResolvedValue({
+      ...original,
+      avatar_url: "/api/media/avatar/default.svg",
+    });
+    vi.spyOn(avatarApi, "upload").mockRejectedValue(
+      new ApiError(status, String(status), "Rejected"),
+    );
+    const create = vi.fn(() => "blob:preview");
+    const revoke = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: create,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revoke,
+    });
+    await render();
+    const input = container.querySelector<HTMLInputElement>('[type="file"]')!;
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["invalid bytes"], "photo.png", { type: "image/png" })],
+    });
+    await act(async () =>
+      input.dispatchEvent(new Event("change", { bubbles: true })),
+    );
+    expect(container.querySelector(".profile-preview")).not.toBeNull();
+    await act(async () =>
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "Save photo")!
+        .click(),
+    );
+    expect(container.textContent).toContain(
+      status === 415 ? "Choose another photo" : "Please try again",
+    );
+    if (status === 415) {
+      expect(container.querySelector(".profile-preview")).toBeNull();
+      expect(revoke).toHaveBeenCalledWith("blob:preview");
+    } else expect(container.querySelector(".profile-preview")).not.toBeNull();
+    expect(container.textContent).not.toContain("Your photo has been updated");
+  },
+);
 test("incomplete profiles send only changed fields and show success after the response", async () => {
   vi.spyOn(profileApi, "get").mockResolvedValue(original);
   const patch = vi

@@ -66,8 +66,13 @@ function ProfilePhoto({
         reset();
         setSaved(true);
       }
-    } catch {
-      if (!pending.signal.aborted) setError(t("photoError"));
+    } catch (error) {
+      if (!pending.signal.aborted) {
+        if (error instanceof ApiError && error.status === 415) {
+          reset();
+          setError(t("photoInvalid"));
+        } else setError(t("photoError"));
+      }
     } finally {
       if (!pending.signal.aborted) setBusy(false);
     }

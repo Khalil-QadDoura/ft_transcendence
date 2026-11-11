@@ -10,7 +10,7 @@ The saved name and position drive the completeness hint. It describes profile co
 
 The frontend implements the current BE-08 contract: JPG/PNG/WebP, non-empty image up to 5 MiB, revocable local preview, signed URL request, raw PUT with progress, confirm, then refreshed profile. The PUT uses no API bearer header, accepts only same-origin `/files/` URLs, has a timeout and aborts on unmount. Confirmation never runs after a failed PUT. Client checks are usability checks; backend validation remains authoritative.
 
-Current main has no `avatar_url` field or upload endpoints. The page therefore displays a truthful availability message, and does not call missing routes. A present nullable `avatar_url` enables the BE-08 contract. This is a compatibility check, not proof of secure storage. **Do not call FE-09 complete or merge for production until BE-08's public-upload finding is fixed and the full upload journey passes against that backend.** The default initials work meanwhile. Mocked upload tests do not validate MinIO, proxy configuration or server-side image validation.
+BE-08 #27 is now merged on main at `ee32922` and supplies `avatar_url` and the upload endpoints. This branch includes that backend. A present nullable `avatar_url` enables the upload controls; older backends still show an availability message. Confirmation HTTP 415 clears the invalid preview and asks for another JPG, PNG or WebP; network and server errors preserve the selection for retry. Component tests exercise both outcomes. The full browser upload journey through the deployment proxy remains a validation gate; mocked upload tests do not validate MinIO or proxy configuration.
 
 ## Dependency order and localization
 

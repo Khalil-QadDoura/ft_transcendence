@@ -6,6 +6,40 @@ import {
   putAvatar,
   safeUploadUrl,
 } from "./avatar";
+
+test("confirmation preserves the backend 415 for the photo error UI", async () => {
+  vi.stubGlobal("XMLHttpRequest", FakeXHR);
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            object_key: "staging/avatars/42/test.png",
+            put_url: "/files/staging/avatars/42/test.png",
+            max_bytes: avatarLimit,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "Only pictures" }), {
+          status: 415,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+  );
+  const pending = avatarApi.upload(
+    new File(["invalid"], "photo.png", { type: "image/png" }),
+    new AbortController().signal,
+    () => {},
+  );
+  const rejected = expect(pending).rejects.toMatchObject({ status: 415 });
+  await vi.waitFor(() => expect(FakeXHR.last.send).toHaveBeenCalled());
+  FakeXHR.last.onload();
+  await rejected;
+});
 afterEach(() => {
   vi.unstubAllGlobals();
 });
