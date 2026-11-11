@@ -119,3 +119,13 @@ async def use_password_reset_token(
         .values(used_at=func.now())
         .returning(PasswordResetToken)
     )
+
+
+async def close_password_reset_tokens(session: AsyncSession, user_id: int) -> None:
+    """Mark every reset link of the user that still works as used, so an older email cannot
+    change the password again after a change or a reset."""
+    await session.execute(
+        update(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user_id, PasswordResetToken.used_at.is_(None))
+        .values(used_at=func.now())
+    )

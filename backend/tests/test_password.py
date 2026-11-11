@@ -365,3 +365,28 @@ def test_reset_password_allows_5_requests_a_minute_per_ip(client):
     assert response.json() == {
         "error": {"code": "429", "detail": "Rate limit exceeded: 5 per 1 minute"}
     }
+
+
+# --- A change or a reset also closes the reset links that are still open ----------------------
+
+
+def test_a_reset_closes_the_users_other_reset_links(client, ana):
+    older = ask_for_a_reset_link(client)
+    newer = ask_for_a_reset_link(client)
+    assert reset_password(client, newer).status_code == 204
+
+    response = reset_password(client, older, new="someone else's password")
+    assert response.status_code == 400
+    assert response.json() == INVALID_LINK
+    assert sql("SELECT count(*) FROM password_reset_tokens WHERE used_at IS NULL") == [(0,)]
+    assert login(client, password=NEW_PASSWORD).status_code == 200
+
+
+def test_a_password_change_closes_open_reset_links(client, ana):
+    token = ask_for_a_reset_link(client)
+    assert change_password(client, ana["access_token"]).status_code == 204
+
+    response = reset_password(client, token, new="someone else's password")
+    assert response.status_code == 400
+    assert response.json() == INVALID_LINK
+    assert login(client, password=NEW_PASSWORD).status_code == 200

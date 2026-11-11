@@ -191,6 +191,8 @@ async def change_password(session: AsyncSession, user: User, data: ChangePasswor
         raise HTTPException(status_code=400, detail=WRONG_CURRENT_PASSWORD)
     password_hash = await asyncio.to_thread(security.hash_password, data.new_password)
     await repo.set_password(session, user.id, password_hash)
+    # A reset link asked for earlier would otherwise still change the password.
+    await repo.close_password_reset_tokens(session, user.id)
     await session.commit()
 
 
@@ -233,4 +235,6 @@ async def reset_password(session: AsyncSession, data: ResetPasswordIn) -> None:
     if await repo.set_password(session, row.user_id, password_hash) is None:
         # The account was deleted after the email was sent. Nothing is saved (no commit).
         raise HTTPException(status_code=400, detail=INVALID_LINK)
-    await session.commit()  # the link's used_at and the new password, together
+    # The user's other links (from earlier requests) stop working too.
+    await repo.close_password_reset_tokens(session, row.user_id)
+    await session.commit()  # the used links and the new password, together
