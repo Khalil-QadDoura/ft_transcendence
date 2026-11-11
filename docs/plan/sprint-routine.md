@@ -14,9 +14,9 @@ Zayid proposes the following defaults for team confirmation. Times below use Asi
 
 | Routine | Proposed default | Owner / confirmation needed |
 | --- | --- | --- |
-| Weekly sync | Tuesday, 18:30–19:00, after the 18:00 sprint deadline; next proposed session November 17 | Zayid hosts. Team members confirm availability; the existing project group chat is the proposed coordination channel. Its exact name/link, call link and calendar addresses still need confirmation. |
-| Daily update | Monday–Friday by 22:00 in the existing project group chat, using the template below; no routine weekend update | Zayid pins the format after the chat destination is confirmed. Urgent blockers stay on the card and are raised as soon as they occur. |
-| Feedback on these defaults | By Monday, November 16 at 18:00 | Reply on PM-01 or PR #18 with availability, the chat name/link and any alternative time. Zayid records the agreed result, then shares calendar invitations and pins the format. |
+| Weekly sync | Tuesday, 18:30–19:00, after the 18:00 sprint deadline; next proposed session November 17 | Zayid hosts. Team members confirm availability; the team’s WhatsApp group is the confirmed coordination channel (PO review, November 11). The call link and calendar addresses still need confirmation. |
+| Daily update | Monday–Friday by 22:00 in the team’s WhatsApp group, using the template below; no routine weekend update | Zayid pins the format after the team agrees the daily cutoff. Urgent blockers stay on the card and are raised as soon as they occur. |
+| Feedback on these defaults | By Monday, November 16 at 18:00 | Reply on PM-01 or PR #18 with availability and any alternative time. Zayid records the agreed result, then shares calendar invitations and pins the format. |
 
 These are proposals, not confirmed meetings or a posted/pinned update. The next proposed session does not replace any separately agreed Sprint 1 closeout call. Zayid will record team confirmation and invitation links here before checking those acceptance items.
 
@@ -42,7 +42,7 @@ Blocked: CARD-ID — dependency, owner and the decision/help needed (or None)
 | --- | --- | --- |
 | Authorize the GitHub Power-Up repository connection for `Khalil-QadDoura/ft_transcendence` | Khalil (@Khalil-QadDoura), repository admin | Connected repository visible in the Power-Up; Zayid checks that a linked PR shows repository details on its card. |
 | Confirm the recurring slot, call link and calendar recipients | Zayid, with all five team members | Recorded agreement and calendar invitations. |
-| Confirm the project chat destination and daily cutoff, then pin the template | Zayid, with the team | Chat name/link and a link to the pinned update. |
+| Confirm the daily cutoff, then pin the template in the team’s WhatsApp group | Zayid, with the team | Recorded cutoff agreement and a link to the pinned WhatsApp update. |
 | Review the shared API client and auth-screen integration | Ahmad (FE-20) and Zayid (FE-04); Khalil reviews the backend contract | FE-20 [PR #22](https://github.com/Khalil-QadDoura/ft_transcendence/pull/22) and FE-02 [PR #2](https://github.com/Khalil-QadDoura/ft_transcendence/pull/2) are merged. FE-04 [PR #17](https://github.com/Khalil-QadDoura/ft_transcendence/pull/17) integrates the shared client, targets main, and awaits renewed review; its local 127-test suite passed November 11. |
 | Review shared UI primitives | Ahmad (FE-21), cross-pair reviewer | FE-21 [PR #21](https://github.com/Khalil-QadDoura/ft_transcendence/pull/21) is merged; new screens should reuse the shared components. |
 
@@ -54,7 +54,7 @@ BE-02 and corrected BE-03 are merged on main; frontend integration uses the curr
 | --- | --- |
 | GitHub Power-Up enabled and repo linked | Official GitHub Power-Up enabled November 8; PR #18 is attached to PM-01. On November 10 the card still says “See more details when you connect to GitHub”; repository authorization by Khalil remains pending. An attached PR link alone does not complete the connection. |
 | Weekly sync agreed and in every calendar | Concrete Tuesday 18:30 proposal above; team confirmation, call details and calendar invitations pending. |
-| Daily format pinned in the team chat | Template and weekday 22:00 proposal above; exact chat destination, team confirmation and pin link pending. |
+| Daily format pinned in the team chat | Template and weekday 22:00 proposal above; WhatsApp confirmed by the PO on November 11; cutoff agreement and pin evidence pending. |
 | Overview board URL and decisions reconciled | PM-00 plan is merged through PR #12. This PR preserves the INF-01 front-proxy decision, corrects the schedule timezone and links this routine; updated head awaits PO review and merge. |
 | Every member joined Sprint 1 cards | Verified November 8 from live board member badges and card Members sections; all 23 original S1 cards had their owners attached (historical table below). |
 
@@ -70,4 +70,4 @@ BE-02 and corrected BE-03 are merged on main; frontend integration uses the curr
 
 Membership does not establish completion, authorship or review approval. PM-00 stays as the reference card at the top of To Do. DOC-01 and DOC-02 were also visible in Review during the membership audit; they are not included in the original 23-card S1 count.
 
-PM-01 remains In Progress until the repository connection, calendar agreement and pinned daily update are complete.
+PM-01 remains In Progress until the repository connection, calendar agreement and pinned daily update are complete. The communication channel itself is confirmed: the team’s WhatsApp group.
