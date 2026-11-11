@@ -98,13 +98,15 @@ class FeedOut(BaseModel):
 class PictureUploadUrlOut(BaseModel):
     """The answer of avatar/upload-url and company-logo/upload-url (BE-08)."""
 
-    object_key: str  # where the picture will be: avatars/<my id>/<uuid>.png, for example
-    put_url: str  # the browser PUTs the file here, with Content-Type image/png (or jpeg, webp)
+    # Where the browser uploads the picture, in a private folder nobody can download from:
+    # staging/avatars/<my id>/<uuid>.png, for example. confirm publishes a copy elsewhere.
+    object_key: str
+    put_url: str  # the browser PUTs the file here
     expires_sec: int
     max_bytes: int  # so the browser can refuse a picture that is too big before sending it
 
 
 class PictureConfirmIn(BaseModel):
-    """Sent once the PUT has finished: the object_key that upload-url gave."""
+    """Sent once the PUT has finished: the object_key that upload-url gave (staging/...)."""
 
     object_key: str = Field(max_length=500)  # the size of the avatar and logo key columns

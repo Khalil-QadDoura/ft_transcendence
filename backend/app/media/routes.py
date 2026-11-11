@@ -129,7 +129,7 @@ async def get_avatar_upload_url(
     expires_sec: ExpiresSec = UPLOAD_URL_EXPIRES_SEC,
 ) -> PictureUploadUrlOut:
     """Step 1 of 3: a signed link to PUT my new picture (?ext=jpg, png or webp; 415 for
-    anything else) straight into storage, under avatars/<my id>/."""
+    anything else) straight into storage, in my private staging/avatars/<my id>/ folder."""
     return service.create_picture_upload_url(storage, AVATARS_FOLDER, user.id, ext, expires_sec)
 
 
@@ -137,8 +137,8 @@ async def get_avatar_upload_url(
 async def confirm_avatar(
     user: CurrentUser, data: PictureConfirmIn, session: Session, storage: Files
 ) -> None:
-    """Step 3 of 3, after the PUT: check the picture and make it my avatar (the old file is
-    deleted). GET /api/users/me then gives its avatar_url."""
+    """Step 3 of 3, after the PUT: check the picture, publish a copy of it in avatars/ and
+    make it my avatar (the old file is deleted). GET /api/users/me then gives its avatar_url."""
     await service.confirm_avatar(session, storage, user, data.object_key)
 
 
@@ -158,5 +158,6 @@ async def get_logo_upload_url(
 async def confirm_logo(
     user: CurrentUser, data: PictureConfirmIn, session: Session, storage: Files
 ) -> None:
-    """Check the picture and make it my company's logo (the old file is deleted)."""
+    """Check the picture, publish a copy of it in logos/ and make it my company's logo (the
+    old file is deleted)."""
     await service.confirm_logo(session, storage, user, data.object_key)

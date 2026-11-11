@@ -2,6 +2,7 @@
 through the API: the browser sends them straight to MinIO with a signed link, and the API checks
 them there."""
 
+import io
 from datetime import timedelta
 from urllib.parse import urlparse
 
@@ -43,7 +44,8 @@ class Storage:
         self.external = Minio(public.netloc, secure=public.scheme == "https", **keys)
         # 3. Avatars and logos need no signed link at all: anyone may download the files under
         # avatars/ and logos/ (the bucket's anonymous policy, INF-04), at the same address the
-        # signed links use, e.g. https://localhost/files/avatars/12/<uuid>.png.
+        # signed links use, e.g. https://localhost/files/avatars/12/<uuid>.png. Only the
+        # server writes there (put), after checking the picture.
         self.public_base = f"{public.scheme}://{public.netloc}/{self.bucket}"
         self.default_avatar_url = settings.default_avatar_url
 
@@ -86,6 +88,27 @@ class Storage:
     def remove(self, key: str) -> None:
         """Delete the file at this key. A key with no file is not an error."""
         self.internal.remove_object(self.bucket, key)
+
+    def read(self, key: str, max_bytes: int) -> bytes | None:
+        """The stored file, but never more than max_bytes of it: a bigger file is cut there.
+        None if there is no file at this key."""
+        try:
+            response = self.internal.get_object(self.bucket, key)
+        except S3Error as error:
+            if error.code == "NoSuchKey":
+                return None
+            raise
+        try:
+            return response.read(max_bytes)
+        finally:
+            response.close()  # also drops the rest of a file that was cut
+            response.release_conn()
+
+    def put(self, key: str, data: bytes, content_type: str) -> None:
+        """Write a file ourselves, with the Content-Type we choose."""
+        self.internal.put_object(
+            self.bucket, key, io.BytesIO(data), len(data), content_type=content_type
+        )
 
     def first_bytes(self, key: str, count: int) -> bytes:
         """The first bytes of the stored file, without downloading the rest."""

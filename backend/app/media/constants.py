@@ -36,16 +36,21 @@ WAITING_APPLICATION_STATUSES = ("submitted", "viewed")
 
 # The two folders anyone may download from without a signed link (the bucket's anonymous
 # policy, INF-04). An avatar is avatars/<user id>/<uuid>.<ext>, a logo logos/<company id>/...
+# Only the server writes there: no upload link ever points into them.
 AVATARS_FOLDER = "avatars"
 LOGOS_FOLDER = "logos"
-# The picture types we accept: extension -> the Content-Type MinIO stores and sends back.
+# The browser uploads into this private folder instead, e.g. staging/avatars/<user id>/...
+# Nobody can download from it. confirm checks the file there, then the server writes a copy
+# of it under a new name in the public folder.
+STAGING_FOLDER = "staging"
+# The picture types we accept: extension -> the Content-Type the server stores with the public
+# copy, which MinIO sends back to everyone who downloads it.
 PICTURE_TYPES = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+# The name Pillow (the image library) gives each type.
+PICTURE_FORMATS = {"jpg": "JPEG", "png": "PNG", "webp": "WEBP"}
 DEFAULT_PICTURE_EXTENSION = "jpg"
 # Neither the contract nor the reference has a limit; 5 MiB takes any phone photo as it is.
 MAX_PICTURE_BYTES = 5 * 1024 * 1024  # 5 MiB = 5 242 880 bytes
-# How each type's files start, whatever their name says. confirm reads the first 12 bytes.
-JPEG_SIGNATURE = b"\xff\xd8\xff"
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-WEBP_SIGNATURE_RIFF = b"RIFF"  # bytes 0 to 3; bytes 4 to 7 are the size of the file
-WEBP_SIGNATURE_WEBP = b"WEBP"  # bytes 8 to 11
-PICTURE_SIGNATURE_BYTES = 12
+# A small file can still be a huge picture that takes gigabytes of memory to decode (a
+# "decompression bomb"). 25 million pixels is a 24-megapixel camera photo (6000 x 4000).
+MAX_PICTURE_PIXELS = 25_000_000

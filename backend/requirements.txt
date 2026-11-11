@@ -14,3 +14,4 @@ email-validator==2.3.0  # checks email addresses (Pydantic's EmailStr)
 minio==7.2.20  # file storage client (videos), the version INF-04's smoke test uses
 celery[redis]==5.6.3  # background tasks on Redis (video moderation)
 kombu[redis]==5.6.2  # Celery's link to Redis; the 5.6 series that Celery 5.6 came out with
+Pillow==13.0.0  # opens avatars and logos to check that they really are pictures (BE-08)
