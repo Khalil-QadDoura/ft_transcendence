@@ -12,6 +12,8 @@ from PIL import Image
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.deps import unauthorized
+from app.auth.service import INVALID_TOKEN
 from app.companies import service as companies
 from app.companies.models import Company
 from app.core.queue import TaskQueue
@@ -31,6 +33,7 @@ from app.media.constants import (
     MP4_SIGNATURE_START,
     PICTURE_FORMATS,
     PICTURE_TYPES,
+    ROW_LOCK,
     STAGING_FOLDER,
     UUID_PATTERN,
 )
@@ -290,6 +293,22 @@ def create_picture_upload_url(
     )
 
 
+def is_my_staging_key(folder: str, owner_id: int, key: str) -> bool:
+    """True only for a key upload-url could have made for this owner:
+    staging/<folder>/<owner id>/<uuid>.<jpg, png or webp>. fullmatch: the whole key must fit, so
+    a file of another user or company, a public file, or a path trick such as "../" never does."""
+    extensions = "|".join(PICTURE_TYPES)
+    pattern = rf"{STAGING_FOLDER}/{folder}/{owner_id}/{UUID_PATTERN}\.({extensions})"
+    return re.fullmatch(pattern, key) is not None
+
+
+async def discard_upload(storage: Storage, folder: str, owner_id: int, staging_key: str) -> None:
+    """Delete an upload that will never be published. Only one in the owner's own staging
+    folder: the key comes from the request, so it could name anybody's file."""
+    if is_my_staging_key(folder, owner_id, staging_key):
+        await remove_files(storage, [staging_key])
+
+
 def check_picture_file(ext: str, data: bytes) -> None:
     """Refuse the file unless it really is a picture of this type. Pillow recognises the type
     from the first bytes, whatever the file is called, then decodes every pixel: a file that
@@ -317,10 +336,9 @@ async def publish_picture(storage: Storage, folder: str, owner_id: int, staging_
     ext = staging_key.rsplit(".", 1)[-1]
     if ext not in PICTURE_TYPES:
         raise HTTPException(status_code=415, detail=ONLY_PICTURES)
-    # ...and the whole key must be staging/<folder>/<owner id>/<uuid>.<ext>: nobody can confirm
-    # a file of another user or company, a public file, or a path trick such as "../".
-    pattern = rf"{STAGING_FOLDER}/{folder}/{owner_id}/{UUID_PATTERN}\.{ext}"
-    if re.fullmatch(pattern, staging_key) is None:
+    # ...and the whole key one that upload-url made for this owner: nobody can confirm a file of
+    # another user or company, a public file, or a path trick such as "../".
+    if not is_my_staging_key(folder, owner_id, staging_key):
         raise HTTPException(status_code=400, detail=NOT_YOUR_KEY)
 
     # 2. The file in storage itself (stat_object), not what the browser says about it. The
@@ -351,16 +369,28 @@ async def publish_picture(storage: Storage, folder: str, owner_id: int, staging_
     return public_key
 
 
+async def lock_my_account(session: AsyncSession, user: User) -> bool:
+    """Lock my row until the commit (ROW_LOCK), read it again, and say whether my account is
+    still active. The picture confirms and the account deletion all take this lock, so for
+    one account they run one after the other, and the second sees what the first saved:
+    a second confirm of the same upload finds it already gone, a confirm after the deletion
+    finds the account deleted. Like the video limit's lock (repo.lock_user), but refresh also
+    reads the row again (status, avatar_object_key) instead of trusting the earlier read."""
+    await session.refresh(user, with_for_update=ROW_LOCK)
+    return user.status == "active"
+
+
 async def confirm_avatar(
     session: AsyncSession, storage: Storage, user: User, staging_key: str
 ) -> None:
     """Publish the checked picture as my avatar. The file of my old avatar is deleted: its
     public link must not keep working once I have changed my picture."""
-    # Lock my row until the commit (SELECT ... FOR UPDATE): two confirms of mine at the same
-    # time run one after the other, and the second finds the upload already gone. The same
-    # lock as the video limit's (repo.lock_user), but refresh also reads my row again: while
-    # I waited, another confirm may have changed my avatar, whose file I delete below.
-    await session.refresh(user, with_for_update=True)
+    # The sign-in check passed when the request came in, but my account may have been deleted
+    # while this request waited. A deleted account gets nothing published, and the same 401 as
+    # on any request; its upload is deleted, as on any refusal.
+    if not await lock_my_account(session, user):
+        await discard_upload(storage, AVATARS_FOLDER, user.id, staging_key)
+        raise unauthorized(INVALID_TOKEN)
     new_key = await publish_picture(storage, AVATARS_FOLDER, user.id, staging_key)
     old_key = user.avatar_object_key
     user.avatar_object_key = new_key
@@ -390,7 +420,18 @@ async def confirm_logo(
 ) -> None:
     """Publish the checked picture as my company's logo; the file of the old logo is deleted."""
     company = await find_my_company(session, user)
-    await session.refresh(company, with_for_update=True)  # locked, like the avatar's user row
+    # Two locks, always in this order, as the account deletion takes them: my row, then my
+    # company's. (Two requests that each held one and waited for the other would wait forever.)
+    # My account first, like the avatar: deleting my account empties the logo too.
+    if not await lock_my_account(session, user):
+        await discard_upload(storage, LOGOS_FOLDER, company.id, staging_key)
+        raise unauthorized(INVALID_TOKEN)
+    # Then my company's row, read again: DELETE /companies takes this lock too, so a company
+    # deleted while this request waited is seen here, and gets the usual 404.
+    await session.refresh(company, with_for_update=ROW_LOCK)
+    if company.status != "active" or company.owner_user_id != user.id:
+        await discard_upload(storage, LOGOS_FOLDER, company.id, staging_key)
+        raise HTTPException(status_code=404, detail=NO_COMPANY)
     new_key = await publish_picture(storage, LOGOS_FOLDER, company.id, staging_key)
     old_key = company.logo_object_key
     company.logo_object_key = new_key
@@ -402,11 +443,18 @@ async def confirm_logo(
 
 async def forget_pictures(session: AsyncSession, user: User) -> list[str]:
     """For an account being deleted: empty its avatar and its company's logo (saved with the
-    caller's commit). Returns the keys of their files, for remove_files once that is saved."""
+    caller's commit). Returns the keys of their files, for remove_files once that is saved.
+
+    It locks my row, then my company's, until that commit: the locks of the picture confirms,
+    in the same order. Each row is read again before its key: a confirm that came first has
+    saved its new picture, which is then the file deleted; one that comes later waits, then
+    finds my account deleted and is refused."""
+    await session.refresh(user, with_for_update=ROW_LOCK)  # the lock of lock_my_account
     keys = [user.avatar_object_key]
     user.avatar_object_key = None
     company = await companies.get_my_company(session, user.id)
     if company is not None:
+        await session.refresh(company, with_for_update=ROW_LOCK)
         # Nobody can change or remove this logo any more once its only owner is gone.
         keys.append(company.logo_object_key)
         company.logo_object_key = None

@@ -53,6 +53,13 @@ PICTURE_FORMATS = {"jpg": "JPEG", "png": "PNG", "webp": "WEBP"}
 DEFAULT_PICTURE_EXTENSION = "jpg"
 # Neither the contract nor the reference has a limit; 5 MiB takes any phone photo as it is.
 MAX_PICTURE_BYTES = 5 * 1024 * 1024  # 5 MiB = 5 242 880 bytes
+# The row lock that a picture confirm and the deletion of its account or company take
+# (SQLAlchemy's name for PostgreSQL's SELECT ... FOR NO KEY UPDATE). Like FOR UPDATE, two
+# requests cannot hold it on the same row at once, but it still lets PostgreSQL check that
+# other rows point at a real row (a foreign key). With FOR UPDATE, DELETE /companies, whose
+# second UPDATE of the company has PostgreSQL check that its users exist, and a logo confirm
+# holding the owner's row would each wait for the other forever (a deadlock).
+ROW_LOCK = {"key_share": True}
 # A small file can still be a huge picture that takes gigabytes of memory to decode (a
 # "decompression bomb"). 25 million pixels is a 24-megapixel camera photo (6000 x 4000).
 MAX_PICTURE_PIXELS = 25_000_000

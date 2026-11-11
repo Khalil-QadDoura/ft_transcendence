@@ -13,12 +13,14 @@ docstring shows how to start the containers; Redis is not needed here). They emp
 table (and every table that points at it) and the "pictures-test" bucket.
 """
 
+import asyncio
 import io
 import json
 import logging
 import os
 import re
 import socket
+import threading
 import time
 import zlib
 from collections.abc import Iterator
@@ -36,9 +38,11 @@ from minio import Minio
 from PIL import Image
 
 from app.auth import security
+from app.companies import repo as companies_repo
 from app.core.config import Settings
 from app.core.logging import json_handler
 from app.core.storage import Storage
+from app.media import service as media_service
 
 TEST_MINIO_ENDPOINT = os.environ.get("TEST_MINIO_ENDPOINT", "")  # host:port, plain HTTP
 TEST_MINIO_ACCESS_KEY = os.environ.get("TEST_MINIO_ACCESS_KEY", "")
@@ -857,6 +861,223 @@ def test_deleting_an_account_with_no_pictures_touches_no_file(client, ana, ben):
     assert client.delete("/api/users/me", headers=ana.headers).status_code == 204
     assert sql("SELECT status FROM users WHERE id = :id", id=ana.id) == [("deleted",)]
     assert is_stored(bens_avatar)
+
+
+# --- A confirm and a deletion at the same time ----------------------------------------------
+# Two requests of the same person, each with its own database session, through the real
+# routes. A Pause holds one of them at a chosen line while the other one runs, so the two
+# always meet in the same order.
+
+DELETE_ACCOUNT = "/api/users/me"
+DELETE_COMPANY = "/api/companies"
+RACES = [  # (picture, deletion): the avatar goes with the account; the logo with either
+    ("avatar", DELETE_ACCOUNT),
+    ("company-logo", DELETE_ACCOUNT),
+    ("company-logo", DELETE_COMPANY),
+]
+# What a confirm gets once the deletion is saved: a deleted account gets the 401 of any
+# request, a deleted company the 404 of a user without one.
+REFUSED = {
+    DELETE_ACCOUNT: (401, error(401, "Invalid or expired token")),
+    DELETE_COMPANY: (404, NO_COMPANY),
+}
+
+
+class Pause:
+    """Holds a request at one point of the code until the test says go_on. The request waits in
+    a worker thread, so the app goes on serving the other request meanwhile."""
+
+    def __init__(self):
+        self.reached = threading.Event()  # set by the request when it gets to the pause
+        self.go_on = threading.Event()  # set by the test
+
+    async def wait_here(self) -> None:
+        self.reached.set()
+        assert await asyncio.to_thread(self.go_on.wait, 10), "the test never said go on"
+
+    def before(self, function):
+        """function, waiting at this pause before it starts."""
+
+        async def paused(*args, **kwargs):
+            await self.wait_here()
+            return await function(*args, **kwargs)
+
+        return paused
+
+    def after(self, function):
+        """function, waiting at this pause once it has run."""
+
+        async def paused(*args, **kwargs):
+            result = await function(*args, **kwargs)
+            await self.wait_here()
+            return result
+
+        return paused
+
+
+def a_request_waits_for_a_lock() -> bool:
+    """True as soon as one of the app's database connections waits for a row lock
+    (pg_stat_activity shows what each connection is doing); False if none does within 5 s."""
+    for _ in range(100):
+        [(waiting,)] = sql(
+            "SELECT count(*) FROM pg_stat_activity"
+            " WHERE datname = current_database() AND wait_event_type = 'Lock'"
+        )
+        if waiting:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def run_while_paused(pause: Pause, first, second, second_waits: bool) -> tuple:
+    """Start the request `first` and hold it at the pause; meanwhile send `second`. With
+    second_waits, check that second is stuck at a lock first holds, then let first go on;
+    without, let second finish first. Returns both answers: (first's, second's)."""
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        try:
+            first_answer = threads.submit(first)
+            assert pause.reached.wait(10), "the first request never reached the pause"
+            second_answer = threads.submit(second)
+            if second_waits:
+                assert a_request_waits_for_a_lock(), "the second request did not wait"
+            else:
+                second_answer.result(timeout=20)
+        finally:
+            pause.go_on.set()
+        return first_answer.result(timeout=20), second_answer.result(timeout=20)
+
+
+def record_published_keys(app) -> list[str]:
+    """From now on, the key of every file the server publishes (Storage.put) goes in this list."""
+    published = []
+    put = app.state.storage.put
+
+    def put_and_record(key: str, data: bytes, content_type: str) -> None:
+        published.append(key)
+        put(key, data, content_type)
+
+    app.state.storage.put = put_and_record
+    return published
+
+
+def start_with_a_picture(client, account: Account, kind: str) -> tuple[str, str]:
+    """A first picture of this kind, published (a logo for a new company of the account).
+    Returns the public folder of the account's pictures, e.g. "avatars/1/", and its key."""
+    folder = f"avatars/{account.id}/"
+    if kind == "company-logo":
+        folder = f"logos/{make_company(account)}/"
+    return folder, publish(client, account, kind)
+
+
+def assert_no_picture_is_left(account: Account, folder: str, old_key: str) -> None:
+    """After the deletion: no picture key in the database for the account (avatar, logo), no
+    file in its public folder or its staging folder, and the old picture downloads no more."""
+    keys = sql(
+        "SELECT avatar_object_key FROM users WHERE id = :u"
+        " UNION ALL SELECT logo_object_key FROM companies WHERE owner_user_id = :u",
+        u=account.id,
+    )
+    assert [key for (key,) in keys if key] == []
+    assert stored_keys(folder) == []
+    assert stored_keys(f"staging/{folder}") == []
+    assert httpx2.get(public_address(old_key)).status_code == 404  # no login
+
+
+@pytest.mark.parametrize(("kind", "deletion"), RACES)
+def test_a_confirm_that_waited_while_the_owner_was_deleted_publishes_nothing(
+    app, client, ana, kind, deletion, monkeypatch
+):
+    folder, old_key = start_with_a_picture(client, ana, kind)
+    staging_key = upload(client, ana, kind)
+    published = record_published_keys(app)
+    # The confirm has passed the sign-in check (and found my company), not taken its lock yet.
+    pause = Pause()
+    monkeypatch.setattr(
+        media_service, "lock_my_account", pause.before(media_service.lock_my_account)
+    )
+    confirmed, deleted = run_while_paused(
+        pause,
+        lambda: confirm(client, ana, staging_key, kind),
+        lambda: client.delete(deletion, headers=ana.headers),
+        second_waits=False,
+    )
+    assert deleted.status_code == 204
+    # Once it has the lock, the confirm reads my row (or my company's) again: deleted.
+    assert (confirmed.status_code, confirmed.json()) == REFUSED[deletion]
+    assert published == []
+    assert_no_picture_is_left(ana, folder, old_key)
+
+
+def pause_the_deletion_after_its_lock(monkeypatch, deletion: str) -> Pause:
+    """Hold the deletion while it has locked the rows, before it saves (commit)."""
+    pause = Pause()
+    if deletion == DELETE_ACCOUNT:  # forget_pictures has locked my row and my company's
+        monkeypatch.setattr(
+            media_service, "forget_pictures", pause.after(media_service.forget_pictures)
+        )
+    else:  # delete_my_company has locked the company's row; soft_delete then saves
+        monkeypatch.setattr(companies_repo, "soft_delete", pause.before(companies_repo.soft_delete))
+    return pause
+
+
+@pytest.mark.parametrize(("kind", "deletion"), RACES)
+def test_a_confirm_during_a_deletion_waits_for_it_then_publishes_nothing(
+    app, client, ana, kind, deletion, monkeypatch
+):
+    folder, old_key = start_with_a_picture(client, ana, kind)
+    staging_key = upload(client, ana, kind)
+    published = record_published_keys(app)
+    deleted, confirmed = run_while_paused(
+        pause_the_deletion_after_its_lock(monkeypatch, deletion),
+        lambda: client.delete(deletion, headers=ana.headers),
+        lambda: confirm(client, ana, staging_key, kind),
+        second_waits=True,  # the confirm waits at the lock the deletion holds
+    )
+    assert deleted.status_code == 204
+    assert (confirmed.status_code, confirmed.json()) == REFUSED[deletion]
+    assert published == []
+    assert_no_picture_is_left(ana, folder, old_key)
+
+
+@pytest.mark.parametrize(("kind", "deletion"), RACES)
+def test_a_deletion_during_a_confirm_waits_for_it_then_deletes_the_new_picture(
+    app, client, ana, kind, deletion, monkeypatch
+):
+    folder, old_key = start_with_a_picture(client, ana, kind)
+    staging_key = upload(client, ana, kind)
+    published = record_published_keys(app)
+    # The confirm holds its locks, and is about to publish the new picture.
+    pause = Pause()
+    monkeypatch.setattr(
+        media_service, "publish_picture", pause.before(media_service.publish_picture)
+    )
+    confirmed, deleted = run_while_paused(
+        pause,
+        lambda: confirm(client, ana, staging_key, kind),
+        lambda: client.delete(deletion, headers=ana.headers),
+        second_waits=True,  # the deletion waits at the lock the confirm holds
+    )
+    assert (confirmed.status_code, deleted.status_code) == (204, 204)
+    # The deletion read the key again once it had the lock: the new picture's, not the old
+    # one's. So it deleted the new file, which downloads no more.
+    [new_key] = published
+    assert httpx2.get(public_address(new_key)).status_code == 404
+    assert_no_picture_is_left(ana, folder, old_key)
+
+
+def test_deleting_my_account_while_my_company_is_being_deleted_works(client, ana, monkeypatch):
+    folder, old_key = start_with_a_picture(client, ana, "company-logo")
+    # The company deletion holds the company's lock; the account deletion takes my row's lock,
+    # then waits for the company's. The company deletion then updates the company a second
+    # time, which has PostgreSQL check its owner exists: with FOR UPDATE on my row, a deadlock.
+    company_deleted, account_deleted = run_while_paused(
+        pause_the_deletion_after_its_lock(monkeypatch, DELETE_COMPANY),
+        lambda: client.delete(DELETE_COMPANY, headers=ana.headers),
+        lambda: client.delete(DELETE_ACCOUNT, headers=ana.headers),
+        second_waits=True,
+    )
+    assert (company_deleted.status_code, account_deleted.status_code) == (204, 204)
+    assert_no_picture_is_left(ana, folder, old_key)
 
 
 # --- Routes that need no service -----------------------------------------------------------

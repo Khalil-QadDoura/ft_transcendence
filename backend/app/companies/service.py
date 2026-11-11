@@ -79,7 +79,10 @@ async def delete_my_company(session: AsyncSession, storage: Storage, user_id: in
     The logo cannot just be hidden: anyone who kept its public address could still download
     it. So the logo is emptied with the soft delete, then its file is deleted at once (BE-08).
     """
-    company = await repo.get_active_by_owner_id(session, user_id)
+    # Locked until the commit, as a logo confirm locks it: a confirm that came first has saved
+    # its new logo, which is then the file deleted; one that comes later waits, then finds the
+    # company deleted.
+    company = await repo.get_active_by_owner_id(session, user_id, lock=True)
     if not company:
         return
     logo_key = company.logo_object_key
