@@ -15,6 +15,7 @@ containers:
         TEST_DATABASE_URL=... pytest tests/test_media.py
 """
 
+import asyncio
 import io
 import json
 import logging
@@ -43,6 +44,7 @@ from app.core.config import Settings
 from app.core.logging import json_handler
 from app.core.queue import MODERATION_TASK
 from app.core.storage import Storage, get_storage
+from app.media import repo
 from app.media.constants import MAX_SIZE_BYTES
 
 TEST_MINIO_ENDPOINT = os.environ.get("TEST_MINIO_ENDPOINT", "")  # host:port, plain HTTP
@@ -440,18 +442,28 @@ class StorageForTwo:
         return MP4_START[:count]
 
 
-def test_two_confirms_at_the_same_time_cannot_make_a_fourth_video(client, ana):
+def test_two_confirms_at_the_same_time_cannot_make_a_fourth_video(client, ana, monkeypatch):
     new_video(client, ana)
     new_video(client, ana)
     take_queued_tasks()
     keys = [ask_upload_url(client, ana).json()["object_key"] for _ in range(2)]
     storage = StorageForTwo()
     client.app.dependency_overrides[get_storage] = lambda: storage
+    count_videos = repo.count_active_videos
+
+    async def count_then_pause(session, user_id: int) -> int:
+        # A slow moment between counting and saving. Without the lock, the other confirm
+        # counts during it and sees 2 as well; with the lock, it is still waiting for it.
+        count = await count_videos(session, user_id)
+        await asyncio.sleep(0.5)
+        return count
+
+    monkeypatch.setattr(repo, "count_active_videos", count_then_pause)
     # Two requests at once, from two threads: the API serves them side by side.
     with ThreadPoolExecutor(max_workers=2) as threads:
         answers = list(threads.map(lambda key: confirm(client, ana, key), keys))
-    # Both counted 2 before either saved, so both were saved (4 videos) before the lock.
-    # Now the second waits for the first, counts 3 and is refused.
+    # Without the lock both counted 2 and both were saved: 4 videos. With it, the second
+    # waits until the first is saved, counts 3 and is refused.
     assert sorted(answer.status_code for answer in answers) == [201, 409]
     assert sorted(lifecycles(ana.id).values()) == ["loaded", "loaded", "loaded"]
     [saved] = [answer.json()["id"] for answer in answers if answer.status_code == 201]
