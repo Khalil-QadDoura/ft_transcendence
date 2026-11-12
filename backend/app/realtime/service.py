@@ -4,6 +4,7 @@ import asyncio
 import json
 import secrets
 import uuid
+from collections.abc import Sequence
 from contextlib import suppress
 from typing import Any
 
@@ -157,4 +158,20 @@ async def tell_friends(app: FastAPI, user_id: int, is_online: bool) -> None:
 async def is_online(redis: Redis, user_id: int) -> bool:
     """Whether the user has a socket open right now, on any API process. For the is_online
     field of the friends list and the public profile (BE-22)."""
-    return await repo.count_live_sockets(redis, user_id) > 0
+    try:
+        return await repo.count_live_sockets(redis, user_id) > 0
+    except RedisError:
+        log.warning("presence lookup failed", user_id=user_id, exc_info=True)
+        return False
+
+
+async def online_user_ids(redis: Redis, user_ids: Sequence[int]) -> set[int]:
+    """Return the subset of user_ids currently online via one Redis pipeline (BE-22)."""
+    if not user_ids:
+        return set()
+    try:
+        counts = await repo.count_live_sockets_many(redis, user_ids)
+    except RedisError:
+        log.warning("batch presence lookup failed", count=len(user_ids), exc_info=True)
+        return set()
+    return {uid for uid, live in counts.items() if live > 0}
