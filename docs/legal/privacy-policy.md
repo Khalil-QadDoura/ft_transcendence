@@ -86,7 +86,7 @@ We do not use your data for advertising. We do not make decisions about you that
 - **People you chat with:** the messages you send them.
 - **Players in your game room:** your anonymous label and your game messages. They do not see your name or profile. After the game, scores and which labels were bots are shown to the room.
 
-Video files are not public links. The service shows them through short-lived links that expire after a few minutes.
+Avatars and company logos have stable public links: anyone who has the link can download the image without signing in. The storage cannot be listed, so nobody can browse it to find other images. Video files are private. The service shows them only through short-lived links that expire: a link to watch a video works for 5 minutes by default and never for longer than one hour.
 
 ## 5. Third parties
 
