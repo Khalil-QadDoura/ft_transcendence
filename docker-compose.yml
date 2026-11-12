@@ -32,11 +32,16 @@ x-backend-env: &backend-env
   MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
   MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
 
+# Every image is pinned by tag and by the digest of its multi-arch index (amd64 + arm64), so
+# Apple Silicon laptops and the amd64 CI runner pull the same build; `make images-check`
+# fails on an image or Dockerfile FROM without a digest (INF-07).
+# Redis 7.4.12, the build `redis:7-alpine` pointed to on 2026-11-12; redis and redis-test
+# share it.
+x-redis-image: &redis-image redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+
 # The official minio/minio and minio/mc images left Docker Hub on 2025-10-23; pgsty/minio
 # rebuilds the upstream releases (amd64 + arm64) and ships mc too, so the server and
-# minio-init share one image. Pinned by tag and digest.
-x-redis-image: &redis-image redis:7-alpine
-
+# minio-init share one image.
 x-minio-image: &minio-image pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
 
 services:
@@ -109,7 +114,8 @@ services:
 
   # PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, built for amd64 and arm64 by
   # one of its maintainers (every postgis/postgis tag is amd64 only), so Apple Silicon runs it
-  # natively. Pinned by tag and the digest of the multi-arch index.
+  # natively. Pinned by tag and the digest of the multi-arch index. 15-3.4 is a frozen build
+  # (PostgreSQL 15.8); staying on it is deliberate (byul-byul, 2026-11-12): CI's backend job uses the same digest (#39).
   # On a new volume the image runs its own 10_postgis.sh, then our script, which adds the
   # test database (`make test` runs the same script for an older volume). Only the one file
   # is mounted: a mounted directory would hide 10_postgis.sh.
@@ -188,7 +194,7 @@ services:
 
   # Catches every outgoing email. SMTP on mailpit:1025, web inbox at /mail via the proxy.
   mailpit:
-    image: axllent/mailpit:v1.33.1
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
     environment:
       MP_WEBROOT: /mail/
     restart: unless-stopped
