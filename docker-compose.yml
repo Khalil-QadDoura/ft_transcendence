@@ -99,7 +99,9 @@ services:
         condition: service_healthy
     healthcheck:
       <<: *healthcheck
-      test: ["CMD", "curl", "-fsk", "-o", "/dev/null", "-A", "healthcheck", "https://127.0.0.1:8443/healthz"]
+      # Host: localhost, because CRS rule 920350 logs every request whose Host is a numeric IP
+      # (a 1.5 kB audit entry per check, found on INF-07).
+      test: ["CMD", "curl", "-fsk", "-o", "/dev/null", "-A", "healthcheck", "-H", "Host: localhost", "https://127.0.0.1:8443/healthz"]
     restart: unless-stopped
     logging: *logging
 

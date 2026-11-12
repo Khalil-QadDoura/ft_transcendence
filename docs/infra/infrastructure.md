@@ -83,7 +83,7 @@ The runtime image is 70 % smaller than the reference; the slimming came with BE-
 
 | Service | Check | What a pass shows | Waits for (`depends_on`) |
 | --- | --- | --- | --- |
-| `proxy` | `curl -fsk https://127.0.0.1:8443/healthz` (the image's own location, no access log) | nginx runs with our config, ModSecurity loaded and the certificate served over TLS. The image's built-in check uses `curl` without `-f`, which also passes on a 404 | `frontend`, `api`, `minio`, `mailpit`: healthy |
+| `proxy` | `curl -fsk -H 'Host: localhost' https://127.0.0.1:8443/healthz` (the image's own location, no access log) | nginx runs with our config, ModSecurity loaded and the certificate served over TLS. The image's built-in check uses `curl` without `-f`, which also passes on a 404. The `Host` header matters: with the bare IP, CRS rule 920350 writes a 1.5 kB audit entry per check (about 5 MB a day) | `frontend`, `api`, `minio`, `mailpit`: healthy |
 | `frontend` | `curl -fs http://127.0.0.1/healthz`: `location = /healthz` in `infra/frontend/default.conf` serves `index.html`, no access log | nginx serves the built app | — |
 | `api` | Python `urllib` GET `http://127.0.0.1:8000/api/health`, 200 | migrations ran (`alembic upgrade head` precedes uvicorn) and the app answers | `db`, `redis`: healthy; `minio-init`: completed successfully |
 | `db` | `pg_isready -h 127.0.0.1 -U $POSTGRES_USER -d $POSTGRES_DB` | the server accepts TCP connections. Over TCP because while the image initialises a new volume it runs a temporary server on the Unix socket only | — |
