@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-11-08
+Last updated: 2026-11-11
 
 This policy explains what personal data WOZU Web collects, why, who can see it, how long we keep it and what you can do about it. We wrote it for this service, in plain words. If something is unclear, write to us: burhan.hajili@gmail.com.
 
