@@ -64,3 +64,22 @@
     padding: 1.25rem;
   }
 }
+
+.friends-grid {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1rem;
+  margin-block: 2rem;
+}
+.friend-card,
+.friends-empty {
+  padding: 1.5rem;
+  border-radius: 1.5rem;
+  background: #f4f4e9;
+  overflow-wrap: anywhere;
+}
+.friends-empty {
+  margin-block: 2rem;
+}
