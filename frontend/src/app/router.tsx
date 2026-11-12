@@ -5,7 +5,6 @@ import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
-import { VideoResumePage } from "../features/media/VideoResumePage";
 function ComingSoon({ title }: { title: string }) {
   return (
     <section className="empty-page">
