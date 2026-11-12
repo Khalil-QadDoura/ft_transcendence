@@ -1,3 +1,4 @@
+import { useText } from "../i18n/useText";
 import { createContext, useContext } from "react";
 import {
   Navigate,
@@ -30,9 +31,11 @@ export function safeNext(value: string | null): string {
     : url.pathname + url.search + url.hash;
 }
 export function RequireSession() {
+  const { t } = useText();
   const session = useContext(SessionContext);
   const { pathname, search, hash } = useLocation();
-  if (session === "loading") return <p role="status">Checking your session…</p>;
+  if (session === "loading")
+    return <p role="status">{t("session.checkingYourSession")}</p>;
   return session === "authenticated" ? (
     <Outlet />
   ) : (
@@ -43,9 +46,11 @@ export function RequireSession() {
   );
 }
 export function GuestOnly() {
+  const { t } = useText();
   const session = useContext(SessionContext);
   const [params] = useSearchParams();
-  if (session === "loading") return <p role="status">Checking your session…</p>;
+  if (session === "loading")
+    return <p role="status">{t("session.checkingYourSession")}</p>;
   return session === "authenticated" ? (
     <Navigate replace to={safeNext(params.get("next"))} />
   ) : (
