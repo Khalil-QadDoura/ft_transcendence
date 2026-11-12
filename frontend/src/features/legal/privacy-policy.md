@@ -1,12 +1,12 @@
 # Privacy Policy
 
-Last updated: 2026-11-08
+Last updated: 2026-11-11
 
 This policy explains what personal data WOZU Web collects, why, who can see it, how long we keep it and what you can do about it. We wrote it for this service, in plain words. If something is unclear, write to us: burhan.hajili@gmail.com.
 
 ## 1. Who we are
 
-WOZU Web is a student project of five students of 42 Abu Dhabi: Burhan Hajili (bhajili), Khalil Kaddoura (kqaddour), Nader Khalil (nakhalil), Zayid Elkahir (zsid-ele) and Ahmad Radwan (aradwan). It is not a commercial service and there is no company behind it. The team is the operator of the service and is responsible for your data.
+WOZU Web is a student project of five students of 42 Abu Dhabi: Burhan Hajili (bhajili), Khalil Kaddoura (kqaddour), Nader Khalil (nakhalil), Zayid Elkhair (zsid-ele) and Ahmad Radwan (aradwan). It is not a commercial service and there is no company behind it. The team is the operator of the service and is responsible for your data.
 
 WOZU Web is a job platform. Candidates apply with a short video resume instead of a CV, chat with employers, and can play a mini-game called Turing Duel.
 
@@ -86,7 +86,7 @@ We do not use your data for advertising. We do not make decisions about you that
 - **People you chat with:** the messages you send them.
 - **Players in your game room:** your anonymous label and your game messages. They do not see your name or profile. After the game, scores and which labels were bots are shown to the room.
 
-Video files are not public links. The service shows them through short-lived links that expire after a few minutes.
+Avatars and company logos have stable public links: anyone who has the link can download the image without signing in. The storage cannot be listed, so nobody can browse it to find other images. Video files are private. The service shows them only through short-lived links that expire: a link to watch a video works for 5 minutes by default and never for longer than one hour.
 
 ## 5. Third parties
 
