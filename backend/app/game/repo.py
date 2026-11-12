@@ -74,7 +74,11 @@ async def get_user_active_membership(
 
 
 async def find_oldest_open_waiting_room(session: AsyncSession, now: datetime) -> GameRoom | None:
-    """Lock and return the oldest unexpired waiting room with fewer than MAX_PARTICIPANTS seats."""
+    """Return the oldest unexpired waiting room with fewer than MAX_PARTICIPANTS seats.
+
+    Note: callers acquire ``room_lock`` BEFORE ``get_room_for_update`` so Redis and Postgres row
+    locks are always taken in the same order across endpoints and background ticks.
+    """
     participant_count = (
         select(func.count(GameParticipant.id))
         .where(GameParticipant.room_id == GameRoom.id)
@@ -90,7 +94,6 @@ async def find_oldest_open_waiting_room(session: AsyncSession, now: datetime) ->
         )
         .order_by(GameRoom.created_at.asc(), GameRoom.id.asc())
         .limit(1)
-        .with_for_update()
     )
     return await session.scalar(stmt)
 
