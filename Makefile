@@ -34,8 +34,9 @@ down:
 logs:
 	-$(COMPOSE_ALL) logs -f --tail=100 $(s)
 
-# Backend: ruff + pytest in the api image, with the dev tools installed into a throwaway
-# container and the code mounted read-only. The tests get only the test database: db starts
+# Backend: ruff + pytest in a throwaway api-test container (profile test): the test stage of
+# backend/Dockerfile, which is the api runtime image plus requirements-dev.txt, run as the same
+# non-root user, with the code mounted read-only. The tests get only the test database: db starts
 # first (also from a stopped stack), the script that runs on a new volume creates the test
 # database when it is missing, and pytest sees DATABASE_URL = TEST_DATABASE_URL, as in CI.
 # Redis: the tests get their own server, redis-test (profile test), as CI gets a Redis service
@@ -51,11 +52,10 @@ logs:
 test: env
 	$(COMPOSE) --profile test up -d --wait db redis-test minio
 	$(COMPOSE) exec -T db /docker-entrypoint-initdb.d/20-create-test-db.sh
-	$(COMPOSE) run --rm --no-deps --build --user root -v $(CURDIR)/backend:/src:ro -w /src \
-		-e PIP_ROOT_USER_ACTION=ignore -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+	$(COMPOSE) --profile test run --rm --no-deps --build -v $(CURDIR)/backend:/src:ro -w /src \
 		-e TEST_REDIS_URL=redis://redis-test:6379/0 -e REDIS_URL=redis://redis-test:6379/0 \
-		-e TEST_MINIO_ENDPOINT=minio:9000 api \
-		sh -c 'pip install -q -r requirements-dev.txt && ruff check --no-cache . \
+		-e TEST_MINIO_ENDPOINT=minio:9000 api-test \
+		sh -c 'ruff check --no-cache . \
 		&& ruff format --check --no-cache . \
 		&& DATABASE_URL="$$TEST_DATABASE_URL" TEST_MINIO_ACCESS_KEY="$$MINIO_ACCESS_KEY" \
 		TEST_MINIO_SECRET_KEY="$$MINIO_SECRET_KEY" pytest -q -rs -p no:cacheprovider \

@@ -77,8 +77,11 @@ services:
   # The image has no curl; Python asks.
   # It also waits for minio-init: upload URLs need the bucket, and a one-shot that a
   # service depends on this way is the only kind `up --wait` accepts as exited.
+  # Built from the runtime stage of backend/Dockerfile: no tests, no test tools, non-root.
   api:
-    build: ./backend
+    build:
+      context: ./backend
+      target: runtime
     environment: *backend-env
     depends_on:
       db:
@@ -99,7 +102,9 @@ services:
   # app yet, so the service is off by default and starts only with `--profile worker`.
   worker:
     profiles: ["worker"]
-    build: ./backend
+    build:
+      context: ./backend
+      target: runtime
     command: ["celery", "-A", "app.worker.celery_app", "worker", "-B", "--loglevel=INFO"]
     environment:
       <<: *backend-env
@@ -112,10 +117,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Backend ruff + pytest for `make test` only (profile test): the test stage of
+  # backend/Dockerfile, i.e. the runtime image plus requirements-dev.txt. The Makefile mounts
+  # the code with the tests read-only and passes the test-only variables with -e. One-shot
+  # (`compose run --rm`), so no health check and no restart.
+  api-test:
+    profiles: ["test"]
+    build:
+      context: ./backend
+      target: test
+    environment: *backend-env
+
   # PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, built for amd64 and arm64 by
   # one of its maintainers (every postgis/postgis tag is amd64 only), so Apple Silicon runs it
   # natively. Pinned by tag and the digest of the multi-arch index. 15-3.4 is a frozen build
-  # (PostgreSQL 15.8); staying on it is deliberate (byul-byul, 2026-11-12): CI's backend job uses the same digest (#39).
+  # (PostgreSQL 15.8); staying on it is deliberate (byul-byul, 2026-11-12), and CI's backend
+  # job uses the same digest (#39).
   # On a new volume the image runs its own 10_postgis.sh, then our script, which adds the
   # test database (`make test` runs the same script for an older volume). Only the one file
   # is mounted: a mounted directory would hide 10_postgis.sh.
