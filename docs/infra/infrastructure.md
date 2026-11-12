@@ -1,6 +1,6 @@
 # ft\_transcendence — Infrastructure
 
-Oct 27, 2026 · updated Nov 11, 2026 · @byul-byul
+Oct 27, 2026 · updated Nov 12, 2026 · @byul-byul
 
 ## TL;DR
 
@@ -18,20 +18,21 @@ nginx + ModSecurity v3 + OWASP Core Rule Set (CRS), image `owasp/modsecurity-crs
 
 ## Services
 
-Only the proxy publishes ports to the host; everything else stays on the internal Docker network. Pin every image tag (the reference uses `minio/minio:latest`). All services are in the root `docker-compose.yml` (compose project `wozu`) since INF-02; INF-07 pins the remaining images by digest and adds the full health checks.
+Only the proxy publishes ports to the host; everything else stays on the internal Docker network. All services are in the root `docker-compose.yml` (compose project `wozu`) since INF-02. Every image is pinned by tag and digest and every long-running service has a health check (INF-07, see Images, health checks and logs); digests below are shortened to 12 characters.
 
 | Service | Image | Purpose | Published | Status |
 | --- | --- | --- | --- | --- |
-| `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210`, by digest | TLS, single origin, routing, WAF | 443 (80 → redirect); host ports set by `HTTPS_PORT` / `HTTP_PORT` | In compose (INF-02) |
-| `frontend` | Built from `frontend/` (FE-01 Dockerfile, stage `preview`: Node build → `nginx:1.28-alpine`); site config `infra/frontend/default.conf` mounted for the SPA fallback | React app | no | In compose (INF-02) |
-| `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start; waits for `db` and `redis` to be healthy | no | In compose, `/api/health` health check (Python `urllib`; the image has no curl) |
-| `worker` | Same image as `api`, command `celery -A app.worker.celery_app worker -B` | Video moderation + beat for stuck videos | no | In compose behind the `worker` profile (off by default) until BE-29 adds the Celery app |
-| `db` | `imresamu/postgis:15-3.4`, by digest (PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, amd64 + arm64; every `postgis/postgis` tag is amd64 only, so Apple Silicon would run it emulated) | PostgreSQL + PostGIS; app database `POSTGRES_DB` and test database `POSTGRES_TEST_DB` | no | In compose, `pg_isready` health check |
-| `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker; api and worker use database 0 (`REDIS_URL`) | no | In compose, `redis-cli ping` health check |
+| `proxy` | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210@sha256:873ce68a658d` | TLS, single origin, routing, WAF | 443 (80 → redirect); host ports set by `HTTPS_PORT` / `HTTP_PORT` | In compose (INF-02); health check, starts after its upstreams are healthy |
+| `frontend` | Built from `frontend/` (FE-01 Dockerfile, stage `preview`: `node:24-alpine@sha256:116b800c3754` build → `nginx:1.28-alpine@sha256:a8b39bd9cf0f`); site config `infra/frontend/default.conf` mounted for the SPA fallback and `/healthz` | React app | no | In compose (INF-02); health check |
+| `api` | Built from `backend/`, stage `runtime` (`python:3.11-slim@sha256:07d4824036af`, multi-stage, no test deps, non-root) | FastAPI, runs migrations on start; waits for `db` and `redis` to be healthy and `minio-init` to exit 0 | no | In compose, `/api/health` health check (Python `urllib`; the image has no curl) |
+| `worker` | Same image as `api` (stage `runtime`), command `celery -A app.worker.celery_app worker -B` | Video moderation + beat for stuck videos | no | In compose behind the `worker` profile (off by default) until BE-29 adds the Celery app; no health check until then |
+| `api-test` | Built from `backend/`, stage `test` (`runtime` + `requirements-dev.txt`) | Tests only: ruff + pytest of `make test`, run with `compose run --rm` | no | In compose behind the `test` profile; one-shot, no health check |
+| `db` | `imresamu/postgis:15-3.4@sha256:44d4443d107a` (PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, amd64 + arm64; every `postgis/postgis` tag is amd64 only, so Apple Silicon would run it emulated) | PostgreSQL + PostGIS; app database `POSTGRES_DB` and test database `POSTGRES_TEST_DB` | no | In compose, `pg_isready` health check |
+| `redis` | `redis:7.4.12-alpine@sha256:7f7d30b7fdd0` | Pub/sub, queues, rate limits, Celery broker; api and worker use database 0 (`REDIS_URL`) | no | In compose, `redis-cli ping` health check |
 | `redis-test` | Same image as `redis` (one YAML anchor) | Tests only: the Redis of `make test` (`TEST_REDIS_URL` and `REDIS_URL` of the pytest run); no persistence (`--save "" --appendonly no`, `tmpfs` on `/data`), no volume, no route, nothing depends on it | no | In compose behind the `test` profile, started only by `make test`; `redis-cli ping` health check for `up --wait` |
-| `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, by digest (the official `minio/minio` and `minio/mc` images left Docker Hub on 2025-10-23) | Object storage for videos, avatars, logos | no, console included (proxied at `/files`) | In compose |
-| `minio-init` | Same image as `minio`, which ships `mc` | One-shot: create bucket `files`, set its anonymous policy, exit 0 | no | In compose (INF-04); `api` starts after it completes |
-| `mailpit` | `axllent/mailpit:v1.33.1` | Catches all outgoing mail, web inbox | no (proxied at `/mail`) | In compose (INF-02) |
+| `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc` (the official `minio/minio` and `minio/mc` images left Docker Hub on 2025-10-23) | Object storage for videos, avatars, logos | no, console included (proxied at `/files`) | In compose; health check |
+| `minio-init` | Same image as `minio`, which ships `mc` | One-shot: create bucket `files`, set its anonymous policy, exit 0 | no | In compose (INF-04); starts once `minio` is healthy; `api` starts after it completes |
+| `mailpit` | `axllent/mailpit:v1.33.1@sha256:aef2aacc11f0` | Catches all outgoing mail, web inbox | no (proxied at `/mail`) | In compose (INF-02); health check |
 | `prometheus` | `prom/prometheus` | Metrics scraping, alert rules | no | New (module) |
 | `grafana` | `grafana/grafana` | Dashboards, provisioned from files | no (proxied at `/grafana`) | New (module) |
 | exporters | `postgres-exporter`, `redis-exporter`, `cadvisor` or `node-exporter` | DB, Redis, container metrics | no | New (module) |
@@ -39,6 +40,68 @@ Only the proxy publishes ports to the host; everything else stays on the interna
 | `backup` | small image with `pg_dump` + `mc` + cron | Daily dumps of DB and bucket, 7-day retention | no | Buffer module |
 
 We skip ELK: Elasticsearch is memory-hungry and risky on an evaluation laptop; Prometheus + Grafana gives the same 2 points with a lighter footprint.
+
+## Images, health checks and logs (INF-07)
+
+**Pinned images.** Every image is written as `name:tag@sha256:<digest>`: in `docker-compose.yml` and in every Dockerfile `FROM` (build and runtime stages). The tag says which version it is; the digest is what Docker pulls, so a tag that moves (`redis:7-alpine`, `python:3.11-slim`) or is overwritten cannot change the stack before the defense. The digest is the one of the multi-arch index (`docker buildx imagetools inspect <name:tag>`), so Apple Silicon laptops and the amd64 CI runner get the same build. To bump an image, change tag and digest together in one commit. Prometheus, Grafana, the exporters and Vault follow the same rule in their own cards (INF-08, INF-09, INF-12).
+
+| Image | Before INF-07 | Pinned |
+| --- | --- | --- |
+| proxy | `owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210`, by digest | unchanged, `@sha256:873ce68a658d` |
+| db | `imresamu/postgis:15-3.4`, by digest | unchanged, `@sha256:44d4443d107a` |
+| minio, minio-init | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, by digest | unchanged, `@sha256:b6bfe7239bfc` |
+| redis, redis-test | `redis:7-alpine` (moving tag) | `redis:7.4.12-alpine@sha256:7f7d30b7fdd0`, the build `7-alpine` pointed to on 2026-11-12 |
+| mailpit | `axllent/mailpit:v1.33.1` | `…:v1.33.1@sha256:aef2aacc11f0` |
+| backend `FROM` (build, runtime) | `python:3.11-slim` | `python:3.11-slim@sha256:07d4824036af` (Python 3.11.18) |
+| frontend `FROM` (build) | `node:24-alpine` | `node:24-alpine@sha256:116b800c3754` (Node 24.22.3) |
+| frontend `FROM` (preview) | `nginx:1.28-alpine` | `nginx:1.28-alpine@sha256:a8b39bd9cf0f` (nginx 1.28.3) |
+
+**`make images-check`** (`scripts/images-check.sh`) enforces the rule: it reads every compose service of every profile (`docker compose --profile '*' config --no-interpolate`, YAML anchors resolved, no `.env` needed) and every `FROM` in the repository's Dockerfiles, skips a `FROM` that names an earlier stage (`FROM runtime AS test`), and fails when an image has no `@sha256:` digest, no tag, or the tag `latest`, naming each offender (`FAIL  docker-compose.yml service redis: redis:7-alpine (no @sha256 digest)`). byul-byul adds it to the CI stack job once #39 (INF-06) is merged. It does not read `.github/workflows/`: the Redis service container of the backend CI job is still `redis:7-alpine`.
+
+**Database image, a deliberate choice (byul-byul, 2026-11-12).** `imresamu/postgis:15-3.4` is a frozen build (PostgreSQL 15.8); `15-3.5` exists. The stack stays on 15-3.4, pinned by the same digest as the CI backend job, so the tests and the site run the same server; a move to 15-3.5 would be its own card with a dump and restore test.
+
+**API image.** `backend/Dockerfile` has three stages:
+
+| Stage | From | Contents | Used by |
+| --- | --- | --- | --- |
+| `build` | `python:3.11-slim` | a virtual environment `/venv` with `requirements.txt` only | the next stage |
+| `runtime` | `python:3.11-slim` | `/venv`, `app/`, `alembic/`; user `app` (uid 10001); no pytest, ruff or other dev tool, no compiler, no pip cache, no tests (`.dockerignore`) | `api`, `worker` (`target: runtime`) |
+| `test` | `runtime` | plus `requirements-dev.txt` (pytest, ruff, httpx2, aiosmtpd, websockets), same user | `api-test`, i.e. `make test`, with the code and tests mounted read-only |
+
+`make test` used to `pip install` the dev tools as root into a throwaway api container on every run; it now runs `api-test` as the same non-root user as production, and the tools are cached in the image. Sizes (`docker image ls`, unpacked; compressed content size in brackets), 2026-11-12:
+
+| Image | Size |
+| --- | --- |
+| Reference `backend/fastapi` (one stage, test requirements and ffmpeg installed) | 1.58 GB (371 MB) |
+| api before INF-07 (BE-01 multi-stage, unnamed runtime stage) | 465 MB (99 MB) |
+| api `runtime` after INF-07 | 466 MB (99 MB) |
+| `api-test` (`test` stage) | 522 MB (114 MB) |
+
+The runtime image is 70 % smaller than the reference; the slimming came with BE-01 (Khalil), and INF-07 keeps it, names the stage and moves the test tools into their own stage. The 1 MB is the newer Python patch release in the pinned base. `websockets` is in the runtime image as a dependency of `uvicorn[standard]`, not from `requirements-dev.txt`. The reference image has ffmpeg; ours does not, which BE-29 must check for the moderation worker.
+
+**Health checks.** Each long-running service checks itself with a tool its image already has; nothing is installed for it. All share one timing (`x-healthcheck` in compose, decided on the card on 2026-11-08): while a container starts, a check every 2 s (`start_interval`) for up to 30 s (`start_period`), failures not counted, so `make` returns as soon as everything is ready; after that one check per 30 s, 3 s timeout, unhealthy after 3 failures in a row. The 30 s interval keeps the api log at one `GET /api/health` line per 30 s instead of one per 5 s. `start_interval` needs Docker Engine 25 or newer.
+
+| Service | Check | What a pass shows | Waits for (`depends_on`) |
+| --- | --- | --- | --- |
+| `proxy` | `curl -fsk https://127.0.0.1:8443/healthz` (the image's own location, no access log) | nginx runs with our config, ModSecurity loaded and the certificate served over TLS. The image's built-in check uses `curl` without `-f`, which also passes on a 404 | `frontend`, `api`, `minio`, `mailpit`: healthy |
+| `frontend` | `curl -fs http://127.0.0.1/healthz`: `location = /healthz` in `infra/frontend/default.conf` serves `index.html`, no access log | nginx serves the built app | — |
+| `api` | Python `urllib` GET `http://127.0.0.1:8000/api/health`, 200 | migrations ran (`alembic upgrade head` precedes uvicorn) and the app answers | `db`, `redis`: healthy; `minio-init`: completed successfully |
+| `db` | `pg_isready -h 127.0.0.1 -U $POSTGRES_USER -d $POSTGRES_DB` | the server accepts TCP connections. Over TCP because while the image initialises a new volume it runs a temporary server on the Unix socket only | — |
+| `redis`, `redis-test` | `redis-cli ping \| grep -qx PONG` | the server answers commands; an error reply such as `LOADING` fails | — |
+| `minio` | `curl -fs http://127.0.0.1:9000/minio/health/live` | the S3 server is up | — |
+| `mailpit` | `/mailpit readyz` (also the image's own check) | SMTP and web UI are ready | — |
+
+`depends_on` with `condition: service_healthy` is used where the order matters: the api runs its migrations at start and needs the database and Redis; `minio-init` needs a live MinIO; the proxy could start without its upstreams (it resolves them per request) but then answers 502 until they are up, so it waits and the site works as soon as `make` returns. `service_completed_successfully` is for the one-shot `minio-init`: the api hands out URLs for the bucket it creates, and `docker compose up --wait` accepts an exited container only when another service waits for it this way. `make up` runs `docker compose up -d --build --wait --wait-timeout 300`, so `make` fails if a service is not healthy within 5 minutes or exits.
+
+**Exemptions.**
+
+| Service | Why no health check |
+| --- | --- |
+| `minio-init` | One-shot job: exits 0 after creating the bucket; the api waits for that exit code instead |
+| `api-test` | One-shot: `make test` runs it with `compose run --rm` and removes it |
+| `worker` | Off by default (profile `worker`) until BE-29 adds the Celery app; there is no process to ask. BE-29 adds a check, e.g. `celery -A app.worker.celery_app inspect ping -d celery@$HOSTNAME` |
+
+**Logs.** Every service logs to stdout / stderr, kept by Docker's `json-file` driver; one compose anchor `x-logging` gives every service the same rotation: `max-size: 10m`, `max-file: 3`, at most 30 MB per container. Docker deletes the oldest file when the third is full, so the caps bound the disk use, not the age: on a quiet stack the files fill slowly and lines can stay longer than 15 days, and they go away only when the container is removed (`make down`, or a `make` that recreates the container). The Privacy Policy's "up to 15 days" for logs is therefore not yet guaranteed by this setting; the retention mechanism is an open PO decision. The proxy access log holds client IP addresses. `docker inspect --format '{{json .HostConfig.LogConfig}}' <container>` shows the caps.
 
 ## One origin over HTTPS
 
@@ -108,7 +171,7 @@ Option A is implemented in INF-04 (2026-11-09).
 
 - **Image:** the `minio` server image itself, `pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372`, defined once in compose (`x-minio-image`). It ships `/usr/bin/mc` of the same release (checked with `mc --version`) for amd64 and arm64, so there is one image to pin and bump instead of two, and no `minio/*` or `pgsty/mc` image.
 - **Credentials** reach `mc` only through `MC_HOST_wozu` in the container environment: never on a command line, in a config file or in the log. They must be URL-safe; `init-env.sh` generates hex.
-- **Restart and `make`:** `restart: "no"`. `api` depends on it with `condition: service_completed_successfully`. The API hands out URLs for the bucket, so it should start after the bucket exists; and `docker compose up --wait` accepts an exited container only when another service depends on it that way. Without it, `make up` fails with `container wozu-minio-init-1 exited (0)`.
+- **Restart and `make`:** `restart: "no"`. It starts once `minio` is healthy (INF-07). `api` depends on it with `condition: service_completed_successfully`. The API hands out URLs for the bucket, so it should start after the bucket exists; and `docker compose up --wait` accepts an exited container only when another service depends on it that way. Without it, `make up` fails with `container wozu-minio-init-1 exited (0)`.
 
 **Read access (proposal to Khalil for BE-08, pending his review of the INF-04 PR).** The bucket is private; the policy grants anonymous `s3:GetObject` on two prefixes only:
 
@@ -155,11 +218,12 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | --- | --- |
 | `make` (`all`) | `env` + `up` |
 | `make env` | `scripts/init-env.sh`: when `.env` is missing, copies `.env.example` and fills the empty secrets (`JWT_SECRET`, `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) with `openssl rand -hex 32`; prints their names, never the values; never overwrites an existing `.env` |
-| `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait`, which returns once `db`, `redis` and `api` are healthy and `minio-init` has exited 0 |
+| `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait`, which returns once every long-running service is healthy and `minio-init` has exited 0 (see Images, health checks and logs) |
 | `make down` | stops and removes the containers, keeps volumes |
 | `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
-| `make test` | starts `db`, `redis-test` (profile `test`) and `minio` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; fails if any backend test is skipped, as CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db`, `redis-test` and `minio` running; `make down` and `make fclean` remove `redis-test` too (`--profile '*'`) |
+| `make test` | starts `db`, `redis-test` (profile `test`) and `minio` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in a throwaway `api-test` container (the `test` stage of the api image: runtime plus `requirements-dev.txt`, same non-root user; code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; fails if any backend test is skipped, as CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db`, `redis-test` and `minio` running; `make down` and `make fclean` remove `redis-test` too (`--profile '*'`) |
 | `make https-check` | smoke test of the routes of the one HTTPS origin against the running stack (see One origin over HTTPS) |
+| `make images-check` | fails when a compose image or a Dockerfile `FROM` is not pinned as `name:tag@sha256:…` or uses `latest`, naming each one; needs no running stack (see Images, health checks and logs) |
 | `make files-check` | smoke test of `/files` against the running stack, ends with a Chrome console snippet (see File storage over HTTPS) |
 | `make mail-check` | sign-up email end to end through the proxy against the running stack (see Email without a paid service) |
 | `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
@@ -223,7 +287,7 @@ For INF-11, from INF-04: presigned uploads must keep working once `MODSEC_RULE_E
 
 **M14 — Health checks, status page, backups, disaster recovery (Minor, 1, buffer)**
 
-- [ ] Health checks for every service in compose (the reference has them for API, DB, Redis, MinIO)
+- [x] Health checks for every service in compose (the reference has them for API, DB, Redis, MinIO); INF-07, see Images, health checks and logs
 - [ ] Public status page showing each component green / red, fed by `/api/health` (without internal details)
 - [ ] Automated daily `pg_dump` and bucket mirror, 7 copies kept
 - [ ] Restore runbook in `docs/disaster-recovery.md`, tested: drop the DB volume, restore, app works
@@ -238,7 +302,7 @@ Target for INF-06: GitHub Actions on PRs to `main`, with applicable backend, fro
 | --- | --- | --- |
 | backend | `ruff check`, `ruff format --check`, `pytest` with service containers `postgis/postgis:15-3.4` and `redis:7-alpine` (a Redis only for the tests, like `redis-test` in `make test`) | yes |
 | frontend | `npm ci`, lint, type check, unit tests, `npm run build` | yes |
-| stack | `docker compose build`, `docker compose config` (catches broken env references) | yes |
+| stack | `docker compose build`, `docker compose config` (catches broken env references); `make images-check` after INF-07 | yes |
 
 ## Infra cards
 

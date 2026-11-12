@@ -22,7 +22,7 @@ The image renders every `/etc/nginx/templates/**/*.template` with envsubst into 
 | `templates/nginx.conf.template` | Image | Loads the ModSecurity module, sets `resolver` from `/etc/resolv.conf` (`127.0.0.11` in Docker) |
 | `templates/conf.d/modsecurity.conf.template` | Image | `modsecurity on` + `modsecurity_rules_file`, at `http` level, so it covers every location |
 | `templates/modsecurity.d/*`, `/opt/owasp-crs` | Image | ModSecurity settings and the CRS rules |
-| `templates/includes/location_common.conf.template` | Image, included by our template | `/healthz` (used by the image's `HEALTHCHECK`), `/50x.html` |
+| `templates/includes/location_common.conf.template` | Image, included by our template | `/healthz` (used by the proxy health check in compose, INF-07), `/50x.html` |
 
 ## Routes
 
