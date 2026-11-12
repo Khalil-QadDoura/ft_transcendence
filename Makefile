@@ -43,6 +43,7 @@ logs:
 # Frontend: the checks of its CI job, in the build stage of its image.
 # The MinIO tests use their own buckets (media-test, pictures-test) on the dev MinIO, with
 # the api container's own keys: they never appear on a command line or in this output.
+# As in CI, a skipped backend test fails make test (-rs prints why it was skipped).
 test: env
 	$(COMPOSE) up -d --wait db redis minio
 	$(COMPOSE) exec -T db /docker-entrypoint-initdb.d/20-create-test-db.sh
@@ -52,7 +53,12 @@ test: env
 		sh -c 'pip install -q -r requirements-dev.txt && ruff check --no-cache . \
 		&& ruff format --check --no-cache . \
 		&& DATABASE_URL="$$TEST_DATABASE_URL" TEST_MINIO_ACCESS_KEY="$$MINIO_ACCESS_KEY" \
-		TEST_MINIO_SECRET_KEY="$$MINIO_SECRET_KEY" pytest -q -p no:cacheprovider'
+		TEST_MINIO_SECRET_KEY="$$MINIO_SECRET_KEY" pytest -q -rs -p no:cacheprovider \
+		--junitxml=/tmp/pytest-results.xml && python -c "import sys, xml.etree.ElementTree as ET; \
+		suites = ET.parse(\"/tmp/pytest-results.xml\").getroot().iter(\"testsuite\"); \
+		skipped = sum(int(suite.get(\"skipped\", \"0\")) for suite in suites); \
+		sys.exit(f\"{skipped} tests skipped; make test must run every backend test, as CI\" \
+		if skipped else 0)"'
 	docker build -q --target build -t wozu-frontend-test ./frontend
 	docker run --rm wozu-frontend-test \
 		sh -c 'npm run lint && npm run format:check && npm run typecheck && npm test'
