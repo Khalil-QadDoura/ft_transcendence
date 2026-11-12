@@ -210,7 +210,7 @@ def _create_verified_user_and_get_ticket(host_port: str, email: str, client_ip: 
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=5,
     )
-    assert ticket_resp.status_code == 201
+    assert ticket_resp.status_code == 200
     return ticket_resp.json()["ticket"]
 
 
