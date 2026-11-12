@@ -1,10 +1,10 @@
 name: Frontend
 on:
   pull_request:
-    paths: ['frontend/**', '.github/workflows/frontend.yml']
+    paths: ['frontend/**', 'docs/legal/**', '.github/workflows/frontend.yml']
   push:
     branches: [main, 'feat/FE-*']
-    paths: ['frontend/**', '.github/workflows/frontend.yml']
+    paths: ['frontend/**', 'docs/legal/**', '.github/workflows/frontend.yml']
 permissions:
   contents: read
 jobs:
@@ -23,6 +23,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
+      - run: npm run legal:check
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

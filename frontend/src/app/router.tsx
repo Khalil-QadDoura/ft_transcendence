@@ -1,3 +1,4 @@
+import { LegalPage } from "../features/legal/LegalPage";
 import { Link, type RouteObject } from "react-router-dom";
 import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
@@ -45,13 +46,13 @@ export const routes: RouteObject[] = [
     element: <Layout />,
     children: [
       { index: true, element: <Welcome /> },
+      { path: "privacy", element: <LegalPage kind="privacy" /> },
+      { path: "terms", element: <LegalPage kind="terms" /> },
       ...pages([
         ["jobs", "Find your next chapter."],
         ["jobs/:id", "A closer look."],
         ["users/:id", "Meet the person."],
         ["game/rules", "How to play."],
-        ["privacy", "Privacy Policy"],
-        ["terms", "Terms of Service"],
         ["status", "Service status"],
       ]),
       {

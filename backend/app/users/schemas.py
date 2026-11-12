@@ -12,10 +12,7 @@ from app.users.constants import BIO_MAX_LENGTH, MIN_AGE, NAME_MAX_LENGTH, POSITI
 class UserOut(BaseModel):
     """The profile we send back. Only the fields listed here leave the server: never the
     password hash, token_version or status, and no longer phone, is_phone_verified, username
-    or account_number (dropped from the contract). avatar_url comes with BE-08."""
-
-    # Lets UserOut.model_validate(user) read the fields straight from a User row.
-    model_config = ConfigDict(from_attributes=True)
+    or account_number (dropped from the contract). service.to_user_out() fills it in."""
 
     id: int
     email: str
@@ -25,6 +22,9 @@ class UserOut(BaseModel):
     birth_date: date | None
     bio: str | None
     avatar_object_key: str | None
+    # Not a column (BE-08): the address of my picture, for <img src>. My own file under
+    # avatars/, which anyone can download, or the default picture when I have none.
+    avatar_url: str
     is_email_verified: bool
 
 
