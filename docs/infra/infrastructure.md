@@ -1,6 +1,6 @@
 # ft\_transcendence — Infrastructure
 
-Oct 27, 2026 · updated Nov 10, 2026 · @byul-byul
+Oct 27, 2026 · updated Nov 12, 2026 · @byul-byul
 
 ## TL;DR
 
@@ -207,13 +207,31 @@ For INF-11, from INF-04: presigned uploads must keep working once `MODSEC_RULE_E
 
 ## CI
 
-Target for INF-06: GitHub Actions on PRs to `main`, with applicable backend, frontend and stack jobs passing plus one approving review before merge. Configure branch protection to enforce the required checks. This is the planned setup, not evidence that every job or protection rule is already active. CI is not a module; it protects integration and makes reviews visible.
+INF-06 (2026-11-12): one GitHub Actions workflow, `.github/workflows/ci.yml`, runs on every pull request to `main` and every push to `main`. It has no trigger-level `paths:` filter: a workflow that a path filter keeps from starting leaves its required check "Expected" forever, and the merge stays blocked. Instead a `changes` job reads the changed files, the jobs with nothing to check are skipped, and the `ci-ok` job sums up the result. `ci-ok` is the only required check on `main`. CI is not a module; it keeps `main` demo-ready and makes reviews visible in the Git history.
 
-| Job | Steps | Blocks merge |
+| Job | Runs when the PR touches | Steps | Proves |
+| --- | --- | --- | --- |
+| `changes` | always | `git diff --name-only <base>...<head>` (checkout with `fetch-depth: 0`); outputs `backend`, `frontend`, `stack`. A push to `main` sets all three | Which jobs have work |
+| `backend` | `backend/**`, `.github/workflows/**` | Service containers `imresamu/postgis:15-3.4@sha256:44d4443d107a7750ea29a441dec0050cd7543178f011ae0620e4b572578e9300` (the `db` image of compose, same digest) and `redis:7-alpine`; MinIO (`pgsty/minio`, compose digest) started with `docker run`; `pip install -r requirements-dev.txt`, `ruff check`, `ruff format --check`, `pytest` with a JUnit report, a step that fails on any skipped test, `docker build` of the API image | Lint, format and every backend test against real PostgreSQL + PostGIS, Redis and MinIO; the image builds |
+| `frontend` | `frontend/**`, `docs/legal/**` (`legal:check`), `.github/workflows/**` | `npm ci`, `npm run lint`, `format:check`, `legal:check`, `typecheck`, `npm test` (vitest), `npm run build`, `docker build` of the frontend image | Lint, format, legal pages in sync with `docs/legal`, types, unit tests, production build |
+| `stack` | `infra/**`, `docker-compose.yml` and any `compose*.yml`, `Makefile`, `scripts/**`, `.env.example`, `backend/**`, `frontend/**`, `.github/workflows/**` | `make` on the fresh checkout (new `.env` from `.env.example`, new certificate, build, start, `--wait` until healthy), `docker compose config -q`, `make test`, `make files-check`, `make mail-check`; service logs on failure; `docker compose down -v` at the end. Timeout 30 min | The evaluator's path: one command from a clean clone to a healthy stack; every variable reference resolves; `/files` and `/mail` work through the proxy |
+| `ci-ok` | always (`if: always()`) | `needs` all four jobs; fails when one of them ended `failure` or `cancelled`; `skipped` counts as passed | The single required check |
+
+`make https-check` joins the `stack` job when INF-03 (PR #28) merges; until then `ci.yml` carries a `TODO(INF-06)` line in its place.
+
+**Workflow settings.** `permissions: contents: read`; one run per branch (`concurrency: ci-<ref>`, a new push cancels the older run); only official actions (`actions/checkout`, `actions/setup-python`, `actions/setup-node`) at their current major tag; pip and npm caches; no secrets: the backend job uses throwaway `ci-only-*` values, and the `stack` job generates its `.env` as `make` does on any fresh clone.
+
+**Branch protection on `main`** (target settings; Khalil applies them as repo admin, since byul-byul has write access only):
+
+| Setting | Value | Why |
 | --- | --- | --- |
-| backend | `ruff check`, `ruff format --check`, `pytest` with service containers `postgis/postgis:15-3.4` and `redis:7-alpine` | yes |
-| frontend | `npm ci`, lint, type check, unit tests, `npm run build` | yes |
-| stack | `docker compose build`, `docker compose config` (catches broken env references) | yes |
+| Require a pull request before merging | on, 1 approving review | Every change is reviewed and the review shows in the Git history |
+| Require status checks to pass | on, check `ci-ok` only | The jobs behind it may be skipped; `ci-ok` always reports |
+| Require branches to be up to date before merging | off | No rebase churn on every merge to `main`; CI on the push to `main` catches a bad combination |
+| Do not allow bypassing the above settings (include administrators) | on | The rules apply to the admin too |
+| Allow force pushes / Allow deletions | off | `main` history cannot be rewritten or removed |
+
+**How to read a red CI.** The PR's checks list shows which job failed; `ci-ok` is red whenever one of the others is, so open the other red job. In the job log, the red step names the command (the same as the local one: `ruff check`, `pytest`, `npm run lint`, `make test`, …). The `changes` job's summary lists the changed files and which jobs ran. For `stack`, the "Service logs" step prints `docker compose ps -a` and the last 300 lines of every service. A `skipped` job is not a failure: the PR does not touch its paths. To reproduce locally: `make test` runs the lint, format, type and test commands of the `backend` and `frontend` jobs (not `legal:check` or the build), and the `stack` job is `make`, `make test`, `make files-check`, `make mail-check`. Until PR #37 merges, `make test` skips the Redis and MinIO backend tests; the `backend` job runs them and fails on any skip.
 
 ## Infra cards
 
