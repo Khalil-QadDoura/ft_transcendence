@@ -100,6 +100,7 @@ function ProfilePhoto({
           <input
             ref={input}
             className="sr-only"
+            tabIndex={-1}
             type="file"
             id="profile-photo"
             aria-label={t("choose")}
