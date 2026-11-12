@@ -7,7 +7,7 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
 
-.PHONY: all env certs up down logs test https-check files-check mail-check fclean re
+.PHONY: all env certs up down logs test https-check images-check files-check mail-check fclean re
 
 all: env up
 
@@ -72,6 +72,11 @@ test: env
 # /api, the /ws handshake, redirects, internal routes blocked (INF-03).
 https-check:
 	@./infra/proxy/smoke-test.sh
+
+# Fails when a compose image or a Dockerfile FROM is not pinned as name:tag@sha256:... or
+# uses latest; prints each offender (INF-07). Needs no running stack and no .env.
+images-check:
+	@./scripts/images-check.sh
 
 # Presigned upload and download through https://<host>/files and the bucket policy, against
 # the running stack; ends with a snippet for the Chrome console (INF-04).
