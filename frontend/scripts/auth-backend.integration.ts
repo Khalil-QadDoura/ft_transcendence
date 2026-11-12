@@ -23,6 +23,27 @@ vi.stubGlobal(
     return realFetch(url, options);
   },
 );
+async function waitForMail(
+  email: string,
+  path = "/verify-email",
+): Promise<Response> {
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    const response = await realFetch(
+      `${origin}/__review/mail?email=${encodeURIComponent(email)}`,
+    );
+    if (response.ok) {
+      const message = (await response.clone().json()) as { link?: string };
+      if (message.link && new URL(message.link).pathname === path)
+        return response;
+    } else if (response.status !== 404)
+      throw new Error(`Test inbox returned ${response.status}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(
+    "Captured verification email did not arrive within 10 seconds",
+  );
+}
 let activeClient = initialClient;
 afterAll(() => {
   activeClient.clearTokens();
@@ -43,9 +64,7 @@ test("Khalil backend: register, verify, login, bearer profile, reload, concurren
   await expect(gateway.login(credentials)).rejects.toMatchObject({
     status: 403,
   });
-  const mail = await realFetch(
-    `${origin}/__review/mail?email=${encodeURIComponent(credentials.email)}`,
-  );
+  const mail = await waitForMail(credentials.email);
   expect(mail.status).toBe(200);
   const { link } = (await mail.json()) as { link: string };
   const verificationToken = new URL(link).searchParams.get("token")!;
@@ -123,9 +142,7 @@ test("Khalil backend: recovery, one-use reset, password change and account delet
     password: `Test-${crypto.randomUUID()}`,
   };
   await gateway.register(credentials);
-  const verifyMail = await realFetch(
-    `${origin}/__review/mail?email=${encodeURIComponent(credentials.email)}`,
-  );
+  const verifyMail = await waitForMail(credentials.email);
   await gateway.verify(
     new URL(
       ((await verifyMail.json()) as { link: string }).link,
@@ -138,9 +155,7 @@ test("Khalil backend: recovery, one-use reset, password change and account delet
     `unknown-${crypto.randomUUID()}@example.com`,
   );
   expect(known).toEqual(unknown);
-  const resetMail = await realFetch(
-    `${origin}/__review/mail?email=${encodeURIComponent(credentials.email)}`,
-  );
+  const resetMail = await waitForMail(credentials.email, "/reset-password");
   const resetLink = new URL(
     ((await resetMail.json()) as { link: string }).link,
   );
