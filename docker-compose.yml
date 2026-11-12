@@ -57,6 +57,16 @@ x-healthcheck: &healthcheck
   start_period: 30s
   start_interval: 2s
 
+# Log rotation for every service (INF-07): Docker's json-file driver keeps at most 3 files of
+# 10 MB per container and deletes the oldest. It rotates by size, not by age, and a
+# container's logs go when the container is removed (`make down`), so these caps alone do
+# not bound how many days the logs cover; see "Logs" in docs/infra/infrastructure.md.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # nginx + ModSecurity CRS (INF-01). Listens on 8080/8443 inside the container (uid 101
   # cannot bind below 1024). Upstreams resolve per request, so it could start without them;
@@ -91,6 +101,7 @@ services:
       <<: *healthcheck
       test: ["CMD", "curl", "-fsk", "-o", "/dev/null", "-A", "healthcheck", "https://127.0.0.1:8443/healthz"]
     restart: unless-stopped
+    logging: *logging
 
   # FE-01 build: static files served by nginx on port 80, SPA fallback to index.html.
   # Health: /healthz in infra/frontend/default.conf serves the built index.html, without
@@ -105,6 +116,7 @@ services:
       <<: *healthcheck
       test: ["CMD", "curl", "-fs", "-o", "/dev/null", "http://127.0.0.1/healthz"]
     restart: unless-stopped
+    logging: *logging
 
   # FastAPI. The image runs `alembic upgrade head` before uvicorn, so it waits for the db.
   # Healthy once /api/health answers (after the migrations), so `make` returns only then.
@@ -128,6 +140,7 @@ services:
       <<: *healthcheck
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
     restart: unless-stopped
+    logging: *logging
 
   # Celery worker + beat for video moderation. Enabled by BE-29: the backend has no Celery
   # app yet, so the service is off by default and starts only with `--profile worker`.
@@ -149,6 +162,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    logging: *logging
 
   # Backend ruff + pytest for `make test` only (profile test): the test stage of
   # backend/Dockerfile, i.e. the runtime image plus requirements-dev.txt. The Makefile mounts
@@ -160,6 +174,7 @@ services:
       context: ./backend
       target: test
     environment: *backend-env
+    logging: *logging
 
   # PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, built for amd64 and arm64 by
   # one of its maintainers (every postgis/postgis tag is amd64 only), so Apple Silicon runs it
@@ -185,6 +200,7 @@ services:
       <<: *healthcheck
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
     restart: unless-stopped
+    logging: *logging
 
   # Health: PING must answer PONG; an error reply such as LOADING (data still being read
   # from disk) does not count.
@@ -196,6 +212,7 @@ services:
       <<: *healthcheck
       test: ["CMD-SHELL", "redis-cli ping | grep -qx PONG"]
     restart: unless-stopped
+    logging: *logging
 
   # Redis only for `make test` (profile test). Pub/sub channels and CLIENT KILL are
   # server-wide, so a database number on the redis service would still let the tests publish
@@ -211,6 +228,7 @@ services:
     healthcheck:
       <<: *healthcheck
       test: ["CMD-SHELL", "redis-cli ping | grep -qx PONG"]
+    logging: *logging
 
   # S3 API on minio:9000, reached from the browser only through the proxy at /files (the
   # bucket name is the route prefix). No host ports, console included.
@@ -227,6 +245,7 @@ services:
       <<: *healthcheck
       test: ["CMD", "curl", "-fs", "-o", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
     restart: unless-stopped
+    logging: *logging
 
   # One-shot: waits for MinIO, creates the private bucket and its anonymous policy, exits 0
   # (infra/minio/init-bucket.sh). Idempotent, so it runs on every `make`. No health check
@@ -244,6 +263,7 @@ services:
       minio:
         condition: service_healthy
     restart: "no"
+    logging: *logging
 
   # Catches every outgoing email. SMTP on mailpit:1025, web inbox at /mail via the proxy.
   # Health: the binary's own `readyz` subcommand (also the image's built-in check).
@@ -255,6 +275,7 @@ services:
       <<: *healthcheck
       test: ["CMD", "/mailpit", "readyz"]
     restart: unless-stopped
+    logging: *logging
 
 volumes:
   db-data:
