@@ -1,6 +1,7 @@
 import { useText } from "../i18n/useText";
 import { LegalPage } from "../features/legal/LegalPage";
 import { Link, type RouteObject } from "react-router-dom";
+import { AuthForm, VerifyEmail } from "../features/auth/AuthScreens";
 import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
@@ -62,13 +63,16 @@ export const routes: RouteObject[] = [
       ]),
       {
         element: <GuestOnly />,
-        children: pages([
-          ["login", "routes.login"],
-          ["register", "routes.register"],
-        ]),
+        children: [
+          { path: "login", element: <AuthForm key="login" mode="login" /> },
+          {
+            path: "register",
+            element: <AuthForm key="register" mode="register" />,
+          },
+        ],
       },
+      { path: "verify-email", element: <VerifyEmail /> },
       ...pages([
-        ["verify-email", "routes.verify"],
         ["forgot-password", "routes.forgot"],
         ["reset-password", "routes.reset"],
       ]),

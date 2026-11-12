@@ -8,7 +8,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Open http://127.0.0.1:5174. Port 5174 allows the separate visual prototype on 5173 to remain available. The Vite `/api` proxy targets the local reference backend on port 8000 and strips `/api`. Set `API_PROXY_STRIP_PREFIX=false` when using the team's prefixed backend. This development server is loopback-only; production HTTPS belongs to INF-03.
+Open http://127.0.0.1:5174. Port 5174 allows the separate visual prototype on 5173 to remain available. The Vite `/api` proxy targets the team backend on port 8000 and preserves `/api`. Only set `API_PROXY_STRIP_PREFIX=true` when using the legacy reference backend. This development server is loopback-only; production HTTPS belongs to INF-03.
 
 ## Checks
 
@@ -23,7 +23,7 @@ Open http://127.0.0.1:5174. Port 5174 allows the separate visual prototype on 51
 - `src/app`: router, providers, global styles.
 - `src/features/<domain>`: domain screens and tests; `home` is the initial entry.
 - `src/components`: shared UI (FE-21).
-- `src/api`: generated schema; API client follows in FE-20.
+- `src/api`: generated schema and Ahmad's FE-20 shared client, with FE-04 session integration.
 - `src/i18n`: reserved for FE-06; i18next and react-i18next are installed.
 
 ## Container
@@ -34,7 +34,7 @@ Open http://127.0.0.1:5174. Port 5174 allows the separate visual prototype on 51
 
 FE-02 adds the responsive shell, all planned route slots, legal navigation, 404, route focus management and the auth guard. The home artwork is original SVG; typography is bundled locally. Reduced-motion preferences stop the animation.
 
-`SessionContext` is the integration boundary: FE-04/FE-20 must provide `loading`, `anonymous` or `authenticated` from a verified backend session. Protected routes preserve the path, query and hash in `/login?next=`. Once the provider changes to `authenticated`, `GuestOnly` restores a safe internal destination. No fake login or persistent browser flag is used. Route tests inject session states; real login is still FE-04 work.
+`SessionContext` is the integration boundary: FE-04/FE-20 must provide `loading`, `anonymous` or `authenticated` from a verified backend session. Protected routes preserve the path, query and hash in `/login?next=`. Once the provider changes to `authenticated`, `GuestOnly` restores a safe internal destination. No fake login or persistent browser flag is used. Route tests inject session states; FE-04 also tests real login through the shared client (see the auth guide).
 
 Other route slots explicitly display a coming-soon state. Privacy/Terms content is merged in DOC-01/DOC-02 and awaits FE-13 rendering; the empty slots do not satisfy the subject's final legal-content requirement. Language and unread header slots await FE-06/FE-22. The nginx preview config falls back to `index.html` for client routes while missing compiled assets correctly return 404. INF-03 must preserve this behavior in the production HTTPS proxy.
 
@@ -45,3 +45,5 @@ AI assistance (Codex) was used for the scaffold, shell, artwork, documentation a
 FE-03 adds [shared form validation](docs/form-validation.md): per-domain Zod schemas, React Hook Form resolver setup, and safe mapping of backend 422 errors. FE-20 supplies the shared API client, and FE-21 supplies shared UI primitives and design tokens. The `/dev/components` preview exists only in development builds.
 
 Shell styles are in `@layer base`, below Tailwind utilities, so shared components retain their own sizes, colors and focus styles.
+
+FE-04 connects [auth screens to the FE-20 shared client](docs/auth-screens.md), including persisted refresh, reload restoration, bearer requests and logout revocation. FE-02, FE-03, FE-20 and FE-21 are merged. FE-04 targets main and awaits cross-pair review.

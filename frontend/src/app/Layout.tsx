@@ -3,6 +3,7 @@ import { LanguageSwitcher } from "../i18n/LanguageSwitcher";
 import { formatNumber } from "../i18n";
 import { useContext, useEffect, useRef, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { LogoutButton } from "../features/auth/AuthScreens";
 import { SessionContext } from "./session";
 export function Layout({
   languageSlot,
@@ -56,6 +57,7 @@ export function Layout({
             {languageSlot ?? <LanguageSwitcher />}
           </span>
           {unreadSlot}
+          {signedIn && <LogoutButton />}
           <Link className="button small" to={signedIn ? "/profile" : "/login"}>
             {signedIn ? t("profile") : t("signIn")}{" "}
             <span aria-hidden="true">↗</span>
