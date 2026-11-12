@@ -74,7 +74,9 @@ def create_user_and_login(server: str, email: str) -> tuple[int, str]:
         password_hash=PASSWORD_HASH,
     )
     resp = httpx2.post(
-        f"http://{server}/api/auth/login", json={"email": email, "password": PASSWORD}
+        f"http://{server}/api/auth/login",
+        json={"email": email, "password": PASSWORD},
+        headers={"X-Real-IP": f"10.0.{(user_id // 250) % 250}.{(user_id % 250) + 1}"},
     )
     assert resp.status_code == 200, resp.text
     return user_id, resp.json()["access_token"]
@@ -233,9 +235,7 @@ def test_room_no_bots_start_now_and_autostart_at_five(clean_db_and_redis) -> Non
     app = new_game_app(game_bot_probability=0.0, game_wait_timeout_sec=60.0)
     with running_server(app) as srv:
         tokens = [create_user_and_login(srv, f"h{i}@example.com")[1] for i in range(6)]
-        ws0 = open_user_ws(srv, tokens[0])
-        ws1 = open_user_ws(srv, tokens[1])
-        try:
+        with open_user_ws(srv, tokens[0]) as ws0, open_user_ws(srv, tokens[1]) as ws1:
             # First human creates room 1; Start now rejected with 409 at 1 participant.
             j0 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tokens[0]))
             assert j0.status_code == 202
@@ -289,9 +289,6 @@ def test_room_no_bots_start_now_and_autostart_at_five(clean_db_and_redis) -> Non
             assert any(e["type"] == "game_room_formed" for e in ev0)
             assert any(e["type"] == "game_participant_joined" for e in ev0)
             assert any(e["type"] == "game_started" for e in ev1)
-        finally:
-            ws0.close()
-            ws1.close()
 
         # Room B fills with 5 new humans (fresh accounts) -> auto-starts on 5th join.
         room_b_tokens = [create_user_and_login(srv, f"b{i}@example.com")[1] for i in range(6)]
@@ -347,8 +344,7 @@ def test_room_with_four_bots_autostarts_and_extra_bots_dropped(
     )
     with running_server(app) as srv:
         _, tok0 = create_user_and_login(srv, "solo_bot@example.com")
-        ws0 = open_user_ws(srv, tok0)
-        try:
+        with open_user_ws(srv, tok0) as ws0:
             res = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok0))
             assert res.status_code == 202
             room1 = res.json()["room_id"]
@@ -375,8 +371,6 @@ def test_room_with_four_bots_autostarts_and_extra_bots_dropped(
             assert_no_bot_leak_in_room_payload(room_data)
             labels = [p["display_label"] for p in room_data["participants"]]
             assert len(set(labels)) == 5
-        finally:
-            ws0.close()
 
     # Second room: 4 bots scheduled later while 3 humans join early -> extra 2 bots dropped at 5.
     app2 = new_game_app(
@@ -424,9 +418,7 @@ def test_start_now_race_exactly_one_game_start(clean_db_and_redis) -> None:
     with running_server(app) as srv:
         _, tok1 = create_user_and_login(srv, "race1@example.com")
         _, tok2 = create_user_and_login(srv, "race2@example.com")
-        ws1 = open_user_ws(srv, tok1)
-        ws2 = open_user_ws(srv, tok2)
-        try:
+        with open_user_ws(srv, tok1) as ws1, open_user_ws(srv, tok2) as ws2:
             r1 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok1))
             r2 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok2))
             room_id = r1.json()["room_id"]
@@ -464,9 +456,6 @@ def test_start_now_race_exactly_one_game_start(clean_db_and_redis) -> None:
                         break
                 started_events = [e for e in evs if e["type"] == "game_started"]
                 assert len(started_events) == 1
-        finally:
-            ws1.close()
-            ws2.close()
 
 
 @needs_database
@@ -480,9 +469,7 @@ def test_timer_expiry_starts_game_with_two_participants(clean_db_and_redis) -> N
     with running_server(app) as srv:
         _, tok1 = create_user_and_login(srv, "exp2_1@example.com")
         _, tok2 = create_user_and_login(srv, "exp2_2@example.com")
-        ws1 = open_user_ws(srv, tok1)
-        ws2 = open_user_ws(srv, tok2)
-        try:
+        with open_user_ws(srv, tok1) as ws1, open_user_ws(srv, tok2) as ws2:
             j1 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok1))
             j2 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok2))
             room_id = j1.json()["room_id"]
@@ -499,9 +486,6 @@ def test_timer_expiry_starts_game_with_two_participants(clean_db_and_redis) -> N
             ).json()
             assert room["state"] == "discussion"
             assert room["participant_count"] == 2
-        finally:
-            ws1.close()
-            ws2.close()
 
 
 @needs_database
@@ -514,8 +498,7 @@ def test_timer_expiry_closes_one_participant_room(clean_db_and_redis) -> None:
     )
     with running_server(app) as srv:
         _, tok = create_user_and_login(srv, "solo_exp@example.com")
-        ws = open_user_ws(srv, tok)
-        try:
+        with open_user_ws(srv, tok) as ws:
             j1 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok))
             room_id = j1.json()["room_id"]
 
@@ -536,8 +519,6 @@ def test_timer_expiry_closes_one_participant_room(clean_db_and_redis) -> None:
             j2 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok))
             assert j2.status_code == 202
             assert j2.json()["room_id"] != room_id
-        finally:
-            ws.close()
 
 
 @needs_database
@@ -617,8 +598,7 @@ def test_leave_waiting_room_frees_label_and_last_human_closes_room(clean_db_and_
     with running_server(app) as srv:
         _, tok1 = create_user_and_login(srv, "lv1@example.com")
         _, tok2 = create_user_and_login(srv, "lv2@example.com")
-        ws1 = open_user_ws(srv, tok1)
-        try:
+        with open_user_ws(srv, tok1) as ws1:
             r1 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok1))
             r2 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok2))
             room_id = r1.json()["room_id"]
@@ -654,8 +634,6 @@ def test_leave_waiting_room_frees_label_and_last_human_closes_room(clean_db_and_
             )
             assert state == "closed"
             assert plan is None
-        finally:
-            ws1.close()
 
 
 @needs_database
@@ -677,8 +655,7 @@ def test_discussion_bot_chat_and_server_phase_loop(
     )
     with running_server(app) as srv:
         _, tok = create_user_and_login(srv, "phases@example.com")
-        ws = open_user_ws(srv, tok)
-        try:
+        with open_user_ws(srv, tok) as ws:
             room_id = httpx2.post(
                 f"http://{srv}/api/game/queue/join", headers=auth_headers(tok)
             ).json()["room_id"]
@@ -723,5 +700,3 @@ def test_discussion_bot_chat_and_server_phase_loop(
                 f"http://{srv}/api/game/rooms/{room_id}", headers=auth_headers(tok)
             ).json()
             assert room["state"] == "finished"
-        finally:
-            ws.close()
