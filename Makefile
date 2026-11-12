@@ -41,15 +41,18 @@ logs:
 # The WebSocket tests get Redis database 1 (TEST_REDIS_URL, set only here); the app uses 0,
 # and the tests delete only their own ws: keys.
 # Frontend: the checks of its CI job, in the build stage of its image.
+# The MinIO tests use their own buckets (media-test, pictures-test) on the dev MinIO, with
+# the api container's own keys: they never appear on a command line or in this output.
 test: env
-	$(COMPOSE) up -d --wait db redis
+	$(COMPOSE) up -d --wait db redis minio
 	$(COMPOSE) exec -T db /docker-entrypoint-initdb.d/20-create-test-db.sh
 	$(COMPOSE) run --rm --build --user root -v $(CURDIR)/backend:/src:ro -w /src \
 		-e PIP_ROOT_USER_ACTION=ignore -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-		-e TEST_REDIS_URL=redis://redis:6379/1 api \
+		-e TEST_REDIS_URL=redis://redis:6379/1 -e TEST_MINIO_ENDPOINT=minio:9000 api \
 		sh -c 'pip install -q -r requirements-dev.txt && ruff check --no-cache . \
 		&& ruff format --check --no-cache . \
-		&& DATABASE_URL="$$TEST_DATABASE_URL" pytest -q -p no:cacheprovider'
+		&& DATABASE_URL="$$TEST_DATABASE_URL" TEST_MINIO_ACCESS_KEY="$$MINIO_ACCESS_KEY" \
+		TEST_MINIO_SECRET_KEY="$$MINIO_SECRET_KEY" pytest -q -p no:cacheprovider'
 	docker build -q --target build -t wozu-frontend-test ./frontend
 	docker run --rm wozu-frontend-test \
 		sh -c 'npm run lint && npm run format:check && npm run typecheck && npm test'
