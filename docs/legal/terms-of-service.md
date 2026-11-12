@@ -6,7 +6,7 @@ These terms are the rules for using WOZU Web. Please read them before you create
 
 ## 1. Acceptance and the service
 
-WOZU Web is a student project of five students of 42 Abu Dhabi: Burhan Hajili (bhajili), Khalil Kaddoura (kqaddour), Nader Khalil (nakhalil), Zayid Elkahir (zsid-ele) and Ahmad Radwan (aradwan). It is not commercial and no company stands behind it. In these terms, "we" means this team.
+WOZU Web is a student project of five students of 42 Abu Dhabi: Burhan Hajili (bhajili), Khalil Kaddoura (kqaddour), Nader Khalil (nakhalil), Zayid Elkhair (zsid-ele) and Ahmad Radwan (aradwan). It is not commercial and no company stands behind it. In these terms, "we" means this team.
 
 WOZU Web is a job platform. With it you can:
 

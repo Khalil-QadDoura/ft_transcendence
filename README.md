@@ -103,7 +103,7 @@ Decided stack (starting point):
 
 ## Credits
 
-The animated GIF below and its generator ([tools/make_lobby.py](tools/make_lobby.py)) were added to this repository by Zayid Elkahir.
+The animated GIF below and its generator ([tools/make_lobby.py](tools/make_lobby.py)) were added to this repository by Zayid Elkhair.
 
 <!-- TODO DOC-07 (Zayid): confirm the author of the GIF and the license/attribution to write here. -->
 

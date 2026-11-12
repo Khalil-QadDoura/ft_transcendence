@@ -6,7 +6,7 @@ This policy explains what personal data WOZU Web collects, why, who can see it, 
 
 ## 1. Who we are
 
-WOZU Web is a student project of five students of 42 Abu Dhabi: Burhan Hajili (bhajili), Khalil Kaddoura (kqaddour), Nader Khalil (nakhalil), Zayid Elkahir (zsid-ele) and Ahmad Radwan (aradwan). It is not a commercial service and there is no company behind it. The team is the operator of the service and is responsible for your data.
+WOZU Web is a student project of five students of 42 Abu Dhabi: Burhan Hajili (bhajili), Khalil Kaddoura (kqaddour), Nader Khalil (nakhalil), Zayid Elkhair (zsid-ele) and Ahmad Radwan (aradwan). It is not a commercial service and there is no company behind it. The team is the operator of the service and is responsible for your data.
 
 WOZU Web is a job platform. Candidates apply with a short video resume instead of a CV, chat with employers, and can play a mini-game called Turing Duel.
 
