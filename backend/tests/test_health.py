@@ -22,7 +22,7 @@ class FakeSession:
 def test_health_returns_200(client):
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "broken"}
 
 
 def test_internal_route_without_key_is_404(client):

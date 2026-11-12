@@ -52,7 +52,9 @@ describe("auth and calendar boundaries", () => {
       email: "ana@example.com",
       password: "        ",
     });
-    expect(loginSchema.safeParse({ ...auth, password: "" }).success).toBe(true);
+    expect(loginSchema.safeParse({ ...auth, password: "" }).success).toBe(
+      false,
+    );
     expect(
       registerSchema.safeParse({ ...auth, email: "invalid" }).success,
     ).toBe(false);
