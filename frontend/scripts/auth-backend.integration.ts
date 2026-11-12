@@ -203,9 +203,7 @@ test("Khalil backend: profile read, changed-fields PATCH, age validation and per
     password: `Test-${crypto.randomUUID()}`,
   };
   await gateway.register(credentials);
-  const mail = await realFetch(
-    `${origin}/__review/mail?email=${encodeURIComponent(credentials.email)}`,
-  );
+  const mail = await waitForMail(credentials.email);
   await gateway.verify(
     new URL(((await mail.json()) as { link: string }).link).searchParams.get(
       "token",
