@@ -21,12 +21,17 @@ from app.game.models import GameMessage, GameParticipant, GameRoom
 
 
 @asynccontextmanager
-async def distributed_lock(redis: Redis, key: str) -> AsyncIterator[None]:
+async def distributed_lock(
+    redis: Redis,
+    key: str,
+    *,
+    blocking_timeout: float = LOCK_BLOCKING_TIMEOUT_SECONDS,
+) -> AsyncIterator[None]:
     """Coordinate critical sections across API workers using a Redis lock."""
     lock = redis.lock(
         key,
         timeout=LOCK_TTL_SECONDS,
-        blocking_timeout=LOCK_BLOCKING_TIMEOUT_SECONDS,
+        blocking_timeout=blocking_timeout,
     )
     acquired = await lock.acquire()
     if not acquired:
@@ -42,8 +47,12 @@ def matchmaking_lock(redis: Redis):
     return distributed_lock(redis, MATCHMAKING_LOCK_KEY)
 
 
-def room_lock(redis: Redis, room_id: int):
-    return distributed_lock(redis, f"{ROOM_LOCK_KEY_PREFIX}{room_id}")
+def room_lock(
+    redis: Redis, room_id: int, *, blocking_timeout: float = LOCK_BLOCKING_TIMEOUT_SECONDS
+):
+    return distributed_lock(
+        redis, f"{ROOM_LOCK_KEY_PREFIX}{room_id}", blocking_timeout=blocking_timeout
+    )
 
 
 async def get_user_active_membership(
