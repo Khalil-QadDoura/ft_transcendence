@@ -1,0 +1,22 @@
+{
+  "notFound": "This profile isn’t available.",
+  "loadError": "We couldn’t load this profile.",
+  "retry": "Try again",
+  "loading": "Loading profile…",
+  "member": "Community member",
+  "online": "Online",
+  "offline": "Offline",
+  "noPosition": "A new connection starts here.",
+  "noBio": "There’s more to discover about this person.",
+  "add": "Add friend",
+  "sent": "Request sent",
+  "accept": "Accept",
+  "decline": "Decline",
+  "remove": "Remove friend",
+  "message": "Message",
+  "actionError": "That action didn’t complete. Please try again.",
+  "unavailable": "Friend actions are temporarily unavailable. Please try again later.",
+  "removeTitle": "Remove this friend?",
+  "removeHint": "You can send a new request later.",
+  "cancel": "Cancel"
+}
