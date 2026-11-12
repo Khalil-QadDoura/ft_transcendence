@@ -1,5 +1,6 @@
 import { LegalPage } from "../features/legal/LegalPage";
 import { Link, type RouteObject } from "react-router-dom";
+import { AuthForm, VerifyEmail } from "../features/auth/AuthScreens";
 import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
@@ -57,13 +58,16 @@ export const routes: RouteObject[] = [
       ]),
       {
         element: <GuestOnly />,
-        children: pages([
-          ["login", "Welcome back."],
-          ["register", "Make your introduction."],
-        ]),
+        children: [
+          { path: "login", element: <AuthForm key="login" mode="login" /> },
+          {
+            path: "register",
+            element: <AuthForm key="register" mode="register" />,
+          },
+        ],
       },
+      { path: "verify-email", element: <VerifyEmail /> },
       ...pages([
-        ["verify-email", "Check your inbox."],
         ["forgot-password", "Let’s get you back in."],
         ["reset-password", "A fresh start."],
       ]),

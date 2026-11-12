@@ -45,6 +45,7 @@ export function RequireSession() {
 export function GuestOnly() {
   const session = useContext(SessionContext);
   const [params] = useSearchParams();
+  if (session === "loading") return <p role="status">Checking your session…</p>;
   return session === "authenticated" ? (
     <Navigate replace to={safeNext(params.get("next"))} />
   ) : (

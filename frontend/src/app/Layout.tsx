@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { LogoutButton } from "../features/auth/AuthScreens";
 import { SessionContext } from "./session";
 export function Layout({
   languageSlot,
@@ -56,6 +57,7 @@ export function Layout({
             )}
           </span>
           {unreadSlot}
+          {signedIn && <LogoutButton />}
           <Link className="button small" to={signedIn ? "/profile" : "/login"}>
             {signedIn ? "My profile" : "Sign in"}{" "}
             <span aria-hidden="true">↗</span>
