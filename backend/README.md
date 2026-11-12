@@ -29,7 +29,9 @@ app/
                  feed (BE-07); avatar and company logo upload-url and confirm, the default
                  avatar picture (BE-08); plus constants (video and picture limits, link lifetimes)
   worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
-  friends/ jobs/ conversations/ applications/ game/
+  game/          /api/game: Redis-locked matchmaking queue, waiting room lifecycle, start now,
+                 hidden random bot plan, staggered joins, template bot chat and server phases (BE-27)
+  friends/ jobs/ conversations/ applications/
                  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables

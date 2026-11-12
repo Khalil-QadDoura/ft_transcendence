@@ -1,7 +1,8 @@
 """App factory: builds the FastAPI app from settings, middleware, error handlers and routers."""
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import structlog
 from fastapi import APIRouter, Depends, FastAPI
@@ -19,6 +20,8 @@ from app.core.redis_client import setup_redis
 from app.core.request_id import request_id_middleware
 from app.core.storage import Storage
 from app.db.session import setup_database
+from app.game import routes as game
+from app.game import service as game_service
 from app.health import routes as health
 from app.media import routes as media
 from app.realtime import routes as realtime
@@ -31,10 +34,16 @@ log = structlog.get_logger("app")
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Code before `yield` runs once at start-up, code after it once at shutdown."""
     log.info("startup", env=app.state.settings.env)
-    yield
-    await app.state.engine.dispose()  # close this app's pooled database connections
-    await app.state.redis.aclose()  # and its Redis connections
-    log.info("shutdown")
+    scheduler_task = asyncio.create_task(game_service.run_scheduler(app))
+    try:
+        yield
+    finally:
+        scheduler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await scheduler_task
+        await app.state.engine.dispose()  # close this app's pooled database connections
+        await app.state.redis.aclose()  # and its Redis connections
+        log.info("shutdown")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -68,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(users.router)
     api.include_router(companies.router)
     api.include_router(conversations.router)
+    api.include_router(game.router)
     api.include_router(realtime.router)  # POST /api/ws/ticket
     api.include_router(media.router)
     app.include_router(api)
