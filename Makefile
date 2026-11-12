@@ -7,7 +7,7 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
 
-.PHONY: all env certs up down logs test files-check fclean re
+.PHONY: all env certs up down logs test files-check mail-check fclean re
 
 all: env up
 
@@ -55,6 +55,11 @@ test: env
 # the running stack; ends with a snippet for the Chrome console (INF-04).
 files-check:
 	@./infra/minio/smoke-test.sh
+
+# Sign-up email end to end through the proxy: register, the message in Mailpit at /mail,
+# its link to the frontend, verify, login; deletes the message afterwards (INF-05).
+mail-check:
+	@./infra/mailpit/smoke-test.sh
 
 # Removes containers, volumes (database, files), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.

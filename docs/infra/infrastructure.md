@@ -115,12 +115,19 @@ Every write needs a presigned PUT. Reasons: avatars and logos are shown publicly
 
 ## Email without a paid service
 
-Add Mailpit and send mail over plain SMTP from the API; the evaluator opens `https://localhost/mail` to click the verification link. The reference only speaks the Brevo HTTP API and prints the link to the log when no key is set.
+Mailpit catches every email the API sends over plain SMTP; the evaluator opens `https://localhost/mail` to click the verification link. The reference only speaks the Brevo HTTP API and prints the link to the log when no key is set. Implemented in INF-05 (service and env) with the SMTP sender of BE-03 (`backend/app/core/mailer.py`).
 
-- `mailpit` container: SMTP on `mailpit:1025` (internal), web inbox on `8025`, proxied at `/mail` with `MP_WEBROOT=/mail/`.
-- API env: `SMTP_HOST=mailpit`, `SMTP_PORT=1025`, `MAIL_FROM=no-reply@wozu.local`; keep Brevo as an optional sender when `BREVO_API_KEY` is set.
-- Email links use `FRONTEND_BASE_URL` (`https://localhost`): `/verify-email?token=…`, `/reset-password?token=…`.
-- Mention Mailpit in the README "Instructions" so the evaluator knows where verification emails land.
+- `mailpit` container (`axllent/mailpit:v1.33.1`): SMTP on `mailpit:1025` and the web inbox on `8025`, both on the internal network only, no host ports. The proxy serves the inbox at `/mail/` (`MP_WEBROOT=/mail/`), so its API is at `/mail/api/v1/…`.
+- API settings, passed by compose and read by `backend/app/core/config.py` under the same names: `SMTP_HOST=mailpit`, `SMTP_PORT=1025`, `MAIL_FROM=no-reply@wozu.local`, `FRONTEND_BASE_URL=https://localhost`.
+- **No Brevo (PO decision 2026-11-08):** the defense uses Mailpit only. The backend still has an optional `BREVO_API_KEY` setting (Brevo replaces SMTP when it is set); compose does not pass it and `.env.example` does not list it, so the API always sends over SMTP.
+- Email links use `FRONTEND_BASE_URL`: `/verify-email?token=…`, later `/reset-password?token=…` (BE-04). With a non-default `HTTPS_PORT` the port goes into `FRONTEND_BASE_URL` too (`https://localhost:18443`), or the link misses it.
+- For DOC-05: the README "Instructions" say that verification emails land at `https://localhost/mail`.
+
+**Flow.** `POST /api/auth/register` answers 202 and sends the email in the background. Mailpit keeps it; its sender is `MAIL_FROM`, its link `FRONTEND_BASE_URL/verify-email?token=<JWT>`. The link opens the frontend (the proxy's `/` route, `index.html`); its `/verify-email` page (FE-04) calls `GET /api/auth/verify?token=…`. Login answers 403 until then, 200 after.
+
+**Check:** `make mail-check` (`infra/mailpit/smoke-test.sh`) runs the flow against the running stack, from the host over HTTPS through the proxy only: the four settings as the API's own `Settings` reads them, no Brevo key; sign-up of `inf05-check-<timestamp>@example.com` → 202; login → 403; the message found through the Mailpit API with the right sender and link; the link → 200 `index.html`; the token → `/api/auth/verify` 200; login → 200 with tokens. It deletes its message through the Mailpit API; the test user stays in the database, one per run. The address uses `example.com` (reserved, RFC 2606): the API rejects `example.test`, because the email validator refuses special-use domains. Sign-up allows 5 requests per minute per IP, so the check can run about five times a minute.
+
+**Known limitation: the inbox has no login.** Anyone who reaches the site can open `/mail`, read every caught email and use its links: verify someone else's account, and once BE-04 lands, reset someone else's password. The API at `/mail/api/v1` is just as open (read, delete). Acceptable for the defense: the stack runs on the evaluator's machine for `localhost` and holds test accounts only. A shared or public deployment would need a login in front of the inbox (Mailpit's `MP_UI_AUTH_FILE`, a password file for the inbox and its API) or a real mail service instead of Mailpit. Caught mail lives inside the `mailpit` container (no volume): a recreated container starts with an empty inbox.
 
 ## One-command start and secrets
 
@@ -135,6 +142,7 @@ Add Mailpit and send mail over plain SMTP from the API; the evaluator opens `htt
 | `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
 | `make test` | starts `db` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db` and `redis` running |
 | `make files-check` | smoke test of `/files` against the running stack, ends with a Chrome console snippet (see File storage over HTTPS) |
+| `make mail-check` | sign-up email end to end through the proxy against the running stack (see Email without a paid service) |
 | `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
 | `make re` | `fclean` + `all` |
 
