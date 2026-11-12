@@ -69,11 +69,11 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | --- | --- | --- | --- | --- | --- |
 | POST | `/friends/requests` | Bearer | `{addressee_id}` | 201 `FriendshipOut` | 400 self, 404 user, 409 pending / already friends |
 | GET | `/friends/requests` | Bearer | — | 200 incoming pending `FriendshipOut[]` | — |
-| POST | `/friends/requests/{id}/accept` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 409 not pending |
-| POST | `/friends/requests/{id}/decline` | Bearer | — | 200 `FriendshipOut` | same |
+| POST | `/friends/requests/{id}/accept` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 404, 409 not pending |
+| POST | `/friends/requests/{id}/decline` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 404, 409 not pending |
 | DELETE | `/friends/{id}` | Bearer | — | 204 | 403, 404 |
-| GET | `/friends` | Bearer | — | 200 `[{user_id, first_name, last_name, position, avatar_object_key, is_online}]` | — |
-| GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, is_online, friendship_status}` | 404 |
+| GET | `/friends` | Bearer | — | 200 `[{user_id, first_name, last_name, position, avatar_object_key, avatar_url, is_online}]` | — |
+| GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, avatar_url, is_online, friendship_status}` | 404 |
 | POST | `/conversations` | Bearer | `{type: "direct", peer_user_id, job_id?}` | 201 `ConversationOut` (existing one if the pair already has a chat) | 400 no peer, 403 job not yours |
 | GET | `/conversations` | Bearer | query `limit` ≤ 100 | 200 `ConversationOut[]`, newest first | — |
 | GET | `/conversations/unread` | Bearer | — | 200 `{total_unread}` | — |
@@ -166,7 +166,7 @@ Avatars and company logos in the new backend (BE-08):
 - Company logo routes are for employers: a user with a company that is not deleted (404 "You have no company" otherwise).
 - `logo_url` in `CompanyOut` (`GET /companies/me`, `POST /companies`, `PATCH /companies/me`): the logo's public address, or `null` without a logo (there is no default logo). `DELETE /companies` empties the logo with the soft delete and deletes its file at once, as `DELETE /users/me` does for the avatar and the logo.
 - Default avatar: a user with no picture gets `avatar_url` = `DEFAULT_AVATAR_URL`, by default `/api/media/avatar/default.svg` on our own site, a grey picture the API serves itself (no login, cached for a day).
-- Not in BE-08: `avatar_url` in the public profile and in the friends list comes with those endpoints (BE-22), through `Storage.avatar_url`.
+- `avatar_url` in the public profile and in the friends list comes from `Storage.avatar_url` (BE-22): each user's public picture address or `DEFAULT_AVATAR_URL`.
 
 ## Game
 
@@ -237,7 +237,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | --- | --- | --- |
 | \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through Caddy: no CORS, no mixed content |
 | [x] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
-| \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
+| [x] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
 | \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
@@ -251,7 +251,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
 | \[ \] | `GET /metrics` for Prometheus, internal only | Monitoring module |
 
-The `avatar_url` row (BE-08): done for `UserOut` (`avatar_url`, with a public path and a default avatar) and `CompanyOut` (`logo_url`), see Media. It stays unticked until the public profile and the friends list (BE-22) return `avatar_url`, through `Storage.avatar_url`.
+The `avatar_url` row (BE-08 + BE-22): `UserOut` (`avatar_url`), `CompanyOut` (`logo_url`), `GET /api/friends`, and `GET /api/users/{id}/profile` all return public/default image URLs through `Storage.avatar_url` / `Storage.logo_url`.
 
 ## Machine-readable spec
 
