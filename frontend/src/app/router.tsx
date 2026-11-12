@@ -4,6 +4,8 @@ import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
+import { ConversationsPage } from "../features/conversations/ConversationsPage";
+import { VideoResumePage } from "../features/media/VideoResumePage";
 function ComingSoon({ title }: { title: string }) {
   return (
     <section className="empty-page">
@@ -69,17 +71,19 @@ export const routes: RouteObject[] = [
       ]),
       {
         element: <RequireSession />,
-        children: pages([
-          ["profile", "Your story."],
-          ["friends", "Good company."],
-          ["chat", "Start a conversation."],
-          ["chat/:id", "Keep the conversation going."],
-          ["videos", "More than a résumé."],
-          ["employer/*", "Build your next team."],
-          ["game", "Trust your instincts."],
-          ["game/rooms/:id", "Who’s really human?"],
-          ["settings", "Make yourself at home."],
-        ]),
+        children: [
+          ...pages([
+            ["profile", "Your story."],
+            ["friends", "Good company."],
+            ["videos", "More than a résumé."],
+            ["employer/*", "Build your next team."],
+            ["game", "Trust your instincts."],
+            ["game/rooms/:id", "Who’s really human?"],
+            ["settings", "Make yourself at home."],
+          ]),
+          { path: "chat", element: <ConversationsPage /> },
+          { path: "chat/:id", element: <ConversationsPage /> },
+        ],
       },
       { path: "*", element: <Missing /> },
     ],
