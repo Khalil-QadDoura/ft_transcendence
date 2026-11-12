@@ -177,7 +177,7 @@ def metrics_live_server() -> Iterator[str]:
     for key in redis_client.scan_iter("ws:*"):
         redis_client.delete(key)
 
-    app = build_app()
+    app = build_app(redis_url=TEST_REDIS_URL)
     try:
         with running_server(app) as host_port:
             yield host_port
