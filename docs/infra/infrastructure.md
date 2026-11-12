@@ -161,7 +161,7 @@ Option A is implemented in INF-04 (2026-11-09).
 | Client | Built from | Used for |
 | --- | --- | --- |
 | internal | `MINIO_ENDPOINT`, `secure=False` | Everything the server does itself: `stat_object` on `confirm` (real size, file exists), the worker's video download (BE-29; the reference downloads through the external URL, which cannot work from a container), deletes |
-| external | `MINIO_EXTERNAL_ENDPOINT` + `MINIO_REGION`, `secure=True` | Signing only: `presigned_put_object` (15 min), `presigned_get_object` (5 min). It never sends a request |
+| external | `MINIO_EXTERNAL_ENDPOINT` + `MINIO_REGION`, `secure=True` | Signing only: `presigned_put_object` (15 min by default, at most 1 h), `presigned_get_object` (5 min by default, at most 1 h; `MAX_URL_EXPIRES_SEC` in `backend/app/media/constants.py`). It never sends a request |
 
 **Bucket init.** The one-shot `minio-init` service runs `infra/minio/init-bucket.sh` on every `make`:
 
@@ -178,7 +178,7 @@ Option A is implemented in INF-04 (2026-11-09).
 | Keys | Anonymous access | How the frontend reads them |
 | --- | --- | --- |
 | `avatars/*`, `logos/*` | Download only: no listing, no upload | Stable URL `https://<host>/files/avatars/<uid>/<uuid>.jpg` in `avatar_url` / `logo_url` |
-| Everything else, e.g. `users/<uid>/intro/<uuid>.mp4` | None | Presigned GET from the API, 5 min |
+| Everything else, e.g. `users/<uid>/intro/<uuid>.mp4` | None | Presigned GET from the API, 5 min by default, at most 1 h (`MAX_URL_EXPIRES_SEC`) |
 | The bucket itself | No listing for anyone (`s3:ListBucket` is not granted) | — |
 
 Every write needs a presigned PUT. Reasons: avatars and logos are shown publicly anyway (profiles, friends lists, job cards); a stable URL lets the browser cache the image and never expires inside an open page; the API does not sign one URL per avatar in every list response. Videos stay private: they are personal data under moderation (privacy policy). The reference already uses the keys `avatars/{uid}/{uuid}.{ext}` and `logos/{cid}/{uuid}.{ext}`, so BE-08 needs no key change; the list is `PUBLIC_PREFIXES` in `init-bucket.sh`. If Khalil prefers signed GETs for avatars too, `PUBLIC_PREFIXES` becomes empty and the bucket is fully private.
