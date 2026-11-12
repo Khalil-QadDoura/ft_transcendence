@@ -254,7 +254,7 @@ Depends on: <CARD-ID>
 | 2026-11-04 | Root README placeholder is replaced by DOC-03; its author agreed | Final card plan | Decided |
 | 2026-11-05 | Front proxy: nginx + ModSecurity v3 + OWASP CRS from day one (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-01 PR |
 | 2026-11-08 | Compose and Makefile: `pgsty/minio`, `imresamu/postgis`, worker profile until BE-29, `fclean` keeps `.env`, host ports from `.env` (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-02 PR |
-| 2026-11-08 | Email at the defense: verification and password emails go only to Mailpit at `https://localhost/mail`; no Brevo or other paid email service, no `BREVO_API_KEY` in compose or `.env.example` (details below) | byul-byul | Decided |
+| 2026-11-08 | Email at the defense: verification and password emails go only to Mailpit at `https://localhost/mail`; no Brevo or other paid email service, no `BREVO_API_KEY` in compose or the root `.env.example` (details below) | byul-byul | Decided |
 | 2026-11-09 | File storage at `/files`: `minio-init` on the `pgsty/minio` image, private bucket with anonymous download on `avatars/` and `logos/` only, signing region `us-east-1` (details below) | byul-byul | Decided, except the public prefixes: proposed to Khalil (BE-08) in the INF-04 PR |
 | 2026-11-12 | Every image is pinned by tag and digest; `make images-check` enforces it (INF-07) | byul-byul | Decided |
 | 2026-11-12 | CI is one workflow `ci.yml` with a `ci-ok` gate; `ci-ok` is the only required check on `main` (INF-06) | byul-byul | Decided; branch protection on `main` to be applied by Khalil (repo admin) |
@@ -280,7 +280,7 @@ Depends on: <CARD-ID>
 
 **Email at the defense, 2026-11-08 (DOC-01)**
 
-- **Decision:** during the defense, verification and password emails go only to Mailpit, whose inbox is at `https://localhost/mail`. No Brevo or other paid email service; no `BREVO_API_KEY` in compose or `.env.example`. Setup: "Email without a paid service" in [infrastructure.md](../infra/infrastructure.md#email-without-a-paid-service) (INF-05).
+- **Decision:** during the defense, verification and password emails go only to Mailpit, whose inbox is at `https://localhost/mail`. No Brevo or other paid email service; no `BREVO_API_KEY` in compose or the root `.env.example`. Setup: "Email without a paid service" in [infrastructure.md](../infra/infrastructure.md#email-without-a-paid-service) (INF-05).
 - **Reason:** an evaluator can sign up without a paid service, and no extra third-party processor receives user data. This matches the Privacy Policy, whose section 5 names only OpenAI and the 42 intra sign-in.
 - **Owner:** byul-byul (PO).
 
