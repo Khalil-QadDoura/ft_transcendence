@@ -144,12 +144,15 @@ services:
 
   # Redis only for `make test` (profile test). Pub/sub channels and CLIENT KILL are
   # server-wide, so a database number on the redis service would still let the tests publish
-  # to the site's /ws sockets and cut them off. Nothing kept on disk, no volume, no port; the
-  # health check is only for `up --wait`, no service depends on it.
+  # to the site's /ws sockets and cut them off. Nothing kept on disk, no port; the image
+  # declares VOLUME /data, so a tmpfs takes its place and no anonymous volume is left after
+  # `make down`. The health check is only for `up --wait`, no service depends on it.
   redis-test:
     image: *redis-image
     profiles: ["test"]
     command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs:
+      - /data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
