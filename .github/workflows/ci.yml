@@ -1,0 +1,216 @@
+# CI (INF-06): one workflow for every pull request to main and every push to main.
+# No trigger-level path filter: a required check whose workflow does not start stays
+# "Expected" forever and blocks the merge. Instead the `changes` job decides which jobs
+# have work to do, the others are skipped, and `ci-ok` sums them up. Branch protection on
+# main requires `ci-ok` only. Details: docs/infra/infrastructure.md, section "CI".
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Which parts of the repository the pull request touches. A push to main runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      stack: ${{ steps.filter.outputs.stack }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            # Three dots: what the branch changed since it left main, not what main gained.
+            files="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+            # A here-string, not a pipe: grep -q stops reading early, and with pipefail a
+            # pipe would then report a match as a failure.
+            touched() { grep -Eq "$1" <<<"$files"; }
+            backend=false frontend=false stack=false
+            if touched '^(backend/|\.github/workflows/)'; then backend=true; fi
+            # docs/legal: npm run legal:check compares the rendered pages with these files.
+            if touched '^(frontend/|docs/legal/|\.github/workflows/)'; then frontend=true; fi
+            if touched '^(infra/|scripts/|backend/|frontend/|\.github/workflows/)|^(docker-)?compose[^/]*\.ya?ml$|^Makefile$|^\.env\.example$'; then stack=true; fi
+          else
+            files="(push to main: every job runs)"
+            backend=true frontend=true stack=true
+          fi
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "stack=$stack"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Changed files"
+            echo '```'
+            echo "$files"
+            echo '```'
+            echo "backend: $backend, frontend: $frontend, stack: $stack"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "backend=$backend frontend=$frontend stack=$stack"
+
+  # Moved unchanged from backend.yml (BE-20, BE-07, BE-06); only the db image is now the one
+  # compose uses.
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        # The same image and digest as the db service in docker-compose.yml (INF-02). Its
+        # entrypoint creates POSTGRES_DB with PostGIS, as postgis/postgis did.
+        image: imresamu/postgis:15-3.4@sha256:44d4443d107a7750ea29a441dec0050cd7543178f011ae0620e4b572578e9300
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: wozu_ci_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/wozu_ci_test
+      TEST_REDIS_URL: redis://localhost:6379/1
+      DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/wozu_ci_test
+      JWT_SECRET: ci-only-jwt-secret-not-for-production
+      # The media tests (BE-07) also need MinIO, and the Redis above (TEST_REDIS_URL).
+      TEST_MINIO_ENDPOINT: localhost:9000
+      TEST_MINIO_ACCESS_KEY: ci-only-minio-user
+      TEST_MINIO_SECRET_KEY: ci-only-minio-secret
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      # MinIO needs a command (`server /data`), which a service container cannot be given.
+      # The same image and digest as docker-compose.yml (INF-04).
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER="$TEST_MINIO_ACCESS_KEY" \
+            -e MINIO_ROOT_PASSWORD="$TEST_MINIO_SECRET_KEY" \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 \
+            server /data
+          timeout 60 sh -c 'until curl -sf http://localhost:9000/minio/health/live; do sleep 1; done'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: 'backend/requirements*.txt'
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -q --junitxml=pytest-results.xml
+      - name: Require database tests to run
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          suites = ET.parse('pytest-results.xml').getroot().iter('testsuite')
+          skipped = sum(int(suite.get('skipped', '0')) for suite in suites)
+          assert skipped == 0, f'{skipped} tests skipped; database or Redis validation is incomplete'
+          PY
+      - run: docker build -t wozu-backend:ci .
+
+  # Moved unchanged from frontend.yml (FE-01, FE-13).
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run legal:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: docker build -t wozu-frontend:ci .
+
+  # The whole stack as an evaluator starts it: `make` on a fresh clone (new .env from
+  # .env.example, new certificate, build, every service up and healthy), then the checks
+  # that run against it.
+  stack:
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: make (fresh .env and certificate, build, start, wait until healthy)
+        run: make
+      - name: docker compose config (every variable reference resolves)
+        run: docker compose config -q
+      - run: make test
+      - run: make files-check
+      - run: make mail-check
+      # TODO(INF-06): add make https-check after #28 merges
+      - name: Service logs
+        if: failure()
+        run: |
+          docker compose --profile '*' ps -a
+          docker compose --profile '*' logs --no-color --tail=300
+      - name: Stop the stack
+        if: always()
+        run: docker compose --profile '*' down -v --remove-orphans
+
+  # The only check branch protection requires. Skipped jobs count as passed (nothing to
+  # check); a failed or cancelled job fails the gate.
+  ci-ok:
+    needs: [changes, backend, frontend, stack]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          BACKEND: ${{ needs.backend.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          STACK: ${{ needs.stack.result }}
+        run: |
+          status=0
+          for job in "changes=$CHANGES" "backend=$BACKEND" "frontend=$FRONTEND" "stack=$STACK"; do
+            echo "$job"
+            case "${job#*=}" in
+              failure|cancelled) status=1 ;;
+            esac
+          done
+          exit "$status"
