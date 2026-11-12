@@ -39,7 +39,7 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
 | DELETE | `/users/me` | Bearer | — | 204 (soft delete) | 401 |
 
-`UserOut` = `{id, email, first_name, last_name, position, birth_date, bio, avatar_object_key, is_email_verified}` (new backend, BE-05; `avatar_url` comes with BE-08). The reference also sends `phone`, `username`, `is_phone_verified` and `account_number` (`WZ-000123`); the new backend drops them.
+`UserOut` = `{id, email, first_name, last_name, position, birth_date, bio, avatar_object_key, avatar_url, is_email_verified}` (new backend, BE-05; `avatar_url` from BE-08: my picture's public address, or the default picture, see Media). The reference also sends `phone`, `username`, `is_phone_verified` and `account_number` (`WZ-000123`); the new backend drops them.
 
 Sign-up and login in the new backend (BE-03):
 
@@ -59,7 +59,7 @@ Passwords in the new backend (BE-04):
 The profile in the new backend (BE-05):
 
 - `PATCH /users/me` changes only the fields that are sent: a field left out keeps its value, and `{}` changes nothing (200). `first_name` and `last_name` 1–50 characters, `position` 1–100, `bio` up to 500; spaces around them are removed. `birth_date` is `YYYY-MM-DD`, and the user must be at least 18 full years old today, else 422 `"body → birth_date: You must be at least 18 years old"`. Only `bio` accepts `null` (it empties the bio). Any other field (`email`, `status`, `phone`, …) gets 422 `"body → <field>: Extra inputs are not permitted"`, and then nothing is changed. No body at all gets 422.
-- `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409).
+- `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409). The files of the avatar and of the user's company logo are deleted from storage at once and both keys are emptied (BE-08), because their public addresses would otherwise keep working.
 
 ## Friends, profiles and conversations
 
@@ -101,7 +101,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 | POST | `/companies` | Bearer | `{name, description?, country?, city?, district?}` | 201 `CompanyOut` | 409 already has one |
 | GET | `/companies/me` | Bearer | — | 200 `CompanyOut` or `null` | — |
 | PATCH | `/companies/me` | Bearer | `{name, country, city, district?, country_code?}` | 200 `CompanyOut` | 404, 422 |
-| DELETE | `/companies` | Bearer | — | 204 (soft, idempotent) | — |
+| DELETE | `/companies` | Bearer | — | 204 (soft, idempotent; the logo file is deleted, BE-08) | — |
 | POST | `/jobs` | Bearer (employer) | `JobCreate` | 201 `JobOut` | 404 no company, 422 |
 | PATCH | `/jobs/{id}` | Bearer (owner) | any `JobCreate` fields | 200 `JobOut` | 404 |
 | DELETE | `/jobs/{id}` | Bearer (owner) | — | 204 (soft) | 404 |
@@ -121,7 +121,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 - `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
 - `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, views_count, applications_count, new_applications_count, created_by_id, updated_by_id, created_at, updated_at}`.
 - `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at}`.
-- `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, status, country, city, district, country_code, created_at, updated_at}`.
+- `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, logo_url, status, country, city, district, country_code, created_at, updated_at}`. `logo_url` (new backend, BE-08): the logo's public address, or `null` without a logo (see Media).
 
 ## Media
 
@@ -129,22 +129,44 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/media/intro-video/upload-url` | Bearer | `{content_type: "video/mp4", ext: "mp4", expires_sec 60–3600}` | 200 `{object_key, put_url, get_url, expires_sec, max_bytes}` | 415 not mp4 |
-| POST | `/media/intro-video/confirm` | Bearer | `{object_key, duration_sec 1–30, size_bytes ≤ 52428800, content_type: "video/mp4"}` | 201 `{id, moderation_status: pending, lifecycle_status: loaded}` | 400 key not yours, 409 3 videos already / duplicate |
-| GET | `/media/intro-video/mine` | Bearer | query `expires_sec` | 200 `{items: [{id, object_key, duration_sec, size_bytes, content_type, moderation_status, lifecycle_status, created_at, updated_at, signed_url, expires_sec}]}` | — |
-| POST | `/media/intro-video/{id}/post` | Bearer | — | 200 `{id, moderation_status, lifecycle_status}`; previous posted video becomes `unposted` | 409 not approved |
-| POST | `/media/intro-video/{id}/unpost` | Bearer | — | 200 same shape | 409 not posted |
-| POST | `/media/intro-video/{id}/delete` | Bearer | — | 200 same shape (soft delete) | 404 |
-| GET | `/media/feed` | Bearer | query `limit` ≤ 50, `cursor`, `expires_sec`, `job_id?` | 200 `{items: [{id, user_id, duration_sec, size_bytes, content_type, signed_url, expires_sec, created_at, author_name, author_position}], next_cursor}` | — |
-| POST | `/media/avatar/upload-url` | Bearer | query `ext` (default jpg), `expires_sec` | 200 `{object_key, put_url, expires_sec}` | — |
-| POST | `/media/avatar/confirm` | Bearer | `{object_key}` | 204 | — |
-| POST | `/media/company-logo/upload-url` | Bearer (employer) | query `ext`, `expires_sec` | 200 `{object_key, put_url, expires_sec}` | 404 no company |
-| POST | `/media/company-logo/confirm` | Bearer (employer) | `{object_key}` | 204 | 404 |
+| POST | `/media/intro-video/upload-url` | Bearer | `{content_type: "video/mp4", ext: "mp4", expires_sec 60–3600}` | 200 `{object_key, put_url, get_url, expires_sec, max_bytes}` | 415 not mp4 (`content_type` or `ext`), 422 `expires_sec` |
+| POST | `/media/intro-video/confirm` | Bearer | `{object_key, duration_sec 1–30, size_bytes ≤ 52428800, content_type: "video/mp4"}` | 201 `{id, moderation_status: pending, lifecycle_status: loaded}` | 400 key not yours or no file uploaded there, 409 3 videos already / already confirmed, 413 the stored file is over 50 MiB, 415 the stored file is not an MP4, 422 |
+| GET | `/media/intro-video/mine` | Bearer | query `expires_sec` | 200 `{items: [{id, object_key, duration_sec, size_bytes, content_type, moderation_status, lifecycle_status, created_at, updated_at, signed_url, expires_sec}]}`, not the deleted ones, newest first | 422 `expires_sec` |
+| POST | `/media/intro-video/{id}/post` | Bearer | — | 200 `{id, moderation_status, lifecycle_status}`; previous posted video becomes `unposted` | 404 not mine / deleted, 409 not approved / already posted, 422 `id` under 1 or too large |
+| POST | `/media/intro-video/{id}/unpost` | Bearer | — | 200 same shape | 404, 409 not posted, 422 `id` under 1 or too large |
+| POST | `/media/intro-video/{id}/delete` | Bearer | — | 200 same shape (soft delete) | 404 not mine / already deleted, 422 `id` under 1 or too large |
+| GET | `/media/feed` | Bearer | query `limit` ≤ 50, `cursor`, `expires_sec`, `job_id?` | 200 `{items: [{id, user_id, duration_sec, size_bytes, content_type, signed_url, expires_sec, created_at, author_name, author_position}], next_cursor}` | 422 `limit` 1–50, `expires_sec`, `cursor` that is no video's id, `job_id` under 1 or too large |
+| POST | `/media/avatar/upload-url` | Bearer | query `ext` (`jpg` default, `png`, `webp`), `expires_sec` 60–3600 (default 900) | 200 `{object_key, put_url, expires_sec, max_bytes}`, `object_key` in the private `staging/` folder | 415 other extension, 422 `expires_sec` |
+| POST | `/media/avatar/confirm` | Bearer | `{object_key}` | 204; `GET /users/me` then gives the new `avatar_url` | 400 key not yours, no file uploaded there or already confirmed, 413 the stored file is over 5 MiB or the picture over 25 million pixels, 415 extension, or the file is not a real jpg / png / webp picture, 422 |
+| GET | `/media/avatar/default.svg` | — | — | 200 `image/svg+xml`, the default avatar picture | — |
+| POST | `/media/company-logo/upload-url` | Bearer (employer) | same query as the avatar | 200 same shape | 404 no company, 415, 422 |
+| POST | `/media/company-logo/confirm` | Bearer (employer) | `{object_key}` | 204; `GET /companies/me` then gives the new `logo_url` | 404 no company, 400, 413, 415, 422 |
 
 - Statuses: moderation `pending → approved | rejected` (+ `moderation_error` once fixed); lifecycle `loaded → posted ⇄ unposted`, any → `deleted`. Poll `/media/intro-video/mine` while a video is `pending` (or listen for a WS event once added).
 - The browser PUT to `put_url` is a plain PUT of the file bytes to `https://<host>/files/<object_key>?X-Amz-…`. That is the frontend's own origin, so no CORS is involved (INF-04, Infrastructure doc). Use XHR or fetch with upload progress for the progress bar.
 - With `job_id`, the employer feed lists that job's applicants first, then candidates whose position matches the job title, then everyone else.
-- Avatar and logo are returned only as `avatar_object_key` / `logo_object_key` today; the frontend cannot turn a key into a URL. See planned changes.
+- Avatar and logo: the reference returns only `avatar_object_key` / `logo_object_key`, which the frontend cannot turn into a URL; the new backend returns `avatar_url` (BE-08, below).
+
+Intro videos in the new backend (BE-07); every route needs the access token (401 otherwise):
+
+- `upload-url` makes the key `users/<my id>/intro/<uuid>.mp4` and signs both links for `MINIO_EXTERNAL_ENDPOINT` (`https://localhost/files/<key>?X-Amz-…`), both valid `expires_sec` (15 min by default); the links of `mine` and the feed are valid 5 min by default (`expires_sec` is 60–3600 everywhere). The bucket is private (only `avatars/` and `logos/` can be downloaded without a signature, BE-08): without a valid signature MinIO answers 403. The drafts, the demo feed and `/media/health` are not ported (404).
+- `confirm` checks the file in storage, not what the browser says: the key must have exactly that shape with my own id (400); `stat_object` says whether the file exists (400 "No uploaded file at this object_key") and its real size (over 50 MiB → 413; the saved `size_bytes` is the real one); its first 8 bytes must be an MP4 file header, `ftyp` at bytes 4–7 (415). `duration_sec` is what the browser reports (1–30, else 422): the API does not open the video, so the moderation worker (BE-29) measures the real duration (ffprobe) and rejects a video over 30 s. At most 3 videos that are not deleted (409); a key confirmed once cannot be confirmed again, even after a delete (409).
+- After answering, `confirm` puts one Celery task on the Redis queue `celery`: `app.worker.tasks.moderation.run_moderation_task` with the arguments `[video_id, object_key]`, for the worker (`celery -A app.worker.celery_app worker`, BE-29). If Redis cannot be reached, `confirm` still answers 201 and the video stays `pending`; the error is logged, and the worker's check for stuck pending videos (BE-29) queues it again.
+- `post`: only an `approved` video that is not posted yet (409); my previously posted video becomes `unposted` (one posted video per user, also a unique index in the database). `unpost`: only a posted video (409). `delete` sets `lifecycle_status = deleted`; the row and the file stay. A deleted video is gone for its owner: not in `mine` or the feed, `post` / `unpost` / `delete` answer 404, and it no longer counts in the 3. Someone else's video gets the same 404 as a missing one.
+- The feed shows approved, posted videos of active accounts, newest first. An employer (a user with an active company) sees only `video_rating` A and B. With `job_id`, three groups, newest first in each: 1. that job's applicants still `submitted` or `viewed`, 2. users whose position contains the job title (any case), 3. everyone else; an unknown job gives the plain order. `cursor` is the `next_cursor` of the page before (the id of its last video; pages keep the group order); `next_cursor` is `null` on the last page. `limit` 1–50, default 20.
+- A `cursor` that is no video's id gets 422 `"query → cursor: No video has this id: use the next_cursor of the page before"` (with or without `job_id`); a cursor under 1, too large for an id, or not a whole number gets the usual 422 of a bad query field (`"query → cursor: …"`). A `next_cursor` the API gave keeps working even if its video has left the feed since (unposted or deleted): the next page still comes.
+- An id in the address (the video `{id}` of `post`, `unpost` and `delete`, the feed's `job_id`) must be a whole number from 1 to 9223372036854775807, the largest id the database holds (BIGINT); anything else gets the usual 422 (`"path → video_id: …"`, `"query → job_id: …"`) before the database is asked. A valid id that matches nothing is still 404 for a video and the plain order for a job.
+
+Avatars and company logos in the new backend (BE-08):
+
+- **Read path, agreed with infra (INF-04):** the bucket stays private, but anyone may download (not list, not upload) the files under `avatars/` and `logos/`. So `avatar_url` is a plain address with no signature, `<MINIO_EXTERNAL_ENDPOINT>/<bucket>/<key>`, e.g. `https://localhost/files/avatars/12/<uuid>.png`. It never expires: a page left open never shows a broken picture, and the browser can cache it. Signed links (`?X-Amz-…`) are only for private files: the intro videos.
+- **Upload into `staging/`, then the API publishes:** the browser never writes into `avatars/` or `logos/`. `upload-url` gives a key in the private folder `staging/`, `staging/avatars/<user id>/<uuid>.<ext>` or `staging/logos/<company id>/<uuid>.<ext>` (a logo belongs to the company, so its folder does too), and a `put_url` signed for that key only; nobody can download from `staging/` (403). `confirm` checks the upload and, if it is good, the API itself writes a copy of it at a new key that no upload link ever pointed at, `avatars/<user id>/<new uuid>.<ext>` or `logos/<company id>/<new uuid>.<ext>`, which goes into `users.avatar_object_key` (or `companies.logo_object_key`); `avatar_url` / `logo_url` point at it. The upload itself is deleted, accepted or refused. So nothing unchecked is ever public, and the upload link, valid until it expires, can only write into `staging/` again, never change a published picture.
+- `ext` is `jpg`, `png` or `webp`, in any case (the key is written in small letters); anything else gets 415. The `Content-Type` of the PUT does not matter: the public copy gets `image/jpeg`, `image/png` or `image/webp` from the API, after the check.
+- `confirm` checks the file in storage, not what the browser says: the extension is jpg, png or webp (415); the key has exactly that `staging/` shape with my own id, or my company's id (400; a key under `avatars/` or `logos/` is refused too); `stat_object` finds a file there (400 "No uploaded file at this object_key: …", also for an upload already confirmed), of at most 5 MiB = 5 242 880 bytes (413; neither the reference nor this contract had a limit). The API then reads it once, and the image library Pillow opens it as the type its extension says and decodes every pixel (415 "The uploaded file is not a png picture" otherwise: a web page, a JPEG called `.png`, a file that only starts like a PNG, one cut short); at most 25 million pixels (413), checked before decoding, so a small file holding a huge picture is refused. The public copy is made from those very bytes. `confirm` locks the user's row (for a logo, then the company's too) until it has saved, so two confirms of the same upload at once publish it once (the other gets 400). Then the file of the previous avatar (or logo) is deleted; if a delete fails, the request still succeeds and the file left behind is logged. `DELETE /users/me` and `DELETE /companies` take the same locks and read the picture key again under them: a confirm that meets a deletion either comes first, and the deletion then deletes its new file, or waits for it and publishes nothing, getting the answer of a deleted account (401) or of a user without a company (404).
+- Company logo routes are for employers: a user with a company that is not deleted (404 "You have no company" otherwise).
+- `logo_url` in `CompanyOut` (`GET /companies/me`, `POST /companies`, `PATCH /companies/me`): the logo's public address, or `null` without a logo (there is no default logo). `DELETE /companies` empties the logo with the soft delete and deletes its file at once, as `DELETE /users/me` does for the avatar and the logo.
+- Default avatar: a user with no picture gets `avatar_url` = `DEFAULT_AVATAR_URL`, by default `/api/media/avatar/default.svg` on our own site, a grey picture the API serves itself (no login, cached for a day).
+- Not in BE-08: `avatar_url` in the public profile and in the friends list comes with those endpoints (BE-22), through `Storage.avatar_url`.
 
 ## Game
 
@@ -228,6 +250,8 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |
 | \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
 | \[ \] | `GET /metrics` for Prometheus, internal only | Monitoring module |
+
+The `avatar_url` row (BE-08): done for `UserOut` (`avatar_url`, with a public path and a default avatar) and `CompanyOut` (`logo_url`), see Media. It stays unticked until the public profile and the friends list (BE-22) return `avatar_url`, through `Storage.avatar_url`.
 
 ## Machine-readable spec
 

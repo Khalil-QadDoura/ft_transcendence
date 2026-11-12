@@ -3,3 +3,6 @@ dist
 coverage
 src/api/schema.d.ts
 package-lock.json
+
+# Byte-equivalent copies of approved documents; formatted by their owners.
+src/features/legal/*.md
