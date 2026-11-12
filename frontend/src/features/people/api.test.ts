@@ -13,13 +13,11 @@ test("friend removal uses the relation ID, not the profile user ID", async () =>
   expect(fetch.mock.calls[0][1].method).toBe("DELETE");
 });
 test("direct conversation sends the backend peer_user_id contract", async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue(
-      new Response(JSON.stringify({ id: 7 }), {
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ id: 7 }), {
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
   vi.stubGlobal("fetch", fetch);
   expect(await peopleApi.message(42)).toEqual({ id: 7 });
   expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ peer_user_id: 42 });

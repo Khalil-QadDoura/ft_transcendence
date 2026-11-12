@@ -39,13 +39,11 @@ export const peopleApi = {
   remove: (id: number) =>
     apiClient(`/friends/${userId.parse(id)}`, { method: "DELETE" }),
   async message(id: number) {
-    return z
-      .object({ id: userId })
-      .parse(
-        await apiClient("/conversations", {
-          method: "POST",
-          body: { peer_user_id: userId.parse(id) },
-        }),
-      );
+    return z.object({ id: userId }).parse(
+      await apiClient("/conversations", {
+        method: "POST",
+        body: { peer_user_id: userId.parse(id) },
+      }),
+    );
   },
 };
