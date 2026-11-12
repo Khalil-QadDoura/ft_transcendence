@@ -14,6 +14,7 @@ from app.core.errors import add_error_handlers
 from app.core.internal import require_internal_key
 from app.core.limiter import limiter
 from app.core.logging import configure_logging
+from app.core.metrics import setup_metrics
 from app.core.queue import TaskQueue
 from app.core.redis_client import setup_redis
 from app.core.request_id import request_id_middleware
@@ -81,6 +82,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     internal.include_router(health.internal_router)
     app.include_router(internal)
+    setup_metrics(app)
     return app
 
 
