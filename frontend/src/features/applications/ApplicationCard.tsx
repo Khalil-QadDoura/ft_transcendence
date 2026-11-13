@@ -43,7 +43,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
     switch (status) {
       case "submitted":
         return (
-          <Badge variant="neutral" data-testid="status-submitted">
+          <Badge variant="default" data-testid="status-submitted">
             {t("applications.statusSubmitted")}
           </Badge>
         );
@@ -67,12 +67,12 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
         );
       case "withdrawn":
         return (
-          <Badge variant="neutral" data-testid="status-withdrawn">
+          <Badge variant="outline" data-testid="status-withdrawn">
             {t("applications.statusWithdrawn")}
           </Badge>
         );
       default:
-        return <Badge variant="neutral">{status}</Badge>;
+        return <Badge variant="default">{status}</Badge>;
     }
   };
 

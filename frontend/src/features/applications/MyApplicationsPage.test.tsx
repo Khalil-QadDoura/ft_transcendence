@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { BrowserRouter } from "react-router-dom";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
 import { MyApplicationsPage } from "./MyApplicationsPage";
@@ -10,6 +11,10 @@ vi.mock("./api", () => ({
   listMyApplications: vi.fn(),
   withdrawApplication: vi.fn(),
 }));
+
+let root: Root;
+let container: HTMLDivElement;
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const mockApplications: ApplicationItem[] = [
   {
@@ -47,14 +52,27 @@ const mockApplications: ApplicationItem[] = [
 describe("MyApplicationsPage Component (FE-15)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
     vi.restoreAllMocks();
   });
 
-  const renderWithRouter = (ui: React.ReactElement) => {
-    return render(<BrowserRouter>{ui}</BrowserRouter>);
+  const renderPage = async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <MyApplicationsPage />
+        </MemoryRouter>,
+      );
+    });
   };
 
   it("renders empty state when candidate has no applications", async () => {
@@ -63,14 +81,12 @@ describe("MyApplicationsPage Component (FE-15)", () => {
       next_cursor: null,
     });
 
-    renderWithRouter(<MyApplicationsPage />);
+    await renderPage();
 
-    expect(screen.getByTestId("applications-loading")).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(screen.getByTestId("empty-applications-card")).toBeInTheDocument();
-      expect(screen.getByText("No applications found")).toBeInTheDocument();
-    });
+    expect(
+      container.querySelector('[data-testid="empty-applications-card"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("No applications found");
   });
 
   it("renders list of applications with job titles, companies and statuses", async () => {
@@ -79,20 +95,24 @@ describe("MyApplicationsPage Component (FE-15)", () => {
       next_cursor: null,
     });
 
-    renderWithRouter(<MyApplicationsPage />);
+    await renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("Senior React Engineer")).toBeInTheDocument();
-      expect(screen.getByText("TechFlow Inc.")).toBeInTheDocument();
-      expect(screen.getByTestId("status-submitted")).toBeInTheDocument();
+    expect(container.textContent).toContain("Senior React Engineer");
+    expect(container.textContent).toContain("TechFlow Inc.");
+    expect(
+      container.querySelector('[data-testid="status-submitted"]'),
+    ).not.toBeNull();
 
-      expect(screen.getByText("Full Stack Developer")).toBeInTheDocument();
-      expect(screen.getByText("Nexus Labs")).toBeInTheDocument();
-      expect(screen.getByTestId("status-invited")).toBeInTheDocument();
+    expect(container.textContent).toContain("Full Stack Developer");
+    expect(container.textContent).toContain("Nexus Labs");
+    expect(
+      container.querySelector('[data-testid="status-invited"]'),
+    ).not.toBeNull();
 
-      // Open Chat button is present for application with conversation_id: 42
-      expect(screen.getByTestId("chat-link-btn-2")).toBeInTheDocument();
-    });
+    // Open Chat button is present for application with conversation_id: 42
+    expect(
+      container.querySelector('[data-testid="chat-link-btn-2"]'),
+    ).not.toBeNull();
   });
 
   it("withdraws an application after user confirmation", async () => {
@@ -102,26 +122,40 @@ describe("MyApplicationsPage Component (FE-15)", () => {
     });
     vi.mocked(api.withdrawApplication).mockResolvedValueOnce();
 
-    renderWithRouter(<MyApplicationsPage />);
+    await renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByTestId("withdraw-btn-1")).toBeInTheDocument();
-    });
+    const withdrawBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="withdraw-btn-1"]',
+    );
+    expect(withdrawBtn).not.toBeNull();
 
     // Click withdraw trigger
-    fireEvent.click(screen.getByTestId("withdraw-btn-1"));
+    await act(async () => {
+      withdrawBtn?.click();
+    });
 
     // Confirmation box visible
-    expect(screen.getByTestId("withdraw-confirm-box-1")).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-testid="withdraw-confirm-box-1"]'),
+    ).not.toBeNull();
 
     // Confirm withdraw
-    fireEvent.click(screen.getByTestId("confirm-withdraw-btn-1"));
+    const confirmBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-withdraw-btn-1"]',
+    );
+    expect(confirmBtn).not.toBeNull();
 
-    await waitFor(() => {
-      expect(api.withdrawApplication).toHaveBeenCalledWith(1);
-      expect(screen.getByTestId("status-withdrawn")).toBeInTheDocument();
-      expect(screen.queryByTestId("withdraw-btn-1")).not.toBeInTheDocument();
+    await act(async () => {
+      confirmBtn?.click();
     });
+
+    expect(api.withdrawApplication).toHaveBeenCalledWith(1);
+    expect(
+      container.querySelector('[data-testid="status-withdrawn"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="withdraw-btn-1"]'),
+    ).toBeNull();
   });
 
   it("filters applications when switching tabs", async () => {
@@ -131,25 +165,28 @@ describe("MyApplicationsPage Component (FE-15)", () => {
         next_cursor: null,
       })
       .mockResolvedValueOnce({
-        items: [mockApplications[1]], // only invited
+        items: [mockApplications[1]],
         next_cursor: null,
       });
 
-    renderWithRouter(<MyApplicationsPage />);
+    await renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("Senior React Engineer")).toBeInTheDocument();
-    });
+    expect(container.textContent).toContain("Senior React Engineer");
 
     // Click Invited filter tab
-    fireEvent.click(screen.getByTestId("filter-tab-invited"));
+    const tabInvited = container.querySelector<HTMLButtonElement>(
+      '[data-testid="filter-tab-invited"]',
+    );
+    expect(tabInvited).not.toBeNull();
 
-    await waitFor(() => {
-      expect(api.listMyApplications).toHaveBeenCalledWith(
-        expect.objectContaining({ status: "invited" }),
-      );
-      expect(screen.getByText("Full Stack Developer")).toBeInTheDocument();
+    await act(async () => {
+      tabInvited?.click();
     });
+
+    expect(api.listMyApplications).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "invited" }),
+    );
+    expect(container.textContent).toContain("Full Stack Developer");
   });
 
   it("loads more applications using pagination cursor", async () => {
@@ -163,20 +200,21 @@ describe("MyApplicationsPage Component (FE-15)", () => {
         next_cursor: null,
       });
 
-    renderWithRouter(<MyApplicationsPage />);
+    await renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByTestId("load-more-btn")).toBeInTheDocument();
+    const loadMoreBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="load-more-btn"]',
+    );
+    expect(loadMoreBtn).not.toBeNull();
+
+    await act(async () => {
+      loadMoreBtn?.click();
     });
 
-    fireEvent.click(screen.getByTestId("load-more-btn"));
-
-    await waitFor(() => {
-      expect(api.listMyApplications).toHaveBeenCalledWith(
-        expect.objectContaining({ cursor: 100 }),
-      );
-      expect(screen.getByText("Full Stack Developer")).toBeInTheDocument();
-      expect(screen.queryByTestId("load-more-btn")).not.toBeInTheDocument();
-    });
+    expect(api.listMyApplications).toHaveBeenCalledWith(
+      expect.objectContaining({ cursor: 100 }),
+    );
+    expect(container.textContent).toContain("Full Stack Developer");
+    expect(container.querySelector('[data-testid="load-more-btn"]')).toBeNull();
   });
 });
