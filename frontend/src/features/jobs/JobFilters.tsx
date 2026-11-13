@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
+import { useText } from "../../i18n/useText";
 import type {
   JobSchedule,
   JobSearchFilters,
@@ -32,6 +33,7 @@ export function JobFilters({
   locationError = null,
   className = "",
 }: JobFiltersProps) {
+  const { t } = useText();
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
   const handleFieldChange = (key: keyof JobSearchFilters, value: unknown) => {
@@ -43,24 +45,26 @@ export function JobFilters({
   };
 
   const scheduleOptions = [
-    { value: "", label: "All Schedules" },
-    { value: "full_time", label: "Full time" },
-    { value: "part_time", label: "Part time" },
-    { value: "internship", label: "Internship" },
+    { value: "", label: t("jobs.allSchedules") },
+    { value: "full_time", label: t("jobs.scheduleFullTime") },
+    { value: "part_time", label: t("jobs.schedulePartTime") },
+    { value: "internship", label: t("jobs.scheduleInternship") },
   ];
 
   const urgencyOptions = [
-    { value: "", label: "All Urgencies" },
-    { value: "hot", label: "Hot 🔥" },
-    { value: "urgent", label: "Urgent ⚡" },
-    { value: "normal", label: "Normal" },
+    { value: "", label: t("jobs.allUrgencies") },
+    { value: "hot", label: t("jobs.urgencyHot") },
+    { value: "urgent", label: t("jobs.urgencyUrgent") },
+    { value: "normal", label: t("jobs.urgencyNormal") },
   ];
 
   const sortOptions = [
-    { value: "newest", label: "Newest first" },
+    { value: "newest", label: t("jobs.newestFirst") },
     {
       value: "nearest",
-      label: userLocation ? "Nearest to me" : "Nearest (requires location)",
+      label: userLocation
+        ? t("jobs.nearestToMe")
+        : t("jobs.nearestRequiresLocation"),
       disabled: !userLocation,
     },
   ];
@@ -95,8 +99,8 @@ export function JobFilters({
         <div className="flex-1">
           <Input
             id="job-keyword-filter"
-            aria-label="Search jobs"
-            placeholder="Search title, skills, keywords..."
+            aria-label={t("jobs.searchJobs")}
+            placeholder={t("jobs.searchPlaceholder")}
             value={filters.keyword || ""}
             onChange={(e) => handleFieldChange("keyword", e.target.value)}
             startAddon={<span aria-hidden="true">🔍</span>}
@@ -106,7 +110,7 @@ export function JobFilters({
         <div className="w-full sm:w-48">
           <Select
             id="job-sort-filter"
-            aria-label="Sort by"
+            aria-label={t("jobs.sortBy")}
             options={sortOptions}
             value={filters.sort_by || "newest"}
             onChange={(e) =>
@@ -123,7 +127,7 @@ export function JobFilters({
           aria-expanded={isMobileExpanded}
           aria-controls="expanded-filters-panel"
         >
-          {isMobileExpanded ? "Hide Filters ▲" : "More Filters ▼"}
+          {isMobileExpanded ? t("jobs.hideFilters") : t("jobs.moreFilters")}
         </Button>
       </div>
 
@@ -138,8 +142,8 @@ export function JobFilters({
           {/* Position / Title filter */}
           <Input
             id="job-position-filter"
-            label="Position / Role"
-            placeholder="e.g. Frontend Engineer"
+            label={t("jobs.positionRole")}
+            placeholder={t("jobs.positionPlaceholder")}
             value={filters.position || ""}
             onChange={(e) => handleFieldChange("position", e.target.value)}
           />
@@ -147,7 +151,7 @@ export function JobFilters({
           {/* Schedule */}
           <Select
             id="job-schedule-filter"
-            label="Schedule"
+            label={t("jobs.schedule")}
             options={scheduleOptions}
             value={filters.schedule || ""}
             onChange={(e) =>
@@ -158,7 +162,7 @@ export function JobFilters({
           {/* Urgency */}
           <Select
             id="job-urgency-filter"
-            label="Urgency"
+            label={t("jobs.urgency")}
             options={urgencyOptions}
             value={filters.urgency || ""}
             onChange={(e) =>
@@ -169,13 +173,13 @@ export function JobFilters({
           {/* Salary Range */}
           <div>
             <label className="block text-sm font-medium text-ink mb-1 select-none">
-              Salary Range
+              {t("jobs.salaryRange")}
             </label>
             <div className="flex items-center gap-2">
               <input
                 id="job-salary-min-filter"
                 type="number"
-                placeholder="Min"
+                placeholder={t("jobs.salaryMin")}
                 min="0"
                 value={filters.salary_min ?? ""}
                 onChange={(e) =>
@@ -185,13 +189,13 @@ export function JobFilters({
                   )
                 }
                 className="w-full h-10 px-2.5 rounded-sm border border-border bg-surface text-ink text-sm focus:outline-none focus:ring-2 focus:ring-lime"
-                aria-label="Minimum salary"
+                aria-label={t("jobs.salaryMinAria")}
               />
               <span className="text-ink-muted text-xs shrink-0">—</span>
               <input
                 id="job-salary-max-filter"
                 type="number"
-                placeholder="Max"
+                placeholder={t("jobs.salaryMax")}
                 min="0"
                 value={filters.salary_max ?? ""}
                 onChange={(e) =>
@@ -201,7 +205,7 @@ export function JobFilters({
                   )
                 }
                 className="w-full h-10 px-2.5 rounded-sm border border-border bg-surface text-ink text-sm focus:outline-none focus:ring-2 focus:ring-lime"
-                aria-label="Maximum salary"
+                aria-label={t("jobs.salaryMaxAria")}
               />
             </div>
           </div>
@@ -217,17 +221,19 @@ export function JobFilters({
                 size="sm"
                 onClick={onRequestLocation}
                 disabled={locationLoading}
-                aria-label="Use browser geolocation to find jobs near me"
+                aria-label={t("jobs.useMyLocationAria")}
               >
                 {locationLoading
-                  ? "Detecting location..."
-                  : "📍 Use My Location"}
+                  ? t("jobs.detectingLocation")
+                  : t("jobs.useMyLocation")}
               </Button>
             ) : (
               <div className="flex flex-wrap items-center gap-2 bg-surface-muted px-2.5 py-1 rounded-sm border border-border">
                 <span className="font-medium text-ink">
-                  📍 Location Active ({userLocation.lat.toFixed(2)},{" "}
-                  {userLocation.lng.toFixed(2)})
+                  {t("jobs.locationActive", {
+                    lat: userLocation.lat.toFixed(2),
+                    lng: userLocation.lng.toFixed(2),
+                  })}
                 </span>
 
                 <div className="flex items-center gap-1.5 ms-2">
@@ -235,7 +241,7 @@ export function JobFilters({
                     htmlFor="job-radius-filter"
                     className="text-ink-muted text-xs font-medium"
                   >
-                    Radius:
+                    {t("jobs.radius")}
                   </label>
                   <select
                     id="job-radius-filter"
@@ -257,9 +263,9 @@ export function JobFilters({
                   type="button"
                   onClick={onClearLocation}
                   className="text-xs text-danger hover:underline ms-2"
-                  aria-label="Clear location filter"
+                  aria-label={t("jobs.clearLocation")}
                 >
-                  Clear
+                  {t("jobs.clear")}
                 </button>
               </div>
             )}
@@ -279,7 +285,7 @@ export function JobFilters({
               onClick={onReset}
               className="text-danger hover:text-danger hover:bg-danger-subtle ms-auto"
             >
-              Reset Filters
+              {t("jobs.resetFilters")}
             </Button>
           )}
         </div>
