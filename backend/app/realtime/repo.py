@@ -6,6 +6,7 @@ Every Redis key this layer makes starts with "ws:", so it is easy to find in Red
 
 import json
 import time
+from collections.abc import Sequence
 
 from redis.asyncio import Redis
 from sqlalchemy import case, or_, select
@@ -98,6 +99,19 @@ async def remove_socket(redis: Redis, user_id: int, socket_id: str) -> int:
 async def count_live_sockets(redis: Redis, user_id: int) -> int:
     """How many of the user's sockets still count as online right now."""
     return await redis.zcount(presence_key(user_id), time.time(), "+inf")
+
+
+async def count_live_sockets_many(redis: Redis, user_ids: Sequence[int]) -> dict[int, int]:
+    """Count live sockets for multiple users in one Redis pipeline (BE-22)."""
+    unique_ids = list(dict.fromkeys(user_ids))
+    if not unique_ids:
+        return {}
+    now = time.time()
+    async with redis.pipeline(transaction=False) as steps:
+        for uid in unique_ids:
+            steps.zcount(presence_key(uid), now, "+inf")
+        counts = await steps.execute()
+    return dict(zip(unique_ids, counts, strict=True))
 
 
 async def friend_ids(session: AsyncSession, user_id: int) -> list[int]:
