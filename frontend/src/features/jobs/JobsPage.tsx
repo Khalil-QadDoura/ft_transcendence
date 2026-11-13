@@ -228,9 +228,7 @@ export function JobsPage() {
       {/* Results Header */}
       {!isLoading && !error && (
         <div className="flex items-center justify-between text-xs sm:text-sm text-ink-muted pt-2 border-b border-border-subtle pb-2">
-          <span>
-            {t("jobs.showingRoles", { count: jobs.length })}
-          </span>
+          <span>{t("jobs.showingRoles", { count: jobs.length })}</span>
           {filters.sort_by === "nearest" && userLocation && (
             <span className="text-lime-dark font-medium">
               {t("jobs.sortedByDistance")}
