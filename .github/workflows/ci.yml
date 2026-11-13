@@ -96,7 +96,8 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       redis:
-        image: redis:7-alpine
+        # The same image and digest as redis and redis-test in docker-compose.yml (INF-07).
+        image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
         ports: ['6379:6379']
         options: >-
           --health-cmd "redis-cli ping"
