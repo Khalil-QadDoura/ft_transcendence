@@ -105,6 +105,15 @@ server {
         # rest instead of rejecting. Not `SecRequestBodyAccess Off`, which also skips the
         # phase 2 rules, so an SQL injection in the query string would go unseen.
         modsecurity_rules 'SecRequestBodyLimitAction ProcessPartial';
+
+        # MinIO answers with the Content-Type the uploader sent, so an uploaded HTML page
+        # would open as a page of our origin. sandbox stops scripts in anything opened from
+        # here; it does not affect <img> or <video>. MinIO sends its own nosniff, hidden so
+        # the response carries one copy, ours. An add_header here drops every add_header
+        # of the server and http levels; there are none (nginx -T), so nothing is lost.
+        proxy_hide_header X-Content-Type-Options;
+        add_header Content-Security-Policy "sandbox" always;
+        add_header X-Content-Type-Options "nosniff" always;
     }
 
     # Both UIs keep a WebSocket open (Grafana Live, Mailpit events).

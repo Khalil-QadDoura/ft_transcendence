@@ -10,6 +10,10 @@ x-backend-env: &backend-env
   LOG_LEVEL: ${LOG_LEVEL}
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
   TEST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_TEST_DB}
+  # Database 0 of the redis service. realtime/connection_manager.py falls back to
+  # localhost without it, and in a container a publish there is lost without an error.
+  # `make test` points it and TEST_REDIS_URL at the redis-test service instead.
+  REDIS_URL: redis://redis:6379/0
   JWT_SECRET: ${JWT_SECRET}
   INTERNAL_API_KEY: ${INTERNAL_API_KEY}
   FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
@@ -31,6 +35,8 @@ x-backend-env: &backend-env
 # The official minio/minio and minio/mc images left Docker Hub on 2025-10-23; pgsty/minio
 # rebuilds the upstream releases (amd64 + arm64) and ships mc too, so the server and
 # minio-init share one image. Pinned by tag and digest.
+x-redis-image: &redis-image redis:7-alpine
+
 x-minio-image: &minio-image pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
 
 services:
@@ -126,7 +132,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: *redis-image
     volumes:
       - redis-data:/data
     healthcheck:
@@ -135,6 +141,23 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  # Redis only for `make test` (profile test). Pub/sub channels and CLIENT KILL are
+  # server-wide, so a database number on the redis service would still let the tests publish
+  # to the site's /ws sockets and cut them off. Nothing kept on disk, no port; the image
+  # declares VOLUME /data, so a tmpfs takes its place and no anonymous volume is left after
+  # `make down`. The health check is only for `up --wait`, no service depends on it.
+  redis-test:
+    image: *redis-image
+    profiles: ["test"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # S3 API on minio:9000, reached from the browser only through the proxy at /files (the
   # bucket name is the route prefix). No host ports, console included.

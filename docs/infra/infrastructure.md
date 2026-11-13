@@ -27,7 +27,8 @@ Only the proxy publishes ports to the host; everything else stays on the interna
 | `api` | Built from `backend/` (Python 3.11 slim, multi-stage, no test deps) | FastAPI, runs migrations on start; waits for `db` and `redis` to be healthy | no | In compose, `/api/health` health check (Python `urllib`; the image has no curl) |
 | `worker` | Same image as `api`, command `celery -A app.worker.celery_app worker -B` | Video moderation + beat for stuck videos | no | In compose behind the `worker` profile (off by default) until BE-29 adds the Celery app |
 | `db` | `imresamu/postgis:15-3.4`, by digest (PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, amd64 + arm64; every `postgis/postgis` tag is amd64 only, so Apple Silicon would run it emulated) | PostgreSQL + PostGIS; app database `POSTGRES_DB` and test database `POSTGRES_TEST_DB` | no | In compose, `pg_isready` health check |
-| `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker | no | In compose, `redis-cli ping` health check |
+| `redis` | `redis:7-alpine` | Pub/sub, queues, rate limits, Celery broker; api and worker use database 0 (`REDIS_URL`) | no | In compose, `redis-cli ping` health check |
+| `redis-test` | Same image as `redis` (one YAML anchor) | Tests only: the Redis of `make test` (`TEST_REDIS_URL` and `REDIS_URL` of the pytest run); no persistence (`--save "" --appendonly no`, `tmpfs` on `/data`), no volume, no route, nothing depends on it | no | In compose behind the `test` profile, started only by `make test`; `redis-cli ping` health check for `up --wait` |
 | `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, by digest (the official `minio/minio` and `minio/mc` images left Docker Hub on 2025-10-23) | Object storage for videos, avatars, logos | no, console included (proxied at `/files`) | In compose |
 | `minio-init` | Same image as `minio`, which ships `mc` | One-shot: create bucket `files`, set its anonymous policy, exit 0 | no | In compose (INF-04); `api` starts after it completes |
 | `mailpit` | `axllent/mailpit:v1.33.1` | Catches all outgoing mail, web inbox | no (proxied at `/mail`) | In compose (INF-02) |
@@ -119,7 +120,16 @@ Option A is implemented in INF-04 (2026-11-09).
 
 Every write needs a presigned PUT. Reasons: avatars and logos are shown publicly anyway (profiles, friends lists, job cards); a stable URL lets the browser cache the image and never expires inside an open page; the API does not sign one URL per avatar in every list response. Videos stay private: they are personal data under moderation (privacy policy). The reference already uses the keys `avatars/{uid}/{uuid}.{ext}` and `logos/{cid}/{uuid}.{ext}`, so BE-08 needs no key change; the list is `PUBLIC_PREFIXES` in `init-bucket.sh`. If Khalil prefers signed GETs for avatars too, `PUBLIC_PREFIXES` becomes empty and the bucket is fully private.
 
-**Check:** `make files-check` (`infra/minio/smoke-test.sh`) runs against the running stack: it signs URLs the way the API will (from a container on the compose network, `minio` SDK, the api container's `MINIO_*` values), then from the host over HTTPS with the proxy certificate checks a presigned PUT and GET (200, same content), a tampered signature (403 `SignatureDoesNotMatch`), anonymous GET under `avatars/` (200), anonymous GET of a video, listing and anonymous PUT (403 each). It ends by printing a snippet for the Chrome console with fresh presigned URLs, which shows a same-origin upload from the browser with no CORS error. It needs network access to install the SDK. The script removes its own test objects; the browser check leaves one 5-byte object, `videos/inf04-browser.txt`, which the next run overwrites.
+**Security headers (found by Khalil in the INF-04 review).** MinIO answers with the `Content-Type` the uploader sent, and nothing can stop a logged-in user from sending `text/html` with the PUT to their own upload link: BE-07 and BE-08 refuse such a file on `confirm`, after it is stored. Without more, `https://localhost/files/avatars/...` (public) or a video's presigned GET would open that page as a page of our origin, with its scripts able to call `/api` as the viewer. `location /files/` therefore adds, with `always` so error answers carry them too:
+
+| Header | Effect |
+| --- | --- |
+| `Content-Security-Policy: sandbox` | A document opened from `/files` gets a unique opaque origin with scripts, forms and popups off, so it cannot run code as `https://localhost`. CSP applies to documents and workers only: `<img>` and `<video>` that load these files are unaffected (checked in headless Chrome: an `<img>` loaded, an uploaded HTML page's script did not run) |
+| `X-Content-Type-Options: nosniff` | The browser keeps the declared type instead of guessing one from the bytes, so e.g. an "image" is never run as a script or style |
+
+MinIO already sends its own `nosniff`; the proxy hides it (`proxy_hide_header`) and sends one copy. nginx drops every inherited `add_header` in a location that has its own; `nginx -T` in the proxy shows none at `http` or `server` level (the `Server` header comes from `more_set_headers`, which is not affected), so `/files` loses nothing.
+
+**Check:** `make files-check` (`infra/minio/smoke-test.sh`) runs against the running stack: it signs URLs the way the API will (from a container on the compose network, `minio` SDK, the api container's `MINIO_*` values), then from the host over HTTPS with the proxy certificate checks a presigned PUT and GET (200, same content), a tampered signature (403 `SignatureDoesNotMatch`), anonymous GET under `avatars/` (200), anonymous GET of a video, listing and anonymous PUT (403 each). The presigned GET, the anonymous GET and an HTML page uploaded through a presigned PUT as `text/html` (served as `text/html`) must each carry both security headers exactly once. It ends by printing a snippet for the Chrome console with fresh presigned URLs, which shows a same-origin upload from the browser with no CORS error. It needs network access to install the SDK. The script removes its own test objects; the browser check leaves one 5-byte object, `videos/inf04-browser.txt`, which the next run overwrites.
 
 ## Email without a paid service
 
@@ -148,7 +158,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait`, which returns once `db`, `redis` and `api` are healthy and `minio-init` has exited 0 |
 | `make down` | stops and removes the containers, keeps volumes |
 | `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
-| `make test` | starts `db` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db` and `redis` running |
+| `make test` | starts `db`, `redis-test` (profile `test`) and `minio` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in the `api` image (dev tools installed in a throwaway container, code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; fails if any backend test is skipped, as CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db`, `redis-test` and `minio` running; `make down` and `make fclean` remove `redis-test` too (`--profile '*'`) |
 | `make https-check` | smoke test of the routes of the one HTTPS origin against the running stack (see One origin over HTTPS) |
 | `make files-check` | smoke test of `/files` against the running stack, ends with a Chrome console snippet (see File storage over HTTPS) |
 | `make mail-check` | sign-up email end to end through the proxy against the running stack (see Email without a paid service) |
@@ -158,6 +168,12 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 `down`, `logs` and `fclean` use `--profile '*'`, so they also reach services that are off by default (`worker`).
 
 **Test database.** The backend tests delete what they find, so they run only on `POSTGRES_TEST_DB` (`wozu_test`), never on the app database `POSTGRES_DB`. `infra/db/create-test-db.sh` creates it, owned by `POSTGRES_USER`, with PostGIS (the schema has a `geography` column). It runs in the `db` container from two places: the image runs it once when the `db-data` volume is new (mounted as the single file `/docker-entrypoint-initdb.d/20-create-test-db.sh`, after the image's own `10_postgis.sh`), and `make test` runs it on every call (`docker compose exec`), so a volume created before the script gets the database too. It is idempotent, reads the names from the container environment, connects over the local socket (no password) and refuses a name that equals `POSTGRES_DB` or lacks `test` (the fixtures skip such a database). The tables come from the fixtures, which run `alembic` on `TEST_DATABASE_URL`.
+
+**Test Redis.** The tests get their own Redis server, `redis-test` (profile `test`), never the site's `redis`: database numbers separate only keys, while pub/sub channels and `CLIENT KILL` are server-wide, so with database 1 of `redis` the tests sent their events to open `/ws` sockets, closed every listening connection of the site and failed on the extra subscriber (found by Khalil on #37). `make test` starts `redis-test` and passes `TEST_REDIS_URL=redis://redis-test:6379/0` and `REDIS_URL=redis://redis-test:6379/0` to the pytest run only (`-e` in the Makefile); `REDIS_URL` too, because `realtime/connection_manager.py` reads it when the conversation tests publish. The run uses `--no-deps`, so it does not start the api's own dependencies (`redis`, `minio-init`). This way the 20 WebSocket tests in `tests/test_realtime.py` run, as in CI, instead of being skipped, and the media tests (`tests/test_media.py`) empty the `celery` queue of `redis-test`, never the app's. Neither URL is in the api's runtime environment. CI matches: the backend job has its own `redis:7-alpine` service container, and `REDIS_URL`, unset there, falls back to that same server.
+
+**Test MinIO.** The media and picture tests (BE-07, BE-08: 187 tests in `tests/test_media.py` and `tests/test_pictures.py`) run against the dev MinIO, each in its own bucket: `media-test` and `pictures-test`. They create the bucket when it is missing and empty it before each test; they never touch the app bucket `MINIO_BUCKET` (`files`) and never delete a bucket, so the two empty buckets stay between runs. `make test` passes `TEST_MINIO_ENDPOINT=minio:9000` with `-e`; inside the throwaway container `TEST_MINIO_ACCESS_KEY` and `TEST_MINIO_SECRET_KEY` are set from the container's own `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` (`$$` in the Makefile), so the keys are never on a host command line, in the make output or in Git.
+
+**No skipped backend test.** As in the backend CI job, pytest writes a JUnit report inside the throwaway container and `make test` fails when its `skipped` count is not 0 (`N tests skipped; make test must run every backend test, as CI`); `-rs` prints the reason of each skip, e.g. `TEST_REDIS_URL is not set`. A missing service or `TEST_*` variable therefore fails `make test` instead of passing with fewer tests.
 
 **`.env.example` additions to the reference file** (every variable in `.env.example` has a comment there)
 
@@ -179,7 +195,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `OPENAI_API_KEY` | empty, filled by hand | worker |
 | `MODERATION_FAIL_OPEN` | `false` on defense day | worker |
 
-Compose passes each service only the variables it needs (`environment:`), not the whole `.env`.
+Compose passes each service only the variables it needs (`environment:`), not the whole `.env`. Addresses inside the Docker network are written in `docker-compose.yml`, not `.env`: the `db` host in `DATABASE_URL`, `MINIO_ENDPOINT=minio:9000`, and `REDIS_URL=redis://redis:6379/0` for api and worker (`x-backend-env`). The backend's `settings.redis_url` defaults to the same value, but `realtime/connection_manager.py` reads `REDIS_URL` and falls back to `localhost`; inside a container that is the container itself, so without the variable a published event was lost without an error and never reached the other user's `/ws` (found by Khalil in #24).
 
 **Rules:** `.env` and `scripts/*.local` in `.gitignore`; nothing secret in `docker-compose.yml`, images or logs; with the Vault module, secrets move from `.env` to Vault and `.env` keeps only the Vault address and AppRole credentials.
 
@@ -220,7 +236,7 @@ Target for INF-06: GitHub Actions on PRs to `main`, with applicable backend, fro
 
 | Job | Steps | Blocks merge |
 | --- | --- | --- |
-| backend | `ruff check`, `ruff format --check`, `pytest` with service containers `postgis/postgis:15-3.4` and `redis:7-alpine` | yes |
+| backend | `ruff check`, `ruff format --check`, `pytest` with service containers `postgis/postgis:15-3.4` and `redis:7-alpine` (a Redis only for the tests, like `redis-test` in `make test`) | yes |
 | frontend | `npm ci`, lint, type check, unit tests, `npm run build` | yes |
 | stack | `docker compose build`, `docker compose config` (catches broken env references) | yes |
 

@@ -38,15 +38,32 @@ logs:
 # container and the code mounted read-only. The tests get only the test database: db starts
 # first (also from a stopped stack), the script that runs on a new volume creates the test
 # database when it is missing, and pytest sees DATABASE_URL = TEST_DATABASE_URL, as in CI.
+# Redis: the tests get their own server, redis-test (profile test), as CI gets a Redis service
+# container. Pub/sub and CLIENT KILL ignore database numbers, so database 1 of the site's redis
+# would send test events to open /ws sockets and cut them off. TEST_REDIS_URL (the WebSocket and
+# media tests) and REDIS_URL (the app's connection_manager, used by the conversation tests)
+# both point at it, set only here; --no-deps keeps `run` from starting the api's own
+# dependencies (redis, minio-init), which the tests do not use.
 # Frontend: the checks of its CI job, in the build stage of its image.
+# The MinIO tests use their own buckets (media-test, pictures-test) on the dev MinIO, with
+# the api container's own keys: they never appear on a command line or in this output.
+# As in CI, a skipped backend test fails make test (-rs prints why it was skipped).
 test: env
-	$(COMPOSE) up -d --wait db
+	$(COMPOSE) --profile test up -d --wait db redis-test minio
 	$(COMPOSE) exec -T db /docker-entrypoint-initdb.d/20-create-test-db.sh
-	$(COMPOSE) run --rm --build --user root -v $(CURDIR)/backend:/src:ro -w /src \
-		-e PIP_ROOT_USER_ACTION=ignore -e PIP_DISABLE_PIP_VERSION_CHECK=1 api \
+	$(COMPOSE) run --rm --no-deps --build --user root -v $(CURDIR)/backend:/src:ro -w /src \
+		-e PIP_ROOT_USER_ACTION=ignore -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+		-e TEST_REDIS_URL=redis://redis-test:6379/0 -e REDIS_URL=redis://redis-test:6379/0 \
+		-e TEST_MINIO_ENDPOINT=minio:9000 api \
 		sh -c 'pip install -q -r requirements-dev.txt && ruff check --no-cache . \
 		&& ruff format --check --no-cache . \
-		&& DATABASE_URL="$$TEST_DATABASE_URL" pytest -q -p no:cacheprovider'
+		&& DATABASE_URL="$$TEST_DATABASE_URL" TEST_MINIO_ACCESS_KEY="$$MINIO_ACCESS_KEY" \
+		TEST_MINIO_SECRET_KEY="$$MINIO_SECRET_KEY" pytest -q -rs -p no:cacheprovider \
+		--junitxml=/tmp/pytest-results.xml && python -c "import sys, xml.etree.ElementTree as ET; \
+		suites = ET.parse(\"/tmp/pytest-results.xml\").getroot().iter(\"testsuite\"); \
+		skipped = sum(int(suite.get(\"skipped\", \"0\")) for suite in suites); \
+		sys.exit(f\"{skipped} tests skipped; make test must run every backend test, as CI\" \
+		if skipped else 0)"'
 	docker build -q --target build -t wozu-frontend-test ./frontend
 	docker run --rm wozu-frontend-test \
 		sh -c 'npm run lint && npm run format:check && npm run typecheck && npm test'
