@@ -83,7 +83,10 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         .then((newConv) => {
           setConversations((current) => {
             if (current.some((c) => c.id === newConv.id)) return current;
-            return [{ ...newConv, last_message_content: payload.content }, ...current];
+            return [
+              { ...newConv, last_message_content: payload.content },
+              ...current,
+            ];
           });
         })
         .catch(() => {
@@ -97,24 +100,27 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   /**
    * Real-time WebSocket listener: Unread count reset or conversation metadata update.
    */
-  useWsEvent<WsConversationUpdatedPayload>("conversation_updated", (payload) => {
-    if (!payload || !payload.conversation_id) return;
+  useWsEvent<WsConversationUpdatedPayload>(
+    "conversation_updated",
+    (payload) => {
+      if (!payload || !payload.conversation_id) return;
 
-    setConversations((prevList) => {
-      return prevList.map((conv) => {
-        if (conv.id === payload.conversation_id) {
-          return {
-            ...conv,
-            unread_count:
-              typeof payload.unread_count === "number"
-                ? payload.unread_count
-                : conv.unread_count,
-          };
-        }
-        return conv;
+      setConversations((prevList) => {
+        return prevList.map((conv) => {
+          if (conv.id === payload.conversation_id) {
+            return {
+              ...conv,
+              unread_count:
+                typeof payload.unread_count === "number"
+                  ? payload.unread_count
+                  : conv.unread_count,
+            };
+          }
+          return conv;
+        });
       });
-    });
-  });
+    },
+  );
 
   // Filter conversations by participant name or job title
   const filteredConversations = useMemo(() => {
@@ -123,7 +129,9 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     return conversations.filter((c) => {
       const name = c.peer?.display_name || c.title || "";
       const job = c.job_title || "";
-      return name.toLowerCase().includes(query) || job.toLowerCase().includes(query);
+      return (
+        name.toLowerCase().includes(query) || job.toLowerCase().includes(query)
+      );
     });
   }, [conversations, searchQuery]);
 
@@ -169,7 +177,9 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           </div>
         ) : error ? (
           <div className="p-4 text-center">
-            <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className="mb-3 text-sm text-red-600 dark:text-red-400">
+              {error}
+            </p>
             <Button
               onClick={loadConversations}
               variant="secondary"

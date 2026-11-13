@@ -78,7 +78,9 @@ export const ConversationsPage: React.FC = () => {
                   </h3>
                   {selectedConversation?.job_title && (
                     <p className="truncate text-xs text-primary-600 dark:text-primary-400">
-                      {t("chat.appliedFor", { job: selectedConversation.job_title })}
+                      {t("chat.appliedFor", {
+                        job: selectedConversation.job_title,
+                      })}
                     </p>
                   )}
                 </div>
