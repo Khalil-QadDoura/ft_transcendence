@@ -1,5 +1,6 @@
 # One command from a fresh clone to a running site: `make`.
-# Everything runs in containers; the host needs Docker (with compose v2), make, bash and openssl.
+# Everything runs in containers; the host needs Docker Engine 25+ (health checks use
+# start_interval, which Engine 24 refuses) with compose v2, make, bash and openssl.
 
 COMPOSE := docker compose
 # Every profile, so down and fclean also reach services that are off by default (worker).
