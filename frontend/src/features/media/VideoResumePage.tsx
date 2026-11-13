@@ -87,7 +87,7 @@ export const VideoResumePage: React.FC = () => {
       case "rejected":
         return <Badge variant="danger">{t("media.needsAttention")}</Badge>;
       default:
-        return <Badge variant="neutral">{status}</Badge>;
+        return <Badge variant="default">{status}</Badge>;
     }
   };
 
@@ -134,7 +134,7 @@ export const VideoResumePage: React.FC = () => {
                 </h2>
                 {getModerationBadge(activeVideo.moderation_status)}
                 {activeVideo.lifecycle_status === "posted" && (
-                  <Badge variant="primary">{t("media.publishedInFeed")}</Badge>
+                  <Badge variant="lime">{t("media.publishedInFeed")}</Badge>
                 )}
               </div>
               <span className="text-xs text-gray-400 font-mono">

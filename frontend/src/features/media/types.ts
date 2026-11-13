@@ -59,3 +59,5 @@ export type RecorderState =
   | "uploading"
   | "success"
   | "error";
+
+export type VideoRecorderState = RecorderState;
