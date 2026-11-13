@@ -255,6 +255,7 @@ Depends on: <CARD-ID>
 | 2026-11-05 | Front proxy: nginx + ModSecurity v3 + OWASP CRS from day one (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-01 PR |
 | 2026-11-08 | Compose and Makefile: `pgsty/minio`, `imresamu/postgis`, worker profile until BE-29, `fclean` keeps `.env`, host ports from `.env` (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-02 PR |
 | 2026-11-09 | File storage at `/files`: `minio-init` on the `pgsty/minio` image, private bucket with anonymous download on `avatars/` and `logos/` only, signing region `us-east-1` (details below) | byul-byul | Decided, except the public prefixes: proposed to Khalil (BE-08) in the INF-04 PR |
+| 2026-11-12 | Every image is pinned by tag and digest; `make images-check` enforces it (INF-07) | byul-byul | Decided |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
