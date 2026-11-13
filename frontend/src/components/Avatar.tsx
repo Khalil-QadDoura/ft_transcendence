@@ -1,3 +1,4 @@
+import { useText } from "../i18n/useText";
 import { useState } from "react";
 
 export type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
@@ -20,6 +21,7 @@ export function Avatar({
   fallbackText,
   className = "",
 }: AvatarProps) {
+  const { t } = useText();
   const [hasError, setHasError] = useState(false);
 
   const sizeClasses = {
@@ -84,7 +86,7 @@ export function Avatar({
 
       {status ? (
         <span
-          title={`Status: ${status}`}
+          title={t("controls.status", { status: t(`controls.${status}`) })}
           className={`absolute bottom-0 end-0 rounded-full ring-2 ring-surface ${statusSizeClasses} ${statusColorClasses[status]}`}
         />
       ) : null}
