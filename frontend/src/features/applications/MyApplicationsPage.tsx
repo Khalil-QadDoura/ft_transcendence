@@ -102,9 +102,7 @@ export const MyApplicationsPage: React.FC = () => {
           </p>
         </div>
         <Link to="/jobs">
-          <Button variant="primary">
-            {t("applications.browseOpenJobs")}
-          </Button>
+          <Button variant="primary">{t("applications.browseOpenJobs")}</Button>
         </Link>
       </div>
 
@@ -169,7 +167,9 @@ export const MyApplicationsPage: React.FC = () => {
           <p className="mx-auto mt-1 max-w-sm text-xs text-gray-500 dark:text-gray-400">
             {statusFilter === "all"
               ? t("applications.noApplicationsEmpty")
-              : t("applications.noApplicationsFilter", { status: statusFilter })}
+              : t("applications.noApplicationsFilter", {
+                  status: statusFilter,
+                })}
           </p>
           <div className="mt-5">
             <Link to="/jobs">

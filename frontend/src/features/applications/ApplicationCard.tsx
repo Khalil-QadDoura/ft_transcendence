@@ -77,7 +77,8 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
   };
 
   const jobTitle = application.job_title || `Role #${application.job_id}`;
-  const companyName = application.company_name || t("applications.defaultCompany");
+  const companyName =
+    application.company_name || t("applications.defaultCompany");
 
   return (
     <Card
@@ -122,7 +123,9 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
                 <span className="font-semibold text-gray-500 dark:text-gray-400">
                   {t("applications.coverNote")}
                 </span>
-                <p className="mt-1 whitespace-pre-wrap">{application.cover_note}</p>
+                <p className="mt-1 whitespace-pre-wrap">
+                  {application.cover_note}
+                </p>
               </div>
             )}
             {error && (
