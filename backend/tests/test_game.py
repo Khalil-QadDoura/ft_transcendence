@@ -25,10 +25,14 @@ from conftest import (
     sql,
 )
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 from websockets.sync.client import ClientConnection, connect
 
 from app.auth import security
 from app.core.config import Settings
+from app.game import repo as game_repo
 from app.game import service as game_service
 from app.game.constants import MAX_ID, PLAYER_LABELS
 from app.game.models import GameParticipant, GameRoom
@@ -700,3 +704,79 @@ def test_discussion_bot_chat_and_server_phase_loop(
                 f"http://{srv}/api/game/rooms/{room_id}", headers=auth_headers(tok)
             ).json()
             assert room["state"] == "finished"
+
+
+@pytest.mark.anyio
+@needs_database
+async def test_get_room_for_update_forces_refresh_of_stale_identity_map(
+    game_schema_at_head,
+) -> None:
+    """Preloaded room in session A must refresh when session B commits state change."""
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_maker() as session_a, session_maker() as session_b:
+        room = GameRoom(target_size=5, state="waiting")
+        session_b.add(room)
+        await session_b.commit()
+        await session_b.refresh(room)
+        room_id = room.id
+
+        # Session A preloads the room into identity map
+        loaded_a = await session_a.scalar(select(GameRoom).where(GameRoom.id == room_id))
+        assert loaded_a is not None
+        assert loaded_a.state == "waiting"
+
+        # Session B transitions room to discussion and commits
+        loaded_b = await session_b.scalar(select(GameRoom).where(GameRoom.id == room_id))
+        assert loaded_b is not None
+        loaded_b.state = "discussion"
+        await session_b.commit()
+
+        # Session A calls get_room_for_update; with populate_existing=True,
+        # it MUST refresh the identity-map instance to 'discussion'
+        locked_a = await game_repo.get_room_for_update(session_a, room_id)
+        assert locked_a is not None
+        assert locked_a.state == "discussion"
+        assert loaded_a.state == "discussion"
+
+    await engine.dispose()
+
+
+@needs_database
+@needs_redis
+def test_concurrent_start_vs_leave_queue_does_not_remove_participant(
+    clean_db_and_redis,
+) -> None:
+    """A room start must prevent concurrent leave_queue from removing the participant."""
+    app = new_game_app(game_bot_probability=0.0, game_wait_timeout_sec=30.0)
+    with running_server(app) as srv:
+        _, tok1 = create_user_and_login(srv, "cstart1@example.com")
+        _, tok2 = create_user_and_login(srv, "cstart2@example.com")
+        r1 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok1))
+        r2 = httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(tok2))
+        room_id = r1.json()["room_id"]
+        assert r2.json()["room_id"] == room_id
+
+        # Start the room
+        started = httpx2.post(
+            f"http://{srv}/api/game/rooms/{room_id}/start",
+            headers=auth_headers(tok1),
+        )
+        assert started.status_code == 200
+        assert started.json()["state"] == "discussion"
+
+        # User 2 calls leave_queue while game is in discussion
+        leave_resp = httpx2.delete(
+            f"http://{srv}/api/game/queue/leave",
+            headers=auth_headers(tok2),
+        )
+        assert leave_resp.status_code == 204
+
+        # Participant is NOT removed from active discussion room
+        room = httpx2.get(
+            f"http://{srv}/api/game/rooms/{room_id}",
+            headers=auth_headers(tok1),
+        ).json()
+        assert room["state"] == "discussion"
+        assert room["participant_count"] == 2
