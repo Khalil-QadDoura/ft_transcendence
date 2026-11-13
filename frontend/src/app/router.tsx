@@ -1,4 +1,9 @@
 import { useText } from "../i18n/useText";
+import {
+  ForgotPassword,
+  ResetPassword,
+  AccountSettings,
+} from "../features/account/AccountPages";
 import { LegalPage } from "../features/legal/LegalPage";
 import { Link, type RouteObject } from "react-router-dom";
 import { AuthForm, VerifyEmail } from "../features/auth/AuthScreens";
@@ -72,23 +77,23 @@ export const routes: RouteObject[] = [
         ],
       },
       { path: "verify-email", element: <VerifyEmail /> },
-      ...pages([
-        ["forgot-password", "routes.forgot"],
-        ["reset-password", "routes.reset"],
-      ]),
+      { path: "forgot-password", element: <ForgotPassword /> },
+      { path: "reset-password", element: <ResetPassword /> },
       {
         element: <RequireSession />,
-        children: pages([
-          ["profile", "routes.profile"],
-          ["friends", "routes.friends"],
-          ["chat", "routes.chat"],
-          ["chat/:id", "routes.conversation"],
-          ["videos", "routes.videos"],
-          ["employer/*", "routes.employer"],
-          ["game", "routes.game"],
-          ["game/rooms/:id", "routes.room"],
-          ["settings", "routes.settings"],
-        ]),
+        children: [
+          { path: "settings", element: <AccountSettings /> },
+          ...pages([
+            ["profile", "routes.profile"],
+            ["friends", "routes.friends"],
+            ["chat", "routes.chat"],
+            ["chat/:id", "routes.conversation"],
+            ["videos", "routes.videos"],
+            ["employer/*", "routes.employer"],
+            ["game", "routes.game"],
+            ["game/rooms/:id", "routes.room"],
+          ]),
+        ],
       },
       { path: "*", element: <Missing /> },
     ],
