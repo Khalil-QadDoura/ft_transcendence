@@ -231,7 +231,7 @@ test("verification can retry a transient network error", async () => {
 test("real gateway drives safe login redirect and sends the refresh token on logout", async () => {
   const fetcher = vi.fn().mockImplementation((url) => {
     const urlStr = String(url);
-    if (urlStr.includes("/auth/token")) {
+    if (urlStr.includes("/auth/login")) {
       return Promise.resolve(
         jsonResponse(
           JSON.stringify({
