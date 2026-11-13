@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Avatar } from "../../components/Avatar";
 import { Badge } from "../../components/Badge";
 import { Card, CardContent, CardHeader } from "../../components/Card";
+import { useText } from "../../i18n/useText";
 import { calculateDistanceKm, formatSalary } from "./api";
 import type { Job } from "./types";
 
@@ -12,7 +13,8 @@ export interface JobCardProps {
 }
 
 export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
-  const companyName = job.company_name || "Confidential Company";
+  const { t } = useText();
+  const companyName = job.company_name || t("jobs.confidentialCompany");
   const salaryText = formatSalary(
     job.salary_amount,
     job.salary_currency,
@@ -32,15 +34,15 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
       : null);
 
   const scheduleLabels: Record<string, string> = {
-    full_time: "Full time",
-    part_time: "Part time",
-    internship: "Internship",
+    full_time: t("jobs.scheduleFullTime"),
+    part_time: t("jobs.schedulePartTime"),
+    internship: t("jobs.scheduleInternship"),
   };
 
   const urgencyVariants = {
-    hot: { variant: "danger" as const, label: "Hot 🔥" },
-    urgent: { variant: "warning" as const, label: "Urgent ⚡" },
-    normal: { variant: "outline" as const, label: "Normal" },
+    hot: { variant: "danger" as const, label: t("jobs.urgencyHot") },
+    urgent: { variant: "warning" as const, label: t("jobs.urgencyUrgent") },
+    normal: { variant: "outline" as const, label: t("jobs.urgencyNormal") },
   }[job.urgency] || { variant: "outline" as const, label: job.urgency };
 
   return (
@@ -80,7 +82,7 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
 
           <Link
             to={`/jobs/${job.id}`}
-            aria-label={`View details for ${job.title}`}
+            aria-label={t("jobs.viewDetails", { title: job.title })}
             className="text-xs font-semibold text-ink-muted group-hover:text-ink shrink-0 p-1 rounded-sm focus:outline-none focus:ring-2 focus:ring-lime"
           >
             <span aria-hidden="true">↗</span>
@@ -112,7 +114,7 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
 
           {distance !== null && distance !== undefined && (
             <Badge variant="outline" size="sm" className="font-mono">
-              📍 {distance} km away
+              📍 {distance} {t("jobs.kmAway")}
             </Badge>
           )}
         </div>

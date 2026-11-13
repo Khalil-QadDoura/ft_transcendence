@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { Spinner } from "../../components/Spinner";
+import { useText } from "../../i18n/useText";
 import { fetchOpenJobs } from "./api";
 import { JobCard } from "./JobCard";
 import { JobFilters } from "./JobFilters";
@@ -15,6 +16,7 @@ import type {
 } from "./types";
 
 export function JobsPage() {
+  const { t } = useText();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Parse filters from URL search parameters
@@ -201,14 +203,13 @@ export function JobsPage() {
       {/* Page Heading */}
       <div className="space-y-1 text-start">
         <span className="eyebrow text-xs font-mono uppercase tracking-wider text-ink-muted">
-          OPPORTUNITIES
+          {t("jobs.eyebrow")}
         </span>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-ink">
-          Find your next chapter.
+          {t("jobs.title")}
         </h1>
         <p className="text-sm text-ink-muted max-w-2xl leading-relaxed">
-          Discover open roles where you apply with your personality, not just a
-          piece of paper.
+          {t("jobs.subtitle")}
         </p>
       </div>
 
@@ -228,12 +229,11 @@ export function JobsPage() {
       {!isLoading && !error && (
         <div className="flex items-center justify-between text-xs sm:text-sm text-ink-muted pt-2 border-b border-border-subtle pb-2">
           <span>
-            Showing <strong className="text-ink">{jobs.length}</strong> open
-            roles
+            {t("jobs.showingRoles", { count: jobs.length })}
           </span>
           {filters.sort_by === "nearest" && userLocation && (
             <span className="text-lime-dark font-medium">
-              Sorted by distance from your location
+              {t("jobs.sortedByDistance")}
             </span>
           )}
         </div>
@@ -246,7 +246,9 @@ export function JobsPage() {
           className="p-4 rounded-lg bg-danger-subtle border border-danger/30 text-danger text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-start"
         >
           <div>
-            <strong className="block font-semibold">Error loading jobs</strong>
+            <strong className="block font-semibold">
+              {t("jobs.errorLoading")}
+            </strong>
             <span>{error}</span>
           </div>
           <Button
@@ -255,7 +257,7 @@ export function JobsPage() {
             size="sm"
             onClick={() => setReloadKey((k) => k + 1)}
           >
-            Retry
+            {t("jobs.retry")}
           </Button>
         </div>
       )}
@@ -263,8 +265,8 @@ export function JobsPage() {
       {/* Loading Spinner */}
       {isLoading && (
         <div className="py-16 flex flex-col items-center justify-center gap-3">
-          <Spinner size="lg" aria-label="Loading available jobs" />
-          <p className="text-xs text-ink-muted">Fetching latest jobs...</p>
+          <Spinner size="lg" aria-label={t("jobs.loadingAvailable")} />
+          <p className="text-xs text-ink-muted">{t("jobs.fetchingLatest")}</p>
         </div>
       )}
 
@@ -272,8 +274,8 @@ export function JobsPage() {
       {!isLoading && !error && jobs.length === 0 && (
         <div className="py-8">
           <EmptyState
-            title="No open roles found"
-            description="We couldn't find any jobs matching your current search and filter settings."
+            title={t("jobs.noRolesFound")}
+            description={t("jobs.noRolesDescription")}
             action={
               <Button
                 type="button"
@@ -281,7 +283,7 @@ export function JobsPage() {
                 size="sm"
                 onClick={handleResetFilters}
               >
-                Reset all filters
+                {t("jobs.resetAllFilters")}
               </Button>
             }
           />
@@ -311,10 +313,10 @@ export function JobsPage() {
             {isLoadingMore ? (
               <span className="flex items-center gap-2">
                 <Spinner size="sm" />
-                Loading more...
+                {t("jobs.loadingMore")}
               </span>
             ) : (
-              "Load more jobs ↓"
+              t("jobs.loadMoreJobs")
             )}
           </Button>
         </div>
