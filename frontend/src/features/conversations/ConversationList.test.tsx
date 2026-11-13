@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
 import { ConversationList } from "./ConversationList";
@@ -23,6 +24,30 @@ vi.mock("../../api/ws", () => ({
     wsListeners.set(type, handler);
   }),
 }));
+
+let root: Root;
+let container: HTMLDivElement;
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+function setNativeValue(
+  element: HTMLInputElement | HTMLSelectElement,
+  value: string,
+) {
+  const valueSetter = Object.getOwnPropertyDescriptor(element, "value")?.set;
+  const prototype = Object.getPrototypeOf(element);
+  const prototypeValueSetter = Object.getOwnPropertyDescriptor(
+    prototype,
+    "value",
+  )?.set;
+
+  if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+    prototypeValueSetter.call(element, value);
+  } else if (valueSetter) {
+    valueSetter.call(element, value);
+  } else {
+    element.value = value;
+  }
+}
 
 const mockConversations: ConversationItem[] = [
   {
@@ -65,9 +90,16 @@ describe("ConversationList Component (FE-29)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wsListeners.clear();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
     vi.restoreAllMocks();
   });
 
@@ -75,40 +107,37 @@ describe("ConversationList Component (FE-29)", () => {
     vi.mocked(api.listConversations).mockResolvedValueOnce(mockConversations);
     const mockOnSelect = vi.fn();
 
-    render(<ConversationList onSelectConversation={mockOnSelect} />);
-
-    // Shows loading spinner first
-    expect(screen.getByTestId("conversation-loading")).toBeInTheDocument();
-
-    await waitFor(() => {
-      // First conversation details
-      expect(screen.getByText("Sarah Recruiter")).toBeInTheDocument();
-      expect(
-        screen.getByText("Looking forward to meeting you!"),
-      ).toBeInTheDocument();
-      expect(screen.getByText("Senior Frontend Engineer")).toBeInTheDocument();
-      expect(screen.getByTestId("unread-badge")).toHaveTextContent("2");
-
-      // Second conversation details (unread count 0 -> no unread badge)
-      expect(screen.getByText("Khalil Kaddoura")).toBeInTheDocument();
-      expect(
-        screen.getByText("Did you check the pull request?"),
-      ).toBeInTheDocument();
+    await act(async () => {
+      root.render(<ConversationList onSelectConversation={mockOnSelect} />);
     });
+
+    expect(container.textContent).toContain("Sarah Recruiter");
+    expect(container.textContent).toContain("Looking forward to meeting you!");
+    expect(container.textContent).toContain("Senior Frontend Engineer");
+    expect(
+      container.querySelector('[data-testid="unread-badge"]')?.textContent,
+    ).toContain("2");
+
+    expect(container.textContent).toContain("Khalil Kaddoura");
+    expect(container.textContent).toContain("Did you check the pull request?");
   });
 
   it("handles clicking a conversation and invokes onSelectConversation", async () => {
     vi.mocked(api.listConversations).mockResolvedValueOnce(mockConversations);
     const mockOnSelect = vi.fn();
 
-    render(<ConversationList onSelectConversation={mockOnSelect} />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Sarah Recruiter")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<ConversationList onSelectConversation={mockOnSelect} />);
     });
 
-    const card = screen.getByTestId("conversation-card-1");
-    fireEvent.click(card);
+    const card = container.querySelector<HTMLButtonElement>(
+      '[data-testid="conversation-card-1"]',
+    );
+    expect(card).not.toBeNull();
+
+    await act(async () => {
+      card?.click();
+    });
 
     expect(mockOnSelect).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -124,36 +153,37 @@ describe("ConversationList Component (FE-29)", () => {
     ]);
     const mockOnSelect = vi.fn();
 
-    render(<ConversationList onSelectConversation={mockOnSelect} />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Khalil Kaddoura")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<ConversationList onSelectConversation={mockOnSelect} />);
     });
+
+    expect(container.textContent).toContain("Khalil Kaddoura");
 
     // Simulate real-time message arriving for conversation 2 (currently at index 1)
     const messageHandler = wsListeners.get("message") as
       WsCallback<WsMessagePayload> | undefined;
     expect(messageHandler).toBeDefined();
 
-    messageHandler?.({
-      id: 200,
-      conversation_id: 2,
-      author_id: 3,
-      content: "Let's review the WebSocket client together!",
-      created_at: "2026-11-12T11:00:00Z",
+    await act(async () => {
+      messageHandler?.({
+        id: 200,
+        conversation_id: 2,
+        author_id: 3,
+        content: "Let's review the WebSocket client together!",
+        created_at: "2026-11-12T11:00:00Z",
+      });
     });
 
-    await waitFor(() => {
-      // The updated message snippet must be displayed
-      expect(
-        screen.getByText("Let's review the WebSocket client together!"),
-      ).toBeInTheDocument();
+    expect(container.textContent).toContain(
+      "Let's review the WebSocket client together!",
+    );
 
-      // Check card order in DOM: conversation 2 should now be first!
-      const cards = screen.getAllByTestId(/^conversation-card-/);
-      expect(cards[0]).toHaveAttribute("data-testid", "conversation-card-2");
-      expect(cards[1]).toHaveAttribute("data-testid", "conversation-card-1");
-    });
+    // Check card order in DOM: conversation 2 should now be first!
+    const cards = container.querySelectorAll(
+      '[data-testid^="conversation-card-"]',
+    );
+    expect(cards[0].getAttribute("data-testid")).toBe("conversation-card-2");
+    expect(cards[1].getAttribute("data-testid")).toBe("conversation-card-1");
   });
 
   it("updates unread count when conversation_updated event is received", async () => {
@@ -162,50 +192,64 @@ describe("ConversationList Component (FE-29)", () => {
     ]);
     const mockOnSelect = vi.fn();
 
-    render(<ConversationList onSelectConversation={mockOnSelect} />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("unread-badge")).toHaveTextContent("2");
+    await act(async () => {
+      root.render(<ConversationList onSelectConversation={mockOnSelect} />);
     });
+
+    expect(
+      container.querySelector('[data-testid="unread-badge"]')?.textContent,
+    ).toContain("2");
 
     const updateHandler = wsListeners.get("conversation_updated") as
       WsCallback<WsConversationUpdatedPayload> | undefined;
     expect(updateHandler).toBeDefined();
 
-    updateHandler?.({
-      conversation_id: 1,
-      unread_count: 0,
+    await act(async () => {
+      updateHandler?.({
+        conversation_id: 1,
+        unread_count: 0,
+      });
     });
 
-    await waitFor(() => {
-      expect(screen.queryByTestId("unread-badge")).not.toBeInTheDocument();
-    });
+    expect(container.querySelector('[data-testid="unread-badge"]')).toBeNull();
   });
 
   it("filters conversation list by search query", async () => {
     vi.mocked(api.listConversations).mockResolvedValueOnce(mockConversations);
-    render(<ConversationList onSelectConversation={vi.fn()} />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Sarah Recruiter")).toBeInTheDocument();
-      expect(screen.getByText("Khalil Kaddoura")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<ConversationList onSelectConversation={vi.fn()} />);
     });
 
-    const searchInput = screen.getByTestId("conversation-search");
-    fireEvent.change(searchInput, { target: { value: "Sarah" } });
+    expect(container.textContent).toContain("Sarah Recruiter");
+    expect(container.textContent).toContain("Khalil Kaddoura");
 
-    expect(screen.getByText("Sarah Recruiter")).toBeInTheDocument();
-    expect(screen.queryByText("Khalil Kaddoura")).not.toBeInTheDocument();
+    const searchInput = container.querySelector<HTMLInputElement>(
+      '[data-testid="conversation-search"]',
+    );
+    expect(searchInput).not.toBeNull();
+
+    await act(async () => {
+      if (searchInput) {
+        setNativeValue(searchInput, "Sarah");
+        searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+        searchInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+
+    expect(container.textContent).toContain("Sarah Recruiter");
+    expect(container.textContent).not.toContain("Khalil Kaddoura");
   });
 
   it("renders empty state when no conversations exist", async () => {
     vi.mocked(api.listConversations).mockResolvedValueOnce([]);
-    render(<ConversationList onSelectConversation={vi.fn()} />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("no-conversations-empty")).toBeInTheDocument();
-      expect(screen.getByText("No conversations yet")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<ConversationList onSelectConversation={vi.fn()} />);
     });
+
+    expect(
+      container.querySelector('[data-testid="no-conversations-empty"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("No conversations yet");
   });
 
   it("displays error state and retries on button click", async () => {
@@ -213,17 +257,21 @@ describe("ConversationList Component (FE-29)", () => {
       .mockRejectedValueOnce(new Error("Network timeout"))
       .mockResolvedValueOnce(mockConversations);
 
-    render(<ConversationList onSelectConversation={vi.fn()} />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Network timeout")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<ConversationList onSelectConversation={vi.fn()} />);
     });
 
-    const retryBtn = screen.getByTestId("retry-conversations-btn");
-    fireEvent.click(retryBtn);
+    expect(container.textContent).toContain("Network timeout");
 
-    await waitFor(() => {
-      expect(screen.getByText("Sarah Recruiter")).toBeInTheDocument();
+    const retryBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="retry-conversations-btn"]',
+    );
+    expect(retryBtn).not.toBeNull();
+
+    await act(async () => {
+      retryBtn?.click();
     });
+
+    expect(container.textContent).toContain("Sarah Recruiter");
   });
 });

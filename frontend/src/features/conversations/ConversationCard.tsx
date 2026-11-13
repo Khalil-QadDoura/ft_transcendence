@@ -58,7 +58,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
       data-testid={`conversation-card-${conversation.id}`}
     >
       <div className="relative shrink-0">
-        <Avatar src={avatarUrl} name={displayName} size="md" />
+        <Avatar src={avatarUrl} alt={displayName} size="md" />
         {conversation.unread_count > 0 && (
           <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-400 opacity-75"></span>
@@ -87,7 +87,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
             </span>
             {conversation.job_title && (
               <Badge
-                variant="neutral"
+                variant="default"
                 size="sm"
                 className="hidden sm:inline-flex"
               >
