@@ -10,7 +10,7 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 
 | Topic | Rule |
 | --- | --- |
-| Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind Caddy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
+| Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind the nginx + ModSecurity front proxy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
 | Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. A missing, invalid or expired token, or one made before a password change (`token_version`), gets 401 with `WWW-Authenticate: Bearer`. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
 | Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
 | Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
@@ -69,11 +69,11 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | --- | --- | --- | --- | --- | --- |
 | POST | `/friends/requests` | Bearer | `{addressee_id}` | 201 `FriendshipOut` | 400 self, 404 user, 409 pending / already friends |
 | GET | `/friends/requests` | Bearer | — | 200 incoming pending `FriendshipOut[]` | — |
-| POST | `/friends/requests/{id}/accept` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 409 not pending |
-| POST | `/friends/requests/{id}/decline` | Bearer | — | 200 `FriendshipOut` | same |
+| POST | `/friends/requests/{id}/accept` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 404, 409 not pending |
+| POST | `/friends/requests/{id}/decline` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 404, 409 not pending |
 | DELETE | `/friends/{id}` | Bearer | — | 204 | 403, 404 |
-| GET | `/friends` | Bearer | — | 200 `[{user_id, first_name, last_name, position, avatar_object_key, is_online}]` | — |
-| GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, is_online, friendship_status}` | 404 |
+| GET | `/friends` | Bearer | — | 200 `[{friendship_id, user_id, first_name, last_name, position, avatar_object_key, avatar_url, is_online}]` | — |
+| GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, avatar_url, is_online, friendship_status, friendship_id}` | 404 |
 | POST | `/conversations` | Bearer | `{type: "direct", peer_user_id, job_id?}` | 201 `ConversationOut` (existing one if the pair already has a chat) | 400 no peer, 403 job not yours |
 | GET | `/conversations` | Bearer | query `limit` ≤ 100 | 200 `ConversationOut[]`, newest first | — |
 | GET | `/conversations/unread` | Bearer | — | 200 `{total_unread}` | — |
@@ -88,7 +88,7 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | DELETE | `/conversations/{id}/messages/{mid}` | Bearer | — | 204 (soft) | 403 not yours |
 | POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403 |
 
-- `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`.
+- `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`; `friendship_id`: `int | null` pointing to the friendship row when a relationship exists.
 - `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at}`.
 - `MessageOut` = `{id, conversation_id, author_id, content, status (sent / delivered / read), message_type, reply_to_id, idempotency_key, edited_at, deleted_at, created_at}`.
 
@@ -118,7 +118,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 
 **`GET /jobs/open` query:** `lat`, `lng`, `radius_km` (≤ 500; all three for radius), `schedule` (`full_time`, `part_time`, `internship`), `salary_min`, `salary_max`, `urgency` (`normal`, `urgent`, `hot`), `keyword` (full-text), `position` (title contains), `sort_by` (`newest` default, `nearest` needs lat/lng), `cursor`, `limit` 1–100 (default 20).
 
-- `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (active or open, default active), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
+- `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
 - `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, views_count, applications_count, new_applications_count, created_by_id, updated_by_id, created_at, updated_at}`.
 - `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at}`.
 - `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, logo_url, status, country, city, district, country_code, created_at, updated_at}`. `logo_url` (new backend, BE-08): the logo's public address, or `null` without a logo (see Media).
@@ -166,7 +166,7 @@ Avatars and company logos in the new backend (BE-08):
 - Company logo routes are for employers: a user with a company that is not deleted (404 "You have no company" otherwise).
 - `logo_url` in `CompanyOut` (`GET /companies/me`, `POST /companies`, `PATCH /companies/me`): the logo's public address, or `null` without a logo (there is no default logo). `DELETE /companies` empties the logo with the soft delete and deletes its file at once, as `DELETE /users/me` does for the avatar and the logo.
 - Default avatar: a user with no picture gets `avatar_url` = `DEFAULT_AVATAR_URL`, by default `/api/media/avatar/default.svg` on our own site, a grey picture the API serves itself (no login, cached for a day).
-- Not in BE-08: `avatar_url` in the public profile and in the friends list comes with those endpoints (BE-22), through `Storage.avatar_url`.
+- `avatar_url` in the public profile and in the friends list comes from `Storage.avatar_url` (BE-22): each user's public picture address or `DEFAULT_AVATAR_URL`.
 
 ## Game
 
@@ -184,7 +184,7 @@ Room states: `waiting → discussion (120 s) → voting (45 s) → finished`. Th
 
 ## System
 
-Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*` are not part of this contract: they are left out of the spec, need the `X-Internal-Key` header and are blocked by the proxy.
+Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*` and `/metrics` are not part of this contract: they are left out of the OpenAPI spec and blocked by the front proxy (404 externally, reachable only inside the Docker network).
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
@@ -192,6 +192,7 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 | GET | `/api/openapi.json` | — | — | 200 OpenAPI 3.1 spec of every public route | — |
 | GET | `/api/docs` | — | — | 200 Swagger UI, only when `ENV=dev` | 404 otherwise |
 | GET | `/api/docs/oauth2-redirect` | — | — | 200 Swagger UI's OAuth helper page, only when `ENV=dev` | 404 otherwise |
+| GET | `/metrics` (internal only) | — | — | 200 Prometheus text exposition (`http_requests_*`, `ws_connections`) | 404 externally via proxy |
 
 ## WebSocket protocol
 
@@ -235,9 +236,9 @@ The frontend should code against these from day one; the backend Tech Lead confi
 
 | Done | Change | Why |
 | --- | --- | --- |
-| \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through Caddy: no CORS, no mixed content |
+| \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through the nginx + ModSecurity front proxy: no CORS, no mixed content |
 | [x] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
-| \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
+| [x] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
 | \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
@@ -249,9 +250,9 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |
 | \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
-| \[ \] | `GET /metrics` for Prometheus, internal only | Monitoring module |
+| [x] | `GET /metrics` for Prometheus, internal only | Monitoring module |
 
-The `avatar_url` row (BE-08): done for `UserOut` (`avatar_url`, with a public path and a default avatar) and `CompanyOut` (`logo_url`), see Media. It stays unticked until the public profile and the friends list (BE-22) return `avatar_url`, through `Storage.avatar_url`.
+The `avatar_url` row (BE-08 + BE-22): `UserOut` (`avatar_url`), `CompanyOut` (`logo_url`), `GET /api/friends`, and `GET /api/users/{id}/profile` all return public/default image URLs through `Storage.avatar_url` / `Storage.logo_url`.
 
 ## Machine-readable spec
 
