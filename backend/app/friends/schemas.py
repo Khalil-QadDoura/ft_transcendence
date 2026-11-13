@@ -31,6 +31,7 @@ class FriendshipOut(BaseModel):
 class FriendOut(BaseModel):
     """Single-query friend summary with public avatar URL and live online status."""
 
+    friendship_id: int
     user_id: int
     first_name: str | None
     last_name: str | None
@@ -52,3 +53,4 @@ class PublicProfileOut(BaseModel):
     avatar_url: str
     is_online: bool
     friendship_status: FriendshipStatusView | None
+    friendship_id: int | None = None

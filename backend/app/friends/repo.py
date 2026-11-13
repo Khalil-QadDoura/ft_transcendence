@@ -80,7 +80,7 @@ async def delete_friendship(session: AsyncSession, friendship: Friendship) -> No
 
 async def list_accepted_friends(
     session: AsyncSession, user_id: int
-) -> list[tuple[int, str | None, str | None, str | None, str | None]]:
+) -> list[tuple[int, int, str | None, str | None, str | None, str | None]]:
     """Fetch active accepted friends in a single SQL join (no N+1 queries)."""
     peer_id_expr = case(
         (Friendship.requester_id == user_id, Friendship.addressee_id),
@@ -88,6 +88,7 @@ async def list_accepted_friends(
     )
     stmt = (
         select(
+            Friendship.id,
             User.id,
             User.first_name,
             User.last_name,

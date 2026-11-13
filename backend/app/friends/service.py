@@ -116,9 +116,10 @@ async def list_friends(
 ) -> list[FriendOut]:
     """Return active accepted friends from one SQL join plus one Redis presence pipeline."""
     rows = await repo.list_accepted_friends(session, user_id)
-    online_ids = await realtime_service.online_user_ids(redis, [uid for uid, *_ in rows])
+    online_ids = await realtime_service.online_user_ids(redis, [uid for _, uid, *_ in rows])
     return [
         FriendOut(
+            friendship_id=friendship_id,
             user_id=uid,
             first_name=first_name,
             last_name=last_name,
@@ -127,7 +128,7 @@ async def list_friends(
             avatar_url=storage.avatar_url(avatar_key),
             is_online=uid in online_ids,
         )
-        for uid, first_name, last_name, position, avatar_key in rows
+        for friendship_id, uid, first_name, last_name, position, avatar_key in rows
     ]
 
 
@@ -145,9 +146,11 @@ async def get_public_profile(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     friendship_status: FriendshipStatusView | None = None
+    friendship_id: int | None = None
     if target_user_id != viewer_id:
         rel = await repo.get_live_friendship_for_pair(session, viewer_id, target_user_id)
         if rel is not None:
+            friendship_id = rel.id
             if rel.status == "accepted":
                 friendship_status = "accepted"
             else:
@@ -166,4 +169,5 @@ async def get_public_profile(
         avatar_url=storage.avatar_url(target.avatar_object_key),
         is_online=online,
         friendship_status=friendship_status,
+        friendship_id=friendship_id,
     )
