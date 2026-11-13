@@ -25,7 +25,7 @@ test.each(["privacy", "terms"] as const)(
     await act(() => root.render(<RouterProvider router={router} />));
     expect(router.state.location.pathname).toBe(`/${kind}`);
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("time")?.dateTime).toBe("2026-11-11");
+    expect(container.querySelector("time")?.dateTime).toBe("2026-11-13");
     expect(
       container.querySelector("article")!.textContent!.length,
     ).toBeGreaterThan(5000);
