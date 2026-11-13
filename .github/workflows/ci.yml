@@ -39,8 +39,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT" = pull_request ]; then
-            # Three dots: what the branch changed since it left main, not what main gained.
-            files="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+            # Three dots: what the branch changed since it left its base, not what the base
+            # gained. --no-renames: a moved file is listed under its old path too (a move
+            # out of infra/ must still run stack). core.quotePath=false: non-ASCII names
+            # are printed as they are, not quoted, so ^backend/ still matches them.
+            files="$(git -c core.quotePath=false diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA")"
             # A here-string, not a pipe: grep -q stops reading early, and with pipefail a
             # pipe would then report a match as a failure.
             touched() { grep -Eq "$1" <<<"$files"; }
