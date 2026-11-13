@@ -184,7 +184,7 @@ Room states: `waiting → discussion (120 s) → voting (45 s) → finished`. Th
 
 ## System
 
-Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*` are not part of this contract: they are left out of the spec, need the `X-Internal-Key` header and are blocked by the proxy.
+Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*` and `/metrics` are not part of this contract: they are left out of the OpenAPI spec and blocked by the front proxy (404 externally, reachable only inside the Docker network).
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
@@ -192,6 +192,7 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 | GET | `/api/openapi.json` | — | — | 200 OpenAPI 3.1 spec of every public route | — |
 | GET | `/api/docs` | — | — | 200 Swagger UI, only when `ENV=dev` | 404 otherwise |
 | GET | `/api/docs/oauth2-redirect` | — | — | 200 Swagger UI's OAuth helper page, only when `ENV=dev` | 404 otherwise |
+| GET | `/metrics` (internal only) | — | — | 200 Prometheus text exposition (`http_requests_*`, `ws_connections`) | 404 externally via proxy |
 
 ## WebSocket protocol
 
@@ -249,7 +250,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |
 | \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
-| \[ \] | `GET /metrics` for Prometheus, internal only | Monitoring module |
+| [x] | `GET /metrics` for Prometheus, internal only | Monitoring module |
 
 The `avatar_url` row (BE-08): done for `UserOut` (`avatar_url`, with a public path and a default avatar) and `CompanyOut` (`logo_url`), see Media. It stays unticked until the public profile and the friends list (BE-22) return `avatar_url`, through `Storage.avatar_url`.
 

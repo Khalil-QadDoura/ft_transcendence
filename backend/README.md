@@ -11,6 +11,7 @@ app/
                  mailer (SMTP, or Brevo's API when BREVO_API_KEY is set),
                  redis_client (each app's Redis client, get_redis),
                  storage (MinIO: signed links, file checks, public picture addresses),
+                 metrics (Prometheus /metrics and ws_connections gauge, BE-30),
                  queue (Celery tasks on Redis)
   db/            base (Base + naming convention), session (each app's engine, get_session),
                  mixins (TimestampMixin, AuditMixin), models (imports every table model)
