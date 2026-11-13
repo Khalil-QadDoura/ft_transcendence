@@ -1,13 +1,14 @@
-# CI (INF-06): one workflow for every pull request to main and every push to main.
-# No trigger-level path filter: a required check whose workflow does not start stays
-# "Expected" forever and blocks the merge. Instead the `changes` job decides which jobs
-# have work to do, the others are skipped, and `ci-ok` sums them up. Branch protection on
-# main requires `ci-ok` only. Details: docs/infra/infrastructure.md, section "CI".
+# CI (INF-06): one workflow for every pull request, onto any branch (stacked PRs too), and
+# every push to main. No trigger-level path filter: a required check whose workflow does
+# not start stays "Expected" forever and blocks the merge. Instead the `changes` job
+# decides which jobs have work to do, the others are skipped, and `ci-ok` sums them up.
+# Branch protection on main requires `ci-ok` only. Details: docs/infra/infrastructure.md,
+# section "CI".
 name: CI
 
 on:
+  # No branch filter: a PR onto another PR's branch gets CI as well.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -34,6 +35,8 @@ jobs:
       - id: filter
         env:
           EVENT: ${{ github.event_name }}
+          # The PR's own base: the tip of whatever branch it targets (main or another PR's
+          # branch), so a stacked PR is compared with its parent branch, not with main.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
