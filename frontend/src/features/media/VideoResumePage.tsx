@@ -263,7 +263,7 @@ export const VideoResumePage: React.FC = () => {
                     {t("media.activePitchDesc")}
                   </p>
                 </div>
-                <Badge variant="primary">{t("media.publishedInFeed")}</Badge>
+                <Badge variant="lime">{t("media.publishedInFeed")}</Badge>
               </div>
 
               <Card className="overflow-hidden border-primary-200 dark:border-primary-900 shadow-sm">
@@ -357,7 +357,7 @@ export const VideoResumePage: React.FC = () => {
                       <div className="mb-3 flex items-center justify-between">
                         {getModerationBadge(video.moderation_status)}
                         {isPosted && (
-                          <Badge variant="primary" size="sm">
+                          <Badge variant="lime" size="sm">
                             {t("media.publishedInFeed")}
                           </Badge>
                         )}
