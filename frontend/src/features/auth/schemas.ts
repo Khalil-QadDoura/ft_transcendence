@@ -7,5 +7,5 @@ const email = text(1)
   .pipe(z.email({ pattern: z.regexes.html5Email, error: "validation.email" }))
   .transform((value) => value.toLowerCase());
 export const registerSchema = z.object({ email, password: text(8, 128) });
-// BE-03 intentionally allows short login attempts; only registration has a minimum.
-export const loginSchema = z.object({ email, password: text(0, 128) });
+// Reject an empty browser submission; short nonempty passwords still reach BE-03.
+export const loginSchema = z.object({ email, password: text(1, 128) });
