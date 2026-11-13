@@ -190,7 +190,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             </Button>
           </div>
         ) : filteredConversations.length === 0 ? (
-          <div className="p-4">
+          <div className="p-4" data-testid="no-conversations-empty">
             <EmptyState
               title={
                 searchQuery
@@ -202,7 +202,6 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                   ? t("chat.noMatchesDesc")
                   : t("chat.noConversationsDesc")
               }
-              data-testid="no-conversations-empty"
             />
           </div>
         ) : (
