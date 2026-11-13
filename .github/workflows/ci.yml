@@ -144,7 +144,9 @@ jobs:
           skipped = sum(int(suite.get('skipped', '0')) for suite in suites)
           assert skipped == 0, f'{skipped} tests skipped; database or Redis validation is incomplete'
           PY
-      - run: docker build -t wozu-backend:ci .
+      # The runtime stage, the one compose builds for api and worker (`target: runtime`);
+      # without --target, docker build would end at the test stage (INF-07).
+      - run: docker build --target runtime -t wozu-backend:ci .
 
   # Moved unchanged from frontend.yml (FE-01, FE-13, FE-06).
   frontend:
@@ -170,7 +172,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: docker build -t wozu-frontend:ci .
+      # The preview stage, the one compose builds for frontend (`target: preview`).
+      - run: docker build --target preview -t wozu-frontend:ci .
 
   # Moved unchanged from frontend.yml (FE-04, FE-06): the frontend authentication tests
   # against the real backend (its app, migrations and auth) on a real PostgreSQL. Runs when
