@@ -1,12 +1,13 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { Spinner } from "../../components/Spinner";
+import { useText } from "../../i18n/useText";
 import {
   confirmVideoUpload,
   requestVideoUploadUrl,
   uploadVideoWithProgress,
 } from "./api";
-import type { RecorderState, VideoStatusOut } from "./types";
+import type { VideoRecorderState, VideoStatusOut } from "./types";
 
 export interface VideoRecorderProps {
   maxDurationSec?: number;
@@ -15,15 +16,14 @@ export interface VideoRecorderProps {
   className?: string;
 }
 
-const DEFAULT_MAX_DURATION = 30; // 30 seconds maximum according to API contract
-
 export const VideoRecorder: React.FC<VideoRecorderProps> = ({
-  maxDurationSec = DEFAULT_MAX_DURATION,
+  maxDurationSec = 30,
   onUploadSuccess,
   onCancel,
   className = "",
 }) => {
-  const [state, setState] = useState<RecorderState>("idle");
+  const { t } = useText();
+  const [state, setState] = useState<VideoRecorderState>("idle");
   const [elapsedSec, setElapsedSec] = useState<number>(0);
   const [uploadPercent, setUploadPercent] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -37,6 +37,16 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  mediaStreamRef.current = mediaStream;
+
+  const stopTracks = useCallback(() => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      setMediaStream(null);
+    }
+  }, []);
 
   // Cleanup media tracks and object URLs on unmount
   useEffect(() => {
@@ -49,14 +59,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         clearInterval(timerIntervalRef.current);
       }
     };
-  }, [previewUrl]);
-
-  const stopTracks = () => {
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((track) => track.stop());
-      setMediaStream(null);
-    }
-  };
+  }, [previewUrl, stopTracks]);
 
   /**
    * Request webcam and microphone access
@@ -67,9 +70,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error(
-          "Your browser does not support media device recording. Please use Chrome, Firefox or Edge.",
-        );
+        throw new Error(t("media.browserNotSupported"));
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -91,19 +92,15 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         error.name === "NotAllowedError" ||
         error.name === "PermissionDeniedError"
       ) {
-        setErrorMessage(
-          "Camera or microphone permission was denied. Please allow device permissions in your browser settings to record your video pitch.",
-        );
+        setErrorMessage(t("media.permissionDenied"));
       } else if (
         error.name === "NotFoundError" ||
         error.name === "DevicesNotFoundError"
       ) {
-        setErrorMessage(
-          "No camera or microphone device found. Please plug in a webcam and try again.",
-        );
+        setErrorMessage(t("media.deviceNotFound"));
       } else {
         setErrorMessage(
-          error.message || "Unable to access camera or microphone.",
+          error.message || t("media.unableToAccess"),
         );
       }
     }
@@ -176,7 +173,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
     } catch (err: unknown) {
       setState("error");
       const error = err as { message?: string };
-      setErrorMessage(error.message || "Failed to initialize video recording.");
+      setErrorMessage(error.message || t("media.initFailed"));
     }
   };
 
@@ -250,7 +247,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
       setState("error");
       const error = err as { message?: string };
       setErrorMessage(
-        error.message || "Video upload failed. Please verify your connection and try again.",
+        error.message || t("media.uploadFailed"),
       );
     }
   };
@@ -269,10 +266,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Video Resume Recorder
+            {t("media.recorderTitle")}
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Record a short video introduction (up to {maxDurationSec} seconds).
+            {t("media.recorderSubtitle", { maxDuration: maxDurationSec })}
           </p>
         </div>
         {state === "recording" && (
@@ -306,10 +303,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
               />
             </svg>
             <p className="mb-4 text-sm text-gray-300">
-              Camera access is required to record your video résumé.
+              {t("media.cameraRequired")}
             </p>
             <Button onClick={startCamera} variant="primary" data-testid="start-camera-button">
-              Enable Camera & Mic
+              {t("media.enableCamera")}
             </Button>
           </div>
         )}
@@ -317,7 +314,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         {state === "requesting_permission" && (
           <div className="flex flex-col items-center justify-center space-y-3">
             <Spinner size="lg" />
-            <p className="text-sm text-gray-300">Requesting camera access...</p>
+            <p className="text-sm text-gray-300">{t("media.requestingCamera")}</p>
           </div>
         )}
 
@@ -364,10 +361,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
               />
             </svg>
             <p className="mb-4 max-w-sm text-sm text-red-200" data-testid="error-message">
-              {errorMessage || "An error occurred."}
+              {errorMessage || t("media.errorDefault")}
             </p>
             <Button onClick={startCamera} variant="secondary" data-testid="retry-camera-button">
-              Try Again
+              {t("media.tryAgain")}
             </Button>
           </div>
         )}
@@ -376,7 +373,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         {state === "uploading" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-6">
             <Spinner size="lg" className="mb-4 text-primary-500" />
-            <p className="mb-2 text-sm font-medium text-white">Uploading video...</p>
+            <p className="mb-2 text-sm font-medium text-white">{t("media.uploadingVideo")}</p>
             <div className="h-2.5 w-64 rounded-full bg-gray-700">
               <div
                 className="h-2.5 rounded-full bg-primary-500 transition-all duration-300"
@@ -398,9 +395,9 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h4 className="mb-1 text-base font-semibold text-white">Upload Complete!</h4>
+            <h4 className="mb-1 text-base font-semibold text-white">{t("media.uploadComplete")}</h4>
             <p className="text-xs text-gray-300">
-              Your video pitch has been submitted and is currently in review.
+              {t("media.uploadCompleteDesc")}
             </p>
           </div>
         )}
@@ -418,7 +415,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         <div className="flex items-center space-x-2">
           {onCancel && state !== "uploading" && (
             <Button onClick={onCancel} variant="ghost" data-testid="cancel-button">
-              Cancel
+              {t("media.cancel")}
             </Button>
           )}
         </div>
@@ -431,7 +428,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
               className="bg-red-600 hover:bg-red-700 text-white"
               data-testid="start-recording-button"
             >
-              Start Recording
+              {t("media.startRecording")}
             </Button>
           )}
 
@@ -441,7 +438,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
               variant="danger"
               data-testid="stop-recording-button"
             >
-              Stop Recording
+              {t("media.stopRecording")}
             </Button>
           )}
 
@@ -452,14 +449,14 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
                 variant="secondary"
                 data-testid="retake-button"
               >
-                Retake
+                {t("media.retake")}
               </Button>
               <Button
                 onClick={handleUpload}
                 variant="primary"
                 data-testid="upload-button"
               >
-                Upload Video
+                {t("media.uploadVideo")}
               </Button>
             </>
           )}
@@ -467,10 +464,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
           {state === "error" && recordedBlob && (
             <>
               <Button onClick={handleRetake} variant="secondary">
-                Retake
+                {t("media.retake")}
               </Button>
               <Button onClick={handleUpload} variant="primary">
-                Retry Upload
+                {t("media.retryUpload")}
               </Button>
             </>
           )}

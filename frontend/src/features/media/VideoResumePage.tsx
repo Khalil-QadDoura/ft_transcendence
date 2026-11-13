@@ -4,6 +4,7 @@ import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Spinner } from "../../components/Spinner";
+import { useText } from "../../i18n/useText";
 import { deleteVideo, listMyVideos, postVideo, unpostVideo } from "./api";
 import type { MyVideoItem, WsVideoModeratedPayload } from "./types";
 import { VideoRecorderModal } from "./VideoRecorderModal";
@@ -12,6 +13,7 @@ const MAX_VIDEOS = 3;
 const POLLING_INTERVAL_MS = 5000;
 
 export const VideoResumePage: React.FC = () => {
+  const { t } = useText();
   const [videos, setVideos] = useState<MyVideoItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,13 +32,13 @@ export const VideoResumePage: React.FC = () => {
     } catch (err: unknown) {
       const e = err as { message?: string };
       if (!silent) {
-        setError(e.message || "Failed to load video résumés.");
+        setError(e.message || t("media.failedToLoad"));
         setVideos([]);
       }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchVideos();
@@ -81,7 +83,7 @@ export const VideoResumePage: React.FC = () => {
       await fetchVideos(true);
     } catch (err: unknown) {
       const e = err as { message?: string };
-      setError(e.message || "Failed to post video.");
+      setError(e.message || t("media.failedToPost"));
     } finally {
       setActionLoading(null);
     }
@@ -94,7 +96,7 @@ export const VideoResumePage: React.FC = () => {
       await fetchVideos(true);
     } catch (err: unknown) {
       const e = err as { message?: string };
-      setError(e.message || "Failed to unpost video.");
+      setError(e.message || t("media.failedToUnpost"));
     } finally {
       setActionLoading(null);
     }
@@ -108,7 +110,7 @@ export const VideoResumePage: React.FC = () => {
       await fetchVideos(true);
     } catch (err: unknown) {
       const e = err as { message?: string };
-      setError(e.message || "Failed to delete video.");
+      setError(e.message || t("media.failedToDelete"));
     } finally {
       setActionLoading(null);
     }
@@ -119,7 +121,7 @@ export const VideoResumePage: React.FC = () => {
       case "approved":
         return (
           <Badge variant="success" data-testid="badge-approved">
-            ✓ Approved
+            {t("media.approvedBadge")}
           </Badge>
         );
       case "pending":
@@ -129,19 +131,19 @@ export const VideoResumePage: React.FC = () => {
             data-testid="badge-pending"
           >
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500"></span>
-            <span>In Review</span>
+            <span>{t("media.inReviewBadge")}</span>
           </span>
         );
       case "rejected":
         return (
           <Badge variant="danger" data-testid="badge-rejected">
-            Needs Attention
+            {t("media.needsAttentionBadge")}
           </Badge>
         );
       case "moderation_error":
         return (
           <Badge variant="warning" data-testid="badge-moderation-error">
-            Review Incomplete
+            {t("media.reviewIncompleteBadge")}
           </Badge>
         );
       default:
@@ -165,20 +167,20 @@ export const VideoResumePage: React.FC = () => {
       {/* Header section with quota and action button */}
       <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <div className="flex items-center space-x-3">
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-              My Video Résumés
-            </h1>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+            {t("media.videoResume")}
+          </h1>
+          <p className="mt-1 text-base text-gray-600 dark:text-gray-400">
+            {t("media.pageSubtitle")}
+          </p>
+          <div className="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
             <span
-              className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+              className="font-medium text-gray-700 dark:text-gray-300"
               data-testid="video-quota-counter"
             >
-              {activeVideos.length} / {MAX_VIDEOS} Videos
+              {t("media.quotaVideos", { count: activeVideos.length, max: MAX_VIDEOS })}
             </span>
           </div>
-          <p className="mt-1 text-base text-gray-600 dark:text-gray-400">
-            A 30-second introduction that brings your story, skills, and personality to life.
-          </p>
         </div>
 
         <div className="flex flex-col items-end">
@@ -188,29 +190,19 @@ export const VideoResumePage: React.FC = () => {
             disabled={isAtLimit}
             data-testid="record-video-cta"
           >
-            {activeVideos.length === 0 ? "Record Your Pitch" : "Record New Video"}
+            {activeVideos.length === 0 ? t("media.recordYourPitch") : t("media.recordNewVideo")}
           </Button>
           {isAtLimit && (
             <span className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              Limit of {MAX_VIDEOS} videos reached. Delete one to record a new one.
+              {t("media.limitReached", { limit: MAX_VIDEOS })}
             </span>
           )}
         </div>
       </div>
 
       {error && (
-        <div
-          role="alert"
-          className="mb-6 flex items-center justify-between rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300"
-        >
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className="text-xs font-semibold underline hover:no-underline"
-          >
-            Dismiss
-          </button>
+        <div className="mb-6 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300">
+          {error}
         </div>
       )}
 
@@ -231,63 +223,61 @@ export const VideoResumePage: React.FC = () => {
             </svg>
           </div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-            No video résumé yet
+            {t("media.noVideoYet")}
           </h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-gray-500 dark:text-gray-400">
-            Companies receive dozens of identical text CVs. A short 30-second video introduction
-            dramatically increases your interview callback rate.
+            {t("media.noVideoDesc")}
           </p>
           <div className="mt-6">
             <Button onClick={() => setIsModalOpen(true)} variant="primary">
-              Record Your Video Now
+              {t("media.recordVideoNow")}
             </Button>
           </div>
         </Card>
       ) : (
-        <div className="mb-10 space-y-6">
-          {/* Active Featured Video */}
+        <div className="space-y-8 mb-10">
+          {/* Active Featured Pitch Card */}
           {postedVideo && (
-            <div className="mb-8" data-testid="active-posted-section">
+            <div data-testid="active-posted-section">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Featured in Employer Feed
-                </h2>
-                <Badge variant="primary">Active Pitch</Badge>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    {t("media.activePitchTitle")}
+                  </h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {t("media.activePitchDesc")}
+                  </p>
+                </div>
+                <Badge variant="primary">{t("media.publishedInFeed")}</Badge>
               </div>
 
-              <Card className="overflow-hidden ring-2 ring-primary-500/30">
-                <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-12">
-                  <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black md:col-span-7">
+              <Card className="overflow-hidden border-primary-200 dark:border-primary-900 shadow-sm">
+                <div className="p-6">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-3">
+                      {getModerationBadge(postedVideo.moderation_status)}
+                      <span className="text-xs text-gray-400 font-mono">
+                        {t("media.durationSec", { duration: postedVideo.duration_sec })}
+                        {postedVideo.size_bytes ? ` • ${formatFileSize(postedVideo.size_bytes)}` : ""}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="relative mb-6 aspect-video w-full overflow-hidden rounded-lg bg-black">
                     <video
                       src={postedVideo.signed_url}
                       controls
                       playsInline
                       className="h-full w-full object-contain"
-                      data-testid={`video-player-${postedVideo.id}`}
+                      data-testid="active-video-player"
                     />
                   </div>
 
-                  <div className="flex flex-col justify-between md:col-span-5">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        {getModerationBadge(postedVideo.moderation_status)}
-                        <span className="text-xs font-mono text-gray-400">
-                          {postedVideo.duration_sec}s · {formatFileSize(postedVideo.size_bytes)}
-                        </span>
-                      </div>
-
-                      <h3 className="mt-3 text-base font-medium text-gray-900 dark:text-gray-100">
-                        Primary Introduction
-                      </h3>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        This video is currently visible to prospective employers on the discovery feed.
-                      </p>
-                      <p className="mt-2 text-xs text-gray-400">
-                        Recorded on {new Date(postedVideo.created_at).toLocaleDateString()}
-                      </p>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {t("media.createdDate", { date: new Date(postedVideo.created_at).toLocaleDateString() })}
                     </div>
-
-                    <div className="mt-6 flex items-center space-x-3 border-t border-gray-100 pt-4 dark:border-gray-800">
+                    <div className="flex items-center space-x-2">
                       <Button
                         onClick={() => handleUnpost(postedVideo.id)}
                         variant="secondary"
@@ -295,17 +285,17 @@ export const VideoResumePage: React.FC = () => {
                         disabled={actionLoading === postedVideo.id}
                         data-testid={`unpost-btn-${postedVideo.id}`}
                       >
-                        {actionLoading === postedVideo.id ? "Unposting..." : "Unpost from Feed"}
+                        {t("media.unpostFromFeed")}
                       </Button>
                       <Button
-                        onClick={() => setConfirmDeleteId(postedVideo.id)}
+                        onClick={() => handleDelete(postedVideo.id)}
                         variant="ghost"
                         size="sm"
                         className="text-red-600 hover:text-red-700 dark:text-red-400"
                         disabled={actionLoading === postedVideo.id}
-                        data-testid={`delete-trigger-${postedVideo.id}`}
+                        data-testid={`delete-btn-${postedVideo.id}`}
                       >
-                        Delete
+                        {t("media.delete")}
                       </Button>
                     </div>
                   </div>
@@ -316,9 +306,14 @@ export const VideoResumePage: React.FC = () => {
 
           {/* All Videos List / Grid */}
           <div>
-            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-              All Saved Recordings
-            </h2>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {t("media.allVideosTitle")}
+              </h2>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {t("media.allVideosQuota", { count: activeVideos.length, max: MAX_VIDEOS })}
+              </span>
+            </div>
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               {activeVideos.map((video) => {
@@ -329,46 +324,47 @@ export const VideoResumePage: React.FC = () => {
                 return (
                   <Card
                     key={video.id}
-                    className={`flex flex-col overflow-hidden transition-all ${
-                      isPosted ? "border-primary-300 dark:border-primary-700" : ""
-                    }`}
+                    className="flex flex-col justify-between overflow-hidden shadow-sm"
                     data-testid={`video-card-${video.id}`}
                   >
-                    <div className="relative aspect-video w-full bg-black">
-                      <video
-                        src={video.signed_url}
-                        controls
-                        playsInline
-                        className="h-full w-full object-contain"
-                        data-testid={`card-player-${video.id}`}
-                      />
-                      {isPosted && (
-                        <span className="absolute top-2 left-2 rounded-full bg-primary-600/90 px-2 py-0.5 text-[11px] font-semibold text-white shadow-xs backdrop-blur-xs">
-                          Active in Feed
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-1 flex-col justify-between p-4">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          {getModerationBadge(video.moderation_status)}
-                          <span className="text-xs font-mono text-gray-400">
-                            {video.duration_sec}s
-                          </span>
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                          <span>{formatFileSize(video.size_bytes)}</span>
-                          <span>{new Date(video.created_at).toLocaleDateString()}</span>
-                        </div>
+                    <div className="p-5">
+                      <div className="mb-3 flex items-center justify-between">
+                        {getModerationBadge(video.moderation_status)}
+                        {isPosted && (
+                          <Badge variant="primary" size="sm">
+                            {t("media.publishedInFeed")}
+                          </Badge>
+                        )}
                       </div>
 
-                      {/* Actions */}
-                      <div className="mt-4 border-t border-gray-100 pt-3 dark:border-gray-800">
+                      <div className="relative mb-4 aspect-video w-full overflow-hidden rounded bg-black">
+                        <video
+                          src={video.signed_url}
+                          controls
+                          playsInline
+                          className="h-full w-full object-contain"
+                        />
+                      </div>
+
+                      <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                        <div className="flex justify-between font-mono">
+                          <span>{t("media.durationSec", { duration: video.duration_sec })}</span>
+                          <span>{formatFileSize(video.size_bytes)}</span>
+                        </div>
+                        <div>
+                          {t("media.createdDate", { date: new Date(video.created_at).toLocaleDateString() })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-100 bg-gray-50/50 p-4 dark:border-gray-800 dark:bg-gray-900/50">
+                      <div className="space-y-2">
                         {confirmDeleteId === video.id ? (
-                          <div className="flex items-center justify-between rounded-md bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/60 dark:text-red-300">
-                            <span>Confirm delete?</span>
+                          <div
+                            className="flex items-center justify-between rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/50 dark:text-red-300"
+                            data-testid={`delete-confirmation-${video.id}`}
+                          >
+                            <span>{t("media.confirmDeletePrompt")}</span>
                             <div className="space-x-1.5">
                               <button
                                 type="button"
@@ -377,14 +373,14 @@ export const VideoResumePage: React.FC = () => {
                                 className="font-bold underline hover:text-red-900"
                                 data-testid={`confirm-delete-btn-${video.id}`}
                               >
-                                Delete
+                                {t("media.delete")}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setConfirmDeleteId(null)}
                                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400"
                               >
-                                Cancel
+                                {t("media.cancel")}
                               </button>
                             </div>
                           </div>
@@ -398,7 +394,7 @@ export const VideoResumePage: React.FC = () => {
                                 disabled={actionLoading === video.id}
                                 data-testid={`unpost-card-btn-${video.id}`}
                               >
-                                Unpost
+                                {t("media.unpost")}
                               </Button>
                             ) : (
                               <Button
@@ -409,13 +405,13 @@ export const VideoResumePage: React.FC = () => {
                                 title={
                                   !isApproved
                                     ? isPending
-                                      ? "Video is currently undergoing AI moderation review"
-                                      : "Only approved videos can be published"
-                                    : "Publish to employer discovery feed"
+                                      ? t("media.pendingTitle")
+                                      : t("media.approvedOnlyTitle")
+                                    : t("media.publishTitle")
                                 }
                                 data-testid={`post-card-btn-${video.id}`}
                               >
-                                Post to Feed
+                                {t("media.postToFeed")}
                               </Button>
                             )}
 
@@ -427,7 +423,7 @@ export const VideoResumePage: React.FC = () => {
                               disabled={actionLoading === video.id}
                               data-testid={`delete-card-btn-${video.id}`}
                             >
-                              Delete
+                              {t("media.delete")}
                             </Button>
                           </div>
                         )}
@@ -444,21 +440,21 @@ export const VideoResumePage: React.FC = () => {
       {/* Recording Best Practices Guide */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">1. Good Lighting & Sound</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip1Title")}</h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Face a window or lamp, position your camera at eye level, and ensure minimal background noise.
+            {t("media.tip1Desc")}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">2. The 30-Second Formula</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip2Title")}</h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Who you are (5s), your core expertise & favorite technologies (15s), and what exciting challenges you seek (10s).
+            {t("media.tip2Desc")}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">3. Be Authentic</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip3Title")}</h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Speak naturally like you're talking to a future colleague. You can retake as many times as you like before submitting!
+            {t("media.tip3Desc")}
           </p>
         </div>
       </div>

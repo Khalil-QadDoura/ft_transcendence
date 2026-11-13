@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal } from "../../components/Modal";
+import { useText } from "../../i18n/useText";
 import { VideoRecorder } from "./VideoRecorder";
 import type { VideoStatusOut } from "./types";
 
@@ -16,11 +17,12 @@ export const VideoRecorderModal: React.FC<VideoRecorderModalProps> = ({
   onUploadSuccess,
   maxDurationSec,
 }) => {
+  const { t } = useText();
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Record Your Video Résumé"
+      title={t("media.modalTitle")}
       size="lg"
     >
       <div className="p-2">
