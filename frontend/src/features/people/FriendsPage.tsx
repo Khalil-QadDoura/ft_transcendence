@@ -101,7 +101,7 @@ export function FriendsPage() {
           {t("requestsTab")}
         </Button>
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && !target && <p role="alert">{error}</p>}
       {active.isPending ? (
         <div aria-busy="true">
           <p role="status">{t("loading")}</p>
@@ -146,7 +146,10 @@ export function FriendsPage() {
                       <Button
                         variant="outline"
                         disabled={busy || !friend.friendship_id}
-                        onClick={() => setTarget(friend)}
+                        onClick={() => {
+                          setError("");
+                          setTarget(friend);
+                        }}
                       >
                         {t("remove")}
                       </Button>
@@ -197,6 +200,7 @@ export function FriendsPage() {
         title={t("removeTitle")}
         description={t("removeHint")}
       >
+        {error && <p role="alert">{error}</p>}
         <div className="people-actions">
           <Button
             disabled={busy}

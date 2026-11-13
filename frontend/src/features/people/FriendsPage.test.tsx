@@ -66,3 +66,73 @@ test("failed accept rolls back the optimistic request removal", async () => {
     div.remove();
   }
 });
+
+test("failed removal stays in the dialog, restores the friend, and can be retried", async () => {
+  const friend = {
+    user_id: 42,
+    friendship_id: 81,
+    first_name: "Ada",
+    last_name: "Lovelace",
+    position: null,
+    avatar_url: "/avatar.png",
+    is_online: false,
+  };
+  let removed = false;
+  vi.spyOn(friendsApi, "list").mockImplementation(async () =>
+    removed ? [] : [friend],
+  );
+  vi.spyOn(friendsApi, "requests").mockResolvedValue([]);
+  const remove = vi
+    .spyOn(peopleApi, "remove")
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockImplementationOnce(async () => {
+      removed = true;
+    });
+  const div = document.createElement("div");
+  document.body.append(div);
+  const root = createRoot(div);
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+  const removeButton = (scope: Element) =>
+    Array.from(scope.querySelectorAll("button")).find(
+      (button) => button.textContent === "Remove friend",
+    )!;
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter>
+            <FriendsPage />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+    await settle();
+    await act(async () => removeButton(div).click());
+    expect(remove).not.toHaveBeenCalled();
+    let dialog = div.querySelector('[role="dialog"]')!;
+    await act(async () => removeButton(dialog).click());
+    await settle();
+    dialog = div.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain(
+      "Please try again",
+    );
+    expect(div.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(div.textContent).toContain("Ada Lovelace");
+    expect(removeButton(dialog).disabled).toBe(false);
+    await act(async () => removeButton(dialog).click());
+    await settle();
+    expect(div.querySelector('[role="dialog"]')).toBeNull();
+    expect(div.textContent).not.toContain("Ada Lovelace");
+    expect(remove.mock.calls).toEqual([[81], [81]]);
+  } finally {
+    await act(() => root.unmount());
+    cache.clear();
+    div.remove();
+  }
+});
