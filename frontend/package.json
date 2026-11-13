@@ -16,6 +16,7 @@
     "format": "prettier --write .",
     "gen:api": "node scripts/gen-api.mjs",
     "format:check": "prettier --check .",
+    "i18n:check": "node scripts/check-i18n.mjs",
     "legal:sync": "node scripts/legal-content.mjs",
     "legal:check": "node scripts/legal-content.mjs --check",
     "prebuild": "npm run legal:sync"

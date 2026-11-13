@@ -127,6 +127,8 @@ def test_get_me_returns_my_profile(client, ana):
         "email": "ana@example.com",
         **ANA,
         "avatar_object_key": None,
+        # No picture yet: the default one (BE-08; tests/test_pictures.py has the rest).
+        "avatar_url": "/api/media/avatar/default.svg",
         "is_email_verified": True,
     }
 
