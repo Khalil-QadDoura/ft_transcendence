@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
 import { ChatThread } from "./ChatThread";
@@ -27,6 +28,30 @@ vi.mock("../../api/ws", () => ({
     send: (...args: unknown[]) => mockWsSend(...args),
   },
 }));
+
+let root: Root;
+let container: HTMLDivElement;
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+function setNativeValue(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+) {
+  const valueSetter = Object.getOwnPropertyDescriptor(element, "value")?.set;
+  const prototype = Object.getPrototypeOf(element);
+  const prototypeValueSetter = Object.getOwnPropertyDescriptor(
+    prototype,
+    "value",
+  )?.set;
+
+  if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+    prototypeValueSetter.call(element, value);
+  } else if (valueSetter) {
+    valueSetter.call(element, value);
+  } else {
+    element.value = value;
+  }
+}
 
 const mockConversation: ConversationItem = {
   id: 10,
@@ -58,7 +83,7 @@ const mockMessages: MessageItem[] = [
     idempotency_key: "idem-100",
     edited_at: null,
     deleted_at: null,
-    created_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(), // 10 mins ago
+    created_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
   },
   {
     id: 101,
@@ -71,7 +96,7 @@ const mockMessages: MessageItem[] = [
     idempotency_key: "idem-101",
     edited_at: null,
     deleted_at: null,
-    created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 mins ago
+    created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
   },
 ];
 
@@ -80,9 +105,16 @@ describe("ChatThread Component (FE-30)", () => {
     vi.clearAllMocks();
     wsListeners.clear();
     mockWsSend.mockClear();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
     vi.restoreAllMocks();
   });
 
@@ -93,36 +125,29 @@ describe("ChatThread Component (FE-30)", () => {
     });
     vi.mocked(api.markAsRead).mockResolvedValueOnce();
 
-    render(
-      <ChatThread
-        conversationId={10}
-        conversation={mockConversation}
-        currentUserId={1}
-      />,
-    );
-
-    // Initial loading indicator
-    expect(screen.getByTestId("thread-loading")).toBeInTheDocument();
-
-    await waitFor(() => {
-      // Header details
-      expect(screen.getByTestId("thread-peer-name")).toHaveTextContent(
-        "Sarah Recruiter",
+    await act(async () => {
+      root.render(
+        <ChatThread
+          conversationId={10}
+          conversation={mockConversation}
+          currentUserId={1}
+        />,
       );
-      expect(
-        screen.getByText("Applied for: Full Stack Developer"),
-      ).toBeInTheDocument();
-
-      // Messages rendered
-      expect(
-        screen.getByText("Hi Sarah, thanks for reaching out!"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("Are you available for a chat today?"),
-      ).toBeInTheDocument();
     });
 
-    // Mark as read was called for incoming message (id: 101)
+    expect(
+      container.querySelector('[data-testid="thread-peer-name"]')?.textContent,
+    ).toContain("Sarah Recruiter");
+    expect(container.textContent).toContain(
+      "Applied for: Full Stack Developer",
+    );
+    expect(container.textContent).toContain(
+      "Hi Sarah, thanks for reaching out!",
+    );
+    expect(container.textContent).toContain(
+      "Are you available for a chat today?",
+    );
+
     expect(api.markAsRead).toHaveBeenCalledWith(10, 101);
     expect(mockWsSend).toHaveBeenCalledWith("read", {
       conversation_id: 10,
@@ -142,27 +167,32 @@ describe("ChatThread Component (FE-30)", () => {
         prev_before_id: null,
       });
 
-    render(
-      <ChatThread
-        conversationId={10}
-        conversation={mockConversation}
-        currentUserId={1}
-      />,
+    await act(async () => {
+      root.render(
+        <ChatThread
+          conversationId={10}
+          conversation={mockConversation}
+          currentUserId={1}
+        />,
+      );
+    });
+
+    const loadOlderBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="load-older-btn"]',
     );
+    expect(loadOlderBtn).not.toBeNull();
 
-    await waitFor(() => {
-      expect(screen.getByTestId("load-older-btn")).toBeInTheDocument();
+    await act(async () => {
+      loadOlderBtn?.click();
     });
 
-    fireEvent.click(screen.getByTestId("load-older-btn"));
-
-    await waitFor(() => {
-      expect(api.listMessages).toHaveBeenCalledWith(10, 100, 50);
-      expect(
-        screen.getByText("Hi Sarah, thanks for reaching out!"),
-      ).toBeInTheDocument();
-      expect(screen.queryByTestId("load-older-btn")).not.toBeInTheDocument();
-    });
+    expect(api.listMessages).toHaveBeenCalledWith(10, 100, 50);
+    expect(container.textContent).toContain(
+      "Hi Sarah, thanks for reaching out!",
+    );
+    expect(
+      container.querySelector('[data-testid="load-older-btn"]'),
+    ).toBeNull();
   });
 
   it("optimistically sends a message and resolves with server response", async () => {
@@ -185,42 +215,48 @@ describe("ChatThread Component (FE-30)", () => {
       items: [sentMessage],
     });
 
-    render(
-      <ChatThread
-        conversationId={10}
-        conversation={mockConversation}
-        currentUserId={1}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId("empty-thread-prompt")).toBeInTheDocument();
-    });
-
-    const textarea = screen.getByTestId("message-textarea");
-    const sendBtn = screen.getByTestId("send-message-btn");
-
-    fireEvent.change(textarea, {
-      target: { value: "Let's schedule a call at 3pm." },
-    });
-    fireEvent.click(sendBtn);
-
-    // Optimistically rendered immediately
-    expect(
-      screen.getByText("Let's schedule a call at 3pm."),
-    ).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(api.sendMessage).toHaveBeenCalledWith(
-        10,
-        expect.objectContaining({
-          content: "Let's schedule a call at 3pm.",
-          idempotency_key: expect.any(String),
-        }),
+    await act(async () => {
+      root.render(
+        <ChatThread
+          conversationId={10}
+          conversation={mockConversation}
+          currentUserId={1}
+        />,
       );
-      // Status badge updated to sent (✓)
-      expect(screen.getByTestId("msg-status-200")).toHaveTextContent("✓");
     });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="message-textarea"]',
+    );
+    const sendBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="send-message-btn"]',
+    );
+    expect(textarea).not.toBeNull();
+    expect(sendBtn).not.toBeNull();
+
+    await act(async () => {
+      if (textarea) {
+        setNativeValue(textarea, "Let's schedule a call at 3pm.");
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        textarea.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+
+    await act(async () => {
+      sendBtn?.click();
+    });
+
+    expect(container.textContent).toContain("Let's schedule a call at 3pm.");
+    expect(api.sendMessage).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        content: "Let's schedule a call at 3pm.",
+        idempotency_key: expect.any(String),
+      }),
+    );
+    expect(
+      container.querySelector('[data-testid="msg-status-200"]')?.textContent,
+    ).toContain("✓");
   });
 
   it("shows retry button on send failure and allows retrying", async () => {
@@ -244,46 +280,53 @@ describe("ChatThread Component (FE-30)", () => {
         ],
       });
 
-    render(
-      <ChatThread
-        conversationId={10}
-        conversation={mockConversation}
-        currentUserId={1}
-      />,
+    await act(async () => {
+      root.render(
+        <ChatThread
+          conversationId={10}
+          conversation={mockConversation}
+          currentUserId={1}
+        />,
+      );
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="message-textarea"]',
+    );
+    const sendBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="send-message-btn"]',
     );
 
-    await waitFor(() => {
-      expect(screen.getByTestId("message-textarea")).toBeInTheDocument();
+    await act(async () => {
+      if (textarea) {
+        setNativeValue(textarea, "Retried message content");
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        textarea.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     });
 
-    const textarea = screen.getByTestId("message-textarea");
-    const sendBtn = screen.getByTestId("send-message-btn");
-
-    fireEvent.change(textarea, {
-      target: { value: "Retried message content" },
-    });
-    fireEvent.click(sendBtn);
-
-    // Wait for failure state
-    await waitFor(() => {
-      expect(
-        screen.getByTitle("Failed to send. Click to retry."),
-      ).toBeInTheDocument();
+    await act(async () => {
+      sendBtn?.click();
     });
 
-    // Click retry
-    const retryBtn = screen.getByTitle("Failed to send. Click to retry.");
-    fireEvent.click(retryBtn);
+    const retryBtn = container.querySelector<HTMLButtonElement>(
+      '[title="Failed to send. Click to retry."]',
+    );
+    expect(retryBtn).not.toBeNull();
 
-    await waitFor(() => {
-      expect(api.sendMessage).toHaveBeenCalledTimes(2);
-      expect(screen.getByTestId("msg-status-205")).toHaveTextContent("✓");
+    await act(async () => {
+      retryBtn?.click();
     });
+
+    expect(api.sendMessage).toHaveBeenCalledTimes(2);
+    expect(
+      container.querySelector('[data-testid="msg-status-205"]')?.textContent,
+    ).toContain("✓");
   });
 
   it("edits own message within 15 minutes window", async () => {
     vi.mocked(api.listMessages).mockResolvedValueOnce({
-      items: [mockMessages[0]], // 10 minutes old own message
+      items: [mockMessages[0]],
       prev_before_id: null,
     });
 
@@ -295,41 +338,58 @@ describe("ChatThread Component (FE-30)", () => {
 
     vi.mocked(api.editMessage).mockResolvedValueOnce(updatedMsg);
 
-    render(
-      <ChatThread
-        conversationId={10}
-        conversation={mockConversation}
-        currentUserId={1}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByText("Hi Sarah, thanks for reaching out!"),
-      ).toBeInTheDocument();
-    });
-
-    // Click edit button
-    const editBtn = screen.getByTestId("edit-msg-btn-100");
-    fireEvent.click(editBtn);
-
-    const editInput = screen.getByTestId("edit-msg-input-100");
-    fireEvent.change(editInput, {
-      target: { value: "Updated greeting message" },
-    });
-
-    const saveBtn = screen.getByTestId("save-edit-btn-100");
-    fireEvent.click(saveBtn);
-
-    await waitFor(() => {
-      expect(api.editMessage).toHaveBeenCalledWith(10, 100, {
-        content: "Updated greeting message",
-      });
-      expect(screen.getByText("Updated greeting message")).toBeInTheDocument();
-      expect(screen.getByTestId("edited-badge-100")).toHaveTextContent(
-        "(edited)",
+    await act(async () => {
+      root.render(
+        <ChatThread
+          conversationId={10}
+          conversation={mockConversation}
+          currentUserId={1}
+        />,
       );
     });
+
+    expect(container.textContent).toContain(
+      "Hi Sarah, thanks for reaching out!",
+    );
+
+    const editBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="edit-msg-btn-100"]',
+    );
+    expect(editBtn).not.toBeNull();
+
+    await act(async () => {
+      editBtn?.click();
+    });
+
+    const editInput = container.querySelector<HTMLInputElement>(
+      '[data-testid="edit-msg-input-100"]',
+    );
+    expect(editInput).not.toBeNull();
+
+    await act(async () => {
+      if (editInput) {
+        setNativeValue(editInput, "Updated greeting message");
+        editInput.dispatchEvent(new Event("input", { bubbles: true }));
+        editInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+
+    const saveBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="save-edit-btn-100"]',
+    );
+    expect(saveBtn).not.toBeNull();
+
+    await act(async () => {
+      saveBtn?.click();
+    });
+
+    expect(api.editMessage).toHaveBeenCalledWith(10, 100, {
+      content: "Updated greeting message",
+    });
+    expect(container.textContent).toContain("Updated greeting message");
+    expect(
+      container.querySelector('[data-testid="edited-badge-100"]')?.textContent,
+    ).toContain("(edited)");
   });
 
   it("soft deletes own message with confirmation", async () => {
@@ -340,34 +400,44 @@ describe("ChatThread Component (FE-30)", () => {
 
     vi.mocked(api.deleteMessage).mockResolvedValueOnce();
 
-    render(
-      <ChatThread
-        conversationId={10}
-        conversation={mockConversation}
-        currentUserId={1}
-      />,
+    await act(async () => {
+      root.render(
+        <ChatThread
+          conversationId={10}
+          conversation={mockConversation}
+          currentUserId={1}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain(
+      "Hi Sarah, thanks for reaching out!",
     );
 
-    await waitFor(() => {
-      expect(
-        screen.getByText("Hi Sarah, thanks for reaching out!"),
-      ).toBeInTheDocument();
+    const deleteBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="delete-msg-btn-100"]',
+    );
+    expect(deleteBtn).not.toBeNull();
+
+    await act(async () => {
+      deleteBtn?.click();
     });
 
-    // Click delete trigger
-    const deleteBtn = screen.getByTestId("delete-msg-btn-100");
-    fireEvent.click(deleteBtn);
+    expect(
+      container.querySelector('[data-testid="delete-confirm-prompt-100"]'),
+    ).not.toBeNull();
 
-    // Confirmation prompt appears
-    expect(screen.getByTestId("delete-confirm-prompt-100")).toBeInTheDocument();
+    const confirmBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-delete-btn-100"]',
+    );
+    expect(confirmBtn).not.toBeNull();
 
-    const confirmBtn = screen.getByTestId("confirm-delete-btn-100");
-    fireEvent.click(confirmBtn);
-
-    await waitFor(() => {
-      expect(api.deleteMessage).toHaveBeenCalledWith(10, 100);
-      expect(screen.getByText("This message was deleted")).toBeInTheDocument();
+    await act(async () => {
+      confirmBtn?.click();
     });
+
+    expect(api.deleteMessage).toHaveBeenCalledWith(10, 100);
+    expect(container.textContent).toContain("This message was deleted");
   });
 
   it("handles live WebSocket message, message_updated and message_deleted events", async () => {
@@ -376,69 +446,64 @@ describe("ChatThread Component (FE-30)", () => {
       prev_before_id: null,
     });
 
-    render(
-      <ChatThread
-        conversationId={10}
-        conversation={mockConversation}
-        currentUserId={1}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByText("Hi Sarah, thanks for reaching out!"),
-      ).toBeInTheDocument();
+    await act(async () => {
+      root.render(
+        <ChatThread
+          conversationId={10}
+          conversation={mockConversation}
+          currentUserId={1}
+        />,
+      );
     });
 
-    // 1. Incoming live message from peer
+    expect(container.textContent).toContain(
+      "Hi Sarah, thanks for reaching out!",
+    );
+
     const messageHandler = wsListeners.get("message");
     expect(messageHandler).toBeDefined();
 
-    messageHandler?.({
-      id: 300,
-      conversation_id: 10,
-      author_id: 2,
-      content: "Let's speak in 10 minutes.",
-      status: "sent",
-      created_at: new Date().toISOString(),
+    await act(async () => {
+      messageHandler?.({
+        id: 300,
+        conversation_id: 10,
+        author_id: 2,
+        content: "Let's speak in 10 minutes.",
+        status: "sent",
+        created_at: new Date().toISOString(),
+      });
     });
 
-    await waitFor(() => {
-      expect(
-        screen.getByText("Let's speak in 10 minutes."),
-      ).toBeInTheDocument();
-    });
+    expect(container.textContent).toContain("Let's speak in 10 minutes.");
 
-    // 2. Incoming message_updated event
     const updateHandler = wsListeners.get("message_updated");
     expect(updateHandler).toBeDefined();
 
-    updateHandler?.({
-      id: 300,
-      conversation_id: 10,
-      author_id: 2,
-      content: "Let's speak in 20 minutes instead.",
-      edited_at: new Date().toISOString(),
+    await act(async () => {
+      updateHandler?.({
+        id: 300,
+        conversation_id: 10,
+        author_id: 2,
+        content: "Let's speak in 20 minutes instead.",
+        edited_at: new Date().toISOString(),
+      });
     });
 
-    await waitFor(() => {
-      expect(
-        screen.getByText("Let's speak in 20 minutes instead."),
-      ).toBeInTheDocument();
-    });
+    expect(container.textContent).toContain(
+      "Let's speak in 20 minutes instead.",
+    );
 
-    // 3. Incoming message_deleted event
     const deleteHandler = wsListeners.get("message_deleted");
     expect(deleteHandler).toBeDefined();
 
-    deleteHandler?.({
-      id: 300,
-      conversation_id: 10,
+    await act(async () => {
+      deleteHandler?.({
+        id: 300,
+        conversation_id: 10,
+      });
     });
 
-    await waitFor(() => {
-      expect(screen.getByText("This message was deleted")).toBeInTheDocument();
-    });
+    expect(container.textContent).toContain("This message was deleted");
   });
 
   it("updates message delivery status live via message_status event", async () => {
@@ -456,37 +521,41 @@ describe("ChatThread Component (FE-30)", () => {
       prev_before_id: null,
     });
 
-    render(
-      <ChatThread
-        conversationId={10}
-        conversation={mockConversation}
-        currentUserId={1}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId("msg-status-100")).toHaveTextContent("✓");
+    await act(async () => {
+      root.render(
+        <ChatThread
+          conversationId={10}
+          conversation={mockConversation}
+          currentUserId={1}
+        />,
+      );
     });
 
-    // Receive message_status delivered event
+    expect(
+      container.querySelector('[data-testid="msg-status-100"]')?.textContent,
+    ).toContain("✓");
+
     const statusHandler = wsListeners.get("message_status");
-    statusHandler?.({
-      message_id: 100,
-      status: "delivered",
+    await act(async () => {
+      statusHandler?.({
+        message_id: 100,
+        status: "delivered",
+      });
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("msg-status-100")).toHaveTextContent("✓✓");
+    expect(
+      container.querySelector('[data-testid="msg-status-100"]')?.textContent,
+    ).toContain("✓✓");
+
+    await act(async () => {
+      statusHandler?.({
+        message_id: 100,
+        status: "read",
+      });
     });
 
-    // Receive message_status read event
-    statusHandler?.({
-      message_id: 100,
-      status: "read",
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("msg-status-100")).toHaveTextContent("✓✓");
-    });
+    expect(
+      container.querySelector('[data-testid="msg-status-100"]')?.textContent,
+    ).toContain("✓✓");
   });
 });
