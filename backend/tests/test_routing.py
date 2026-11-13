@@ -18,11 +18,12 @@ def test_every_public_route_is_under_api(client):
 
 def test_routes_left_out_of_the_spec_are_under_api_too():
     # FastAPI adds the spec and Swagger's pages by itself, outside our /api router, and leaves
-    # them out of the spec. They are the routes in app.routes that have a path of their own;
-    # our routers (/api, /_internal) are listed there as one entry each, without one.
+    # them out of the spec; setup_metrics also mounts Prometheus /metrics at root (blocked by
+    # nginx). They are the routes in app.routes that have a path of their own; our routers
+    # (/api, /_internal) are listed there as one entry each, without one.
     app = build_app(env="dev")  # dev adds the Swagger pages
     paths = sorted(route.path for route in app.routes if hasattr(route, "path"))
-    assert paths == ["/api/docs", "/api/docs/oauth2-redirect", "/api/openapi.json"]
+    assert paths == ["/api/docs", "/api/docs/oauth2-redirect", "/api/openapi.json", "/metrics"]
 
 
 def test_nothing_answers_at_the_default_root_paths():
