@@ -4,6 +4,7 @@ import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { Input } from "../../components/Input";
 import { Spinner } from "../../components/Spinner";
+import { useText } from "../../i18n/useText";
 import { getConversation, listConversations } from "./api";
 import { ConversationCard } from "./ConversationCard";
 import type {
@@ -23,6 +24,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   onSelectConversation,
   className = "",
 }) => {
+  const { t } = useText();
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,12 +37,12 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       const data = await listConversations();
       setConversations(data);
     } catch (err: unknown) {
-      const error = err as { message?: string };
-      setError(error.message || "Failed to load conversations.");
+      const e = err as { message?: string };
+      setError(e.message || t("chat.failedToLoad"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     loadConversations();
@@ -133,28 +135,36 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       <div className="border-b border-gray-100 p-4 dark:border-gray-800">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-            Messages
+            {t("chat.messages")}
           </h2>
           {conversations.some((c) => c.unread_count > 0) && (
             <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary-800 dark:bg-primary-950/60 dark:text-primary-300">
-              {conversations.reduce((acc, c) => acc + (c.unread_count || 0), 0)} unread
+              {t("chat.unreadCount", {
+                count: conversations.reduce(
+                  (acc, c) => acc + (c.unread_count || 0),
+                  0,
+                ),
+              })}
             </span>
           )}
         </div>
 
         <Input
           type="search"
-          placeholder="Search conversations..."
+          placeholder={t("chat.searchPlaceholder")}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          aria-label="Search conversations"
+          aria-label={t("chat.searchAria")}
           data-testid="conversation-search"
         />
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
         {loading ? (
-          <div className="flex h-48 items-center justify-center" data-testid="conversation-loading">
+          <div
+            className="flex h-48 items-center justify-center"
+            data-testid="conversation-loading"
+          >
             <Spinner size="md" />
           </div>
         ) : error ? (
@@ -166,17 +176,21 @@ export const ConversationList: React.FC<ConversationListProps> = ({
               size="sm"
               data-testid="retry-conversations-btn"
             >
-              Try Again
+              {t("chat.tryAgain")}
             </Button>
           </div>
         ) : filteredConversations.length === 0 ? (
           <div className="p-4">
             <EmptyState
-              title={searchQuery ? "No matches found" : "No conversations yet"}
+              title={
+                searchQuery
+                  ? t("chat.noMatchesFound")
+                  : t("chat.noConversationsYet")
+              }
               description={
                 searchQuery
-                  ? "Try searching for a different name or job title."
-                  : "When employers or candidates contact you, your messages will appear here."
+                  ? t("chat.noMatchesDesc")
+                  : t("chat.noConversationsDesc")
               }
               data-testid="no-conversations-empty"
             />

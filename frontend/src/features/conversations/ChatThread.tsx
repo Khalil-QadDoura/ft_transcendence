@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useWsEvent, wsClient } from "../../api/ws";
 import { Spinner } from "../../components/Spinner";
+import { useText } from "../../i18n/useText";
 import {
   deleteMessage,
   editMessage,
@@ -33,6 +34,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
   currentUserId: propUserId,
   onBack,
 }) => {
+  const { t } = useText();
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -58,7 +60,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
   const peerDisplayName =
     conversation?.peer?.display_name ||
     conversation?.title ||
-    (conversation?.type === "ai" ? "WOZU Assistant" : "Direct Conversation");
+    (conversation?.type === "ai"
+      ? t("chat.assistant")
+      : t("chat.directConversation"));
 
   // Scroll to bottom helper
   const scrollToBottom = useCallback((smooth = false) => {
@@ -106,11 +110,11 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       }, 50);
     } catch (err: unknown) {
       const e = err as { message?: string };
-      setError(e.message || "Failed to load messages.");
+      setError(e.message || t("chat.failedToLoadMessages"));
     } finally {
       setLoading(false);
     }
-  }, [conversationId, resolvedUserId, scrollToBottom]);
+  }, [conversationId, resolvedUserId, scrollToBottom, t]);
 
   useEffect(() => {
     loadInitialMessages();
@@ -171,7 +175,11 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId || m.idempotency_key === idempotencyKey
-              ? { ...confirmedMsg, status: (confirmedMsg.status as MessageItem["status"]) || "sent" }
+              ? {
+                  ...confirmedMsg,
+                  status:
+                    (confirmedMsg.status as MessageItem["status"]) || "sent",
+                }
               : m,
           ),
         );
@@ -205,7 +213,11 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
         setMessages((prev) =>
           prev.map((m) =>
             m.id === msg.id
-              ? { ...confirmedMsg, status: (confirmedMsg.status as MessageItem["status"]) || "sent" }
+              ? {
+                  ...confirmedMsg,
+                  status:
+                    (confirmedMsg.status as MessageItem["status"]) || "sent",
+                }
               : m,
           ),
         );
@@ -219,7 +231,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
 
   // Edit Message
   const handleEditMessage = async (mid: number, newContent: string) => {
-    const updated = await editMessage(conversationId, mid, { content: newContent });
+    const updated = await editMessage(conversationId, mid, {
+      content: newContent,
+    });
     setMessages((prev) =>
       prev.map((m) =>
         m.id === mid
@@ -252,13 +266,19 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       const exists = prev.some(
         (m) =>
           m.id === payload.id ||
-          (payload.idempotency_key && m.idempotency_key === payload.idempotency_key),
+          (payload.idempotency_key &&
+            m.idempotency_key === payload.idempotency_key),
       );
       if (exists) {
         return prev.map((m) =>
           m.id === payload.id ||
-          (payload.idempotency_key && m.idempotency_key === payload.idempotency_key)
-            ? { ...m, ...payload, status: (payload.status as MessageItem["status"]) || "sent" }
+          (payload.idempotency_key &&
+            m.idempotency_key === payload.idempotency_key)
+            ? {
+                ...m,
+                ...payload,
+                status: (payload.status as MessageItem["status"]) || "sent",
+              }
             : m,
         );
       }
@@ -300,7 +320,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
     if (!payload || payload.conversation_id !== conversationId) return;
     setMessages((prev) =>
       prev.map((m) =>
-        m.id === payload.id ? { ...m, deleted_at: new Date().toISOString() } : m,
+        m.id === payload.id
+          ? { ...m, deleted_at: new Date().toISOString() }
+          : m,
       ),
     );
   });
@@ -324,8 +346,8 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
 
-      if (d.toDateString() === today.toDateString()) return "Today";
-      if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+      if (d.toDateString() === today.toDateString()) return t("chat.today");
+      if (d.toDateString() === yesterday.toDateString()) return t("chat.yesterday");
       return d.toLocaleDateString(undefined, {
         month: "short",
         day: "numeric",
@@ -349,11 +371,21 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
               type="button"
               onClick={onBack}
               className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 md:hidden"
-              aria-label="Back to conversations"
+              aria-label={t("chat.backToConversations")}
               data-testid="thread-back-btn"
             >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
               </svg>
             </button>
           )}
@@ -367,7 +399,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
             </h2>
             {conversation?.job_title && (
               <p className="truncate text-xs text-primary-600 dark:text-primary-400">
-                Applied for: {conversation.job_title}
+                {t("chat.appliedFor", { job: conversation.job_title })}
               </p>
             )}
           </div>
@@ -382,27 +414,50 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
         data-testid="message-list-container"
       >
         {loading ? (
-          <div className="flex h-full items-center justify-center py-12" data-testid="thread-loading">
+          <div
+            className="flex h-full items-center justify-center py-12"
+            data-testid="thread-loading"
+          >
             <Spinner size="md" />
           </div>
         ) : error ? (
-          <div className="flex h-full flex-col items-center justify-center p-6 text-center" data-testid="thread-error">
+          <div
+            className="flex h-full flex-col items-center justify-center p-6 text-center"
+            data-testid="thread-error"
+          >
             <p className="text-sm text-red-500">{error}</p>
             <button
               type="button"
               onClick={loadInitialMessages}
               className="mt-2 text-xs font-semibold text-primary-600 hover:underline"
             >
-              Retry
+              {t("chat.retry")}
             </button>
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center p-6 text-center text-gray-400 dark:text-gray-500" data-testid="empty-thread-prompt">
-            <svg className="mb-2 h-8 w-8 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          <div
+            className="flex h-full flex-col items-center justify-center p-6 text-center text-gray-400 dark:text-gray-500"
+            data-testid="empty-thread-prompt"
+          >
+            <svg
+              className="mb-2 h-8 w-8 text-gray-300 dark:text-gray-600"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+              />
             </svg>
-            <p className="text-sm font-medium text-gray-600 dark:text-gray-300">No messages yet</p>
-            <p className="mt-1 text-xs text-gray-400">Say hello and start the conversation!</p>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
+              {t("chat.noMessagesYetPrompt")}
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              {t("chat.startConversationPrompt")}
+            </p>
           </div>
         ) : (
           <>
@@ -416,7 +471,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
                   className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   data-testid="load-older-btn"
                 >
-                  {loadingOlder ? "Loading earlier..." : "Load earlier messages"}
+                  {loadingOlder
+                    ? t("chat.loadingEarlier")
+                    : t("chat.loadEarlierMessages")}
                 </button>
               </div>
             )}
@@ -425,14 +482,20 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
             {messages.map((msg, index) => {
               const prevMsg = messages[index - 1];
               const currentDate = new Date(msg.created_at).toDateString();
-              const prevDate = prevMsg ? new Date(prevMsg.created_at).toDateString() : null;
+              const prevDate = prevMsg
+                ? new Date(prevMsg.created_at).toDateString()
+                : null;
               const showDivider = currentDate !== prevDate;
-              const isOwn = resolvedUserId !== null && msg.author_id === resolvedUserId;
+              const isOwn =
+                resolvedUserId !== null && msg.author_id === resolvedUserId;
 
               return (
                 <React.Fragment key={msg.id}>
                   {showDivider && (
-                    <div className="my-4 flex items-center justify-center" data-testid="date-divider">
+                    <div
+                      className="my-4 flex items-center justify-center"
+                      data-testid="date-divider"
+                    >
                       <span className="rounded-full bg-gray-100 px-3 py-0.5 text-[11px] font-medium text-gray-500 shadow-xs dark:bg-gray-800 dark:text-gray-400">
                         {formatDateDivider(msg.created_at)}
                       </span>
@@ -457,7 +520,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       <MessageInput
         onSend={handleSendMessage}
         disabled={loading || Boolean(error)}
-        placeholder={`Message ${peerDisplayName}...`}
+        placeholder={t("chat.messagePlaceholder", { name: peerDisplayName })}
       />
     </div>
   );

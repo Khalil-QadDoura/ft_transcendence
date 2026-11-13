@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useText } from "../../i18n/useText";
 import type { MessageItem } from "./types";
 
 export interface MessageBubbleProps {
@@ -18,6 +19,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   onDelete,
   onRetry,
 }) => {
+  const { t } = useText();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -29,7 +31,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   // Check 15-minute edit window
   const canEdit = React.useMemo(() => {
-    if (!isOwn || isDeleted || message.status === "sending" || message.status === "failed") {
+    if (
+      !isOwn ||
+      isDeleted ||
+      message.status === "sending" ||
+      message.status === "failed"
+    ) {
       return false;
     }
     const createdTime = new Date(message.created_at).getTime();
@@ -59,7 +66,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       setIsEditing(false);
     } catch (err: unknown) {
       const e = err as { message?: string };
-      setEditError(e.message || "Failed to edit message");
+      setEditError(e.message || t("chat.failedToEdit"));
     } finally {
       setSavingEdit(false);
     }
@@ -104,11 +111,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                   setIsEditing(true);
                 }}
                 className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                title="Edit message (within 15m)"
-                aria-label="Edit message"
+                title={t("chat.editMessageTitle")}
+                aria-label={t("chat.editMessageAria")}
                 data-testid={`edit-msg-btn-${message.id}`}
               >
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -122,11 +134,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               type="button"
               onClick={() => setConfirmDelete(true)}
               className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-              title="Delete message"
-              aria-label="Delete message"
+              title={t("chat.deleteMessageTitle")}
+              aria-label={t("chat.deleteMessageAria")}
               data-testid={`delete-msg-btn-${message.id}`}
             >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -152,10 +169,20 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         >
           {isDeleted ? (
             <div className="flex items-center space-x-1.5 py-0.5">
-              <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+              <svg
+                className="h-4 w-4 shrink-0 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+                />
               </svg>
-              <span className="text-sm">This message was deleted</span>
+              <span className="text-sm">{t("chat.messageDeleted")}</span>
             </div>
           ) : isEditing ? (
             <div className="flex min-w-[220px] flex-col space-y-2 py-1">
@@ -180,7 +207,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                   disabled={savingEdit}
                   className="rounded px-2.5 py-1 text-xs font-medium text-white/80 hover:bg-black/10 dark:text-gray-300 dark:hover:bg-white/10"
                 >
-                  Cancel
+                  {t("chat.cancel")}
                 </button>
                 <button
                   type="button"
@@ -189,7 +216,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                   className="rounded bg-white px-2.5 py-1 text-xs font-medium text-primary-600 shadow hover:bg-gray-50 disabled:opacity-50 dark:bg-gray-100 dark:text-primary-700"
                   data-testid={`save-edit-btn-${message.id}`}
                 >
-                  {savingEdit ? "Saving..." : "Save"}
+                  {savingEdit ? t("chat.saving") : t("chat.save")}
                 </button>
               </div>
             </div>
@@ -215,10 +242,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 {message.edited_at && (
                   <span
                     className="italic opacity-80"
-                    title={`Edited at ${formatTime(message.edited_at)}`}
+                    title={t("chat.editedTitle", {
+                      time: formatTime(message.edited_at),
+                    })}
                     data-testid={`edited-badge-${message.id}`}
                   >
-                    (edited)
+                    {t("chat.edited")}
                   </span>
                 )}
 
@@ -231,26 +260,50 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                   <span
                     className="inline-flex items-center"
                     data-testid={`msg-status-${message.id}`}
-                    title={`Status: ${message.status}`}
+                    title={t("chat.statusTitle", { status: message.status })}
                   >
                     {message.status === "sending" && (
-                      <svg className="h-3 w-3 animate-spin text-white/70" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      <svg
+                        className="h-3 w-3 animate-spin text-white/70"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                        />
                       </svg>
                     )}
                     {message.status === "sent" && (
-                      <span className="text-xs font-semibold leading-none text-white/80" aria-label="Sent">
+                      <span
+                        className="text-xs font-semibold leading-none text-white/80"
+                        aria-label={t("chat.statusSent")}
+                      >
                         ✓
                       </span>
                     )}
                     {message.status === "delivered" && (
-                      <span className="text-xs font-semibold leading-none text-white/90" aria-label="Delivered">
+                      <span
+                        className="text-xs font-semibold leading-none text-white/90"
+                        aria-label={t("chat.statusDelivered")}
+                      >
                         ✓✓
                       </span>
                     )}
                     {message.status === "read" && (
-                      <span className="text-xs font-extrabold leading-none text-sky-200" aria-label="Read">
+                      <span
+                        className="text-xs font-extrabold leading-none text-sky-200"
+                        aria-label={t("chat.statusRead")}
+                      >
                         ✓✓
                       </span>
                     )}
@@ -259,12 +312,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         type="button"
                         onClick={() => onRetry?.(message)}
                         className="inline-flex items-center space-x-1 text-red-200 hover:text-white"
-                        title="Failed to send. Click to retry."
-                        aria-label="Retry sending message"
+                        title={t("chat.retrySendTitle")}
+                        aria-label={t("chat.retrySendAria")}
                         data-testid={`retry-send-btn-${message.id}`}
                       >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <svg
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
                         </svg>
                       </button>
                     )}
@@ -282,7 +345,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           className="mt-1 flex items-center space-x-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/60 dark:text-red-300"
           data-testid={`delete-confirm-prompt-${message.id}`}
         >
-          <span>Delete this message?</span>
+          <span>{t("chat.deleteMessageConfirm")}</span>
           <button
             type="button"
             disabled={deleting}
@@ -290,14 +353,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             className="font-bold underline hover:text-red-900 disabled:opacity-50"
             data-testid={`confirm-delete-btn-${message.id}`}
           >
-            {deleting ? "Deleting..." : "Yes, delete"}
+            {deleting ? t("chat.deleting") : t("chat.yesDelete")}
           </button>
           <button
             type="button"
             onClick={() => setConfirmDelete(false)}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400"
           >
-            Cancel
+            {t("chat.cancel")}
           </button>
         </div>
       )}

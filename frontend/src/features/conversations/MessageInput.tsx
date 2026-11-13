@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useText } from "../../i18n/useText";
 
 export interface MessageInputProps {
   onSend: (content: string, idempotencyKey: string) => Promise<void>;
@@ -12,8 +13,10 @@ const WARNING_THRESHOLD = 200;
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
   disabled = false,
-  placeholder = "Write a message...",
+  placeholder,
 }) => {
+  const { t } = useText();
+  const inputPlaceholder = placeholder || t("chat.writeMessagePlaceholder");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -28,7 +31,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   }, [text]);
 
   const generateUUID = (): string => {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
       return crypto.randomUUID();
     }
     // Fallback RFC4122 v4 UUID generator
@@ -86,7 +92,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS))}
             onKeyDown={handleKeyDown}
             disabled={disabled || sending}
-            placeholder={placeholder}
+            placeholder={inputPlaceholder}
             maxLength={MAX_CHARS}
             className="w-full resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 transition-colors focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100 dark:focus:border-primary-400 dark:focus:bg-gray-800"
             data-testid="message-textarea"
@@ -103,7 +109,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               }`}
               data-testid="char-counter"
             >
-              {remainingChars} chars remaining
+              {t("chat.charsRemaining", { count: remainingChars })}
             </span>
           )}
         </div>
@@ -113,13 +119,28 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           onClick={handleSend}
           disabled={disabled || sending || !text.trim()}
           className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white shadow-sm transition-all hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-primary-500 dark:hover:bg-primary-600"
-          aria-label="Send message"
+          aria-label={t("chat.sendMessageAria")}
           data-testid="send-message-btn"
         >
           {sending ? (
-            <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <svg
+              className="h-4 w-4 animate-spin text-white"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
             </svg>
           ) : (
             <svg

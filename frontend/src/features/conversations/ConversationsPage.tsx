@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ConversationList } from "./ConversationList";
+import { useText } from "../../i18n/useText";
 import { ChatThread } from "./ChatThread";
+import { ConversationList } from "./ConversationList";
 import type { ConversationItem } from "./types";
 
 export const ConversationsPage: React.FC = () => {
+  const { t } = useText();
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const selectedConvId = id ? parseInt(id, 10) : null;
@@ -37,7 +39,9 @@ export const ConversationsPage: React.FC = () => {
         {/* Conversation Thread Area */}
         <div
           className={`h-full md:col-span-7 lg:col-span-8 ${
-            selectedConvId ? "block" : "hidden md:flex md:items-center md:justify-center"
+            selectedConvId
+              ? "block"
+              : "hidden md:flex md:items-center md:justify-center"
           }`}
         >
           {selectedConvId ? (
@@ -47,9 +51,17 @@ export const ConversationsPage: React.FC = () => {
               onBack={() => navigate("/chat")}
             />
           ) : (
-            <div className="p-8 text-center" data-testid="select-conversation-prompt">
+            <div
+              className="p-8 text-center"
+              data-testid="select-conversation-prompt"
+            >
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
-                <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className="h-7 w-7"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -59,10 +71,10 @@ export const ConversationsPage: React.FC = () => {
                 </svg>
               </div>
               <h3 className="text-base font-medium text-gray-900 dark:text-gray-100">
-                Select a conversation
+                {t("chat.selectConversation")}
               </h3>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Choose a chat from the left sidebar to view messages and reply in real time.
+                {t("chat.selectConversationDesc")}
               </p>
             </div>
           )}
