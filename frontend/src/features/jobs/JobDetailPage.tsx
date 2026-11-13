@@ -54,9 +54,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
       .catch((err) => {
         if (isMounted) {
           setError(
-            err instanceof Error
-              ? err.message
-              : t("jobs.jobNotFoundDesc"),
+            err instanceof Error ? err.message : t("jobs.jobNotFoundDesc"),
           );
         }
       })
@@ -127,9 +125,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
       } else {
         setApplyError({
           message:
-            err instanceof Error
-              ? err.message
-              : t("jobs.unexpectedApplyError"),
+            err instanceof Error ? err.message : t("jobs.unexpectedApplyError"),
         });
       }
     } finally {
@@ -150,7 +146,9 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
   if (error || !job) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-ink">{t("jobs.jobNotFoundTitle")}</h1>
+        <h1 className="text-2xl font-bold text-ink">
+          {t("jobs.jobNotFoundTitle")}
+        </h1>
         <p className="text-sm text-ink-muted leading-relaxed">
           {error || t("jobs.jobNotFoundDesc")}
         </p>
@@ -199,7 +197,8 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
           className="p-4 rounded-lg bg-success-subtle border border-success/30 text-success text-sm flex items-center justify-between gap-3"
         >
           <span>
-            ✓ <strong>{t("jobs.applicationSubmitted")}</strong> {t("jobs.employerWillReview")}
+            ✓ <strong>{t("jobs.applicationSubmitted")}</strong>{" "}
+            {t("jobs.employerWillReview")}
           </span>
         </div>
       )}
@@ -242,7 +241,9 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
             {isOwnJob ? (
               <Link to={`/employer/jobs/${job.id}/applications`}>
                 <Button variant="secondary" size="md">
-                  {t("jobs.viewApplications", { count: job.applications_count })}
+                  {t("jobs.viewApplications", {
+                    count: job.applications_count,
+                  })}
                 </Button>
               </Link>
             ) : applySuccess ? (
@@ -268,11 +269,15 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
             👁 <strong>{job.views_count}</strong> {t("jobs.viewsCount")}
           </span>
           <span>
-            📝 <strong>{job.applications_count}</strong> {t("jobs.candidatesApplied")}
+            📝 <strong>{job.applications_count}</strong>{" "}
+            {t("jobs.candidatesApplied")}
           </span>
           {job.created_at && (
             <span>
-              📅 {t("jobs.postedDate", { date: new Date(job.created_at).toLocaleDateString() })}
+              📅{" "}
+              {t("jobs.postedDate", {
+                date: new Date(job.created_at).toLocaleDateString(),
+              })}
             </span>
           )}
         </div>
