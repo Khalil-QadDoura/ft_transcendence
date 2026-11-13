@@ -15,6 +15,7 @@
   "remove": "Remove friend",
   "message": "Message",
   "actionError": "That action didn’t complete. Please try again.",
+  "changed": "This connection changed. We’re refreshing its status.",
   "unavailable": "Friend actions are temporarily unavailable. Please try again later.",
   "removeTitle": "Remove this friend?",
   "removeHint": "You can send a new request later.",

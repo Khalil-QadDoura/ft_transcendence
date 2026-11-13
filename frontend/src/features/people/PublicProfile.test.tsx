@@ -6,6 +6,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { PublicProfile } from "./PublicProfile";
 import { peopleApi, type Person } from "./api";
 import { profileApi } from "../profile/api";
+import { ApiError } from "../../api/client";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 afterEach(() => vi.restoreAllMocks());
@@ -70,3 +71,74 @@ test.each([null, "pending_sent", "pending_received", "accepted"] as const)(
     }
   },
 );
+
+test("a conflicting friend request refreshes the relationship before another action", async () => {
+  vi.spyOn(profileApi, "get").mockResolvedValue({ id: 1 } as Awaited<
+    ReturnType<typeof profileApi.get>
+  >);
+  let changed = false;
+  const profile = vi
+    .spyOn(peopleApi, "profile")
+    .mockImplementation(async () => ({
+      id: 2,
+      first_name: "Ada",
+      last_name: "Lovelace",
+      position: null,
+      bio: null,
+      avatar_url: "/avatar.png",
+      is_online: false,
+      friendship_status: changed ? "pending_received" : null,
+      friendship_id: changed ? 81 : null,
+    }));
+  vi.spyOn(peopleApi, "add").mockImplementation(async () => {
+    changed = true;
+    throw new ApiError(409, "conflict", "A request already exists");
+  });
+  const div = document.createElement("div");
+  document.body.append(div);
+  const root = createRoot(div);
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  cache.setQueryDefaults(["friends"], { gcTime: Infinity });
+  cache.setQueryData(["friends", "list"], []);
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter initialEntries={["/users/2"]}>
+            <Routes>
+              <Route path="/users/:id" element={<PublicProfile />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+    const button = (label: string) =>
+      Array.from(div.querySelectorAll("button")).find(
+        (b) => b.textContent === label,
+      );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(button("Add friend")).toBeDefined();
+    await act(async () => button("Add friend")!.click());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(button("Add friend")).toBeUndefined();
+    expect(button("Accept")?.disabled).toBe(false);
+    expect(div.querySelector('[role="alert"]')?.textContent).toContain(
+      "connection changed",
+    );
+    expect(profile).toHaveBeenCalledTimes(2);
+    expect(cache.getQueryState(["friends", "list"])?.isInvalidated).toBe(true);
+  } finally {
+    await act(() => root.unmount());
+    cache.clear();
+    div.remove();
+  }
+});

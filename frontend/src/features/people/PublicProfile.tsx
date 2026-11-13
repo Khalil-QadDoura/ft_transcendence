@@ -73,11 +73,21 @@ function PersonView({ id }: { id: number }) {
     try {
       await action();
       setConfirm(false);
-      await cache.invalidateQueries({ queryKey: ["people"] });
-      await cache.invalidateQueries({ queryKey: ["friends"] });
-    } catch {
-      setError(t("actionError"));
+    } catch (cause) {
+      setError(
+        t(
+          cause instanceof ApiError && cause.status === 409
+            ? "changed"
+            : "actionError",
+        ),
+      );
     } finally {
+      // Another tab may have changed the relationship, or the response may have
+      // been lost after the server committed. Reconcile even after a failed request.
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["people"] }),
+        cache.invalidateQueries({ queryKey: ["friends"] }),
+      ]);
       setBusy(false);
     }
   }
@@ -130,7 +140,10 @@ function PersonView({ id }: { id: number }) {
             <Button
               variant="outline"
               disabled={busy || !relation}
-              onClick={() => setConfirm(true)}
+              onClick={() => {
+                setError("");
+                setConfirm(true);
+              }}
             >
               {t("remove")}
             </Button>
@@ -151,7 +164,7 @@ function PersonView({ id }: { id: number }) {
         {person.friendship_status &&
           person.friendship_status !== "pending_sent" &&
           !relation && <p role="status">{t("unavailable")}</p>}
-        {error && <p role="alert">{error}</p>}
+        {error && !confirm && <p role="alert">{error}</p>}
       </article>
       <Modal
         isOpen={confirm}
@@ -161,6 +174,7 @@ function PersonView({ id }: { id: number }) {
         title={t("removeTitle")}
         description={t("removeHint")}
       >
+        {error && <p role="alert">{error}</p>}
         <div className="people-actions">
           <Button
             disabled={busy}
