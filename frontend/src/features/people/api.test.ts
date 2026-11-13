@@ -22,3 +22,26 @@ test("direct conversation sends the backend peer_user_id contract", async () => 
   expect(await peopleApi.message(42)).toEqual({ id: 7 });
   expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ peer_user_id: 42 });
 });
+
+test("public profiles require the merged backend relationship ID contract", async () => {
+  const data = {
+    id: 42,
+    first_name: "Ada",
+    last_name: null,
+    position: null,
+    bio: null,
+    avatar_url: "/avatar.png",
+    is_online: false,
+    friendship_status: "accepted",
+  };
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json(data))
+    .mockResolvedValueOnce(Response.json({ ...data, friendship_id: 81 }));
+  vi.stubGlobal("fetch", fetch);
+  await expect(peopleApi.profile(42)).rejects.toThrow();
+  await expect(peopleApi.profile(42)).resolves.toMatchObject({
+    id: 42,
+    friendship_id: 81,
+  });
+});

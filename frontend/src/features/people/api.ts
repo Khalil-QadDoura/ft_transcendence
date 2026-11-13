@@ -13,8 +13,8 @@ const person = z.object({
   friendship_status: z
     .enum(["pending_sent", "pending_received", "accepted"])
     .nullable(),
-  // BE-22 must supply the relation ID; never substitute the user's ID.
-  friendship_id: userId.nullable().optional(),
+  // BE-22 returns null when no relationship exists; a missing field is a contract error.
+  friendship_id: userId.nullable(),
 });
 export type Person = z.infer<typeof person>;
 export const peopleApi = {
