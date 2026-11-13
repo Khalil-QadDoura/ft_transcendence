@@ -95,7 +95,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       if (res.items.length > 0) {
         const lastMsg = res.items[res.items.length - 1];
         if (lastMsg.author_id !== resolvedUserId) {
-          void markAsRead(conversationId, lastMsg.id).catch(() => {});
+          void Promise.resolve(markAsRead(conversationId, lastMsg.id)).catch(
+            () => {},
+          );
           wsClient.send("read", {
             conversation_id: conversationId,
             last_message_id: lastMsg.id,
@@ -292,7 +294,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
 
     // Mark read if incoming from peer
     if (payload.author_id !== resolvedUserId) {
-      void markAsRead(conversationId, payload.id).catch(() => {});
+      void Promise.resolve(markAsRead(conversationId, payload.id)).catch(
+        () => {},
+      );
       wsClient.send("read", {
         conversation_id: conversationId,
         last_message_id: payload.id,

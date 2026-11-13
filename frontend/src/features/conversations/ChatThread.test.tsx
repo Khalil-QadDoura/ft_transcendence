@@ -37,19 +37,28 @@ function setNativeValue(
   element: HTMLInputElement | HTMLTextAreaElement,
   value: string,
 ) {
-  const valueSetter = Object.getOwnPropertyDescriptor(element, "value")?.set;
-  const prototype = Object.getPrototypeOf(element);
+  const prototype =
+    element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
   const prototypeValueSetter = Object.getOwnPropertyDescriptor(
     prototype,
     "value",
   )?.set;
 
-  if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+  if (prototypeValueSetter) {
     prototypeValueSetter.call(element, value);
-  } else if (valueSetter) {
-    valueSetter.call(element, value);
   } else {
     element.value = value;
+  }
+
+  const tracker = (
+    element as unknown as {
+      _valueTracker?: { setValue: (v: string) => void };
+    }
+  )._valueTracker;
+  if (tracker) {
+    tracker.setValue("");
   }
 }
 
@@ -102,7 +111,16 @@ const mockMessages: MessageItem[] = [
 
 describe("ChatThread Component (FE-30)", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    vi.mocked(api.listMessages).mockResolvedValue({
+      items: [],
+      prev_before_id: null,
+    });
+    vi.mocked(api.sendMessage).mockResolvedValue({ items: [] });
+    vi.mocked(api.editMessage).mockResolvedValue({ ...mockMessages[0] });
+    vi.mocked(api.deleteMessage).mockResolvedValue(undefined);
+    vi.mocked(api.markAsRead).mockResolvedValue(undefined);
+    vi.mocked(api.getCurrentUserId).mockReturnValue(1);
     wsListeners.clear();
     mockWsSend.mockClear();
     container = document.createElement("div");
@@ -133,6 +151,7 @@ describe("ChatThread Component (FE-30)", () => {
           currentUserId={1}
         />,
       );
+      await Promise.resolve();
     });
 
     expect(
@@ -175,6 +194,7 @@ describe("ChatThread Component (FE-30)", () => {
           currentUserId={1}
         />,
       );
+      await Promise.resolve();
     });
 
     const loadOlderBtn = container.querySelector<HTMLButtonElement>(
@@ -223,6 +243,7 @@ describe("ChatThread Component (FE-30)", () => {
           currentUserId={1}
         />,
       );
+      await Promise.resolve();
     });
 
     const textarea = container.querySelector<HTMLTextAreaElement>(
@@ -244,6 +265,7 @@ describe("ChatThread Component (FE-30)", () => {
 
     await act(async () => {
       sendBtn?.click();
+      await Promise.resolve();
     });
 
     expect(container.textContent).toContain("Let's schedule a call at 3pm.");
@@ -288,6 +310,7 @@ describe("ChatThread Component (FE-30)", () => {
           currentUserId={1}
         />,
       );
+      await Promise.resolve();
     });
 
     const textarea = container.querySelector<HTMLTextAreaElement>(
@@ -307,6 +330,7 @@ describe("ChatThread Component (FE-30)", () => {
 
     await act(async () => {
       sendBtn?.click();
+      await Promise.resolve();
     });
 
     const retryBtn = container.querySelector<HTMLButtonElement>(
@@ -316,6 +340,7 @@ describe("ChatThread Component (FE-30)", () => {
 
     await act(async () => {
       retryBtn?.click();
+      await Promise.resolve();
     });
 
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
@@ -346,6 +371,7 @@ describe("ChatThread Component (FE-30)", () => {
           currentUserId={1}
         />,
       );
+      await Promise.resolve();
     });
 
     expect(container.textContent).toContain(
@@ -381,6 +407,7 @@ describe("ChatThread Component (FE-30)", () => {
 
     await act(async () => {
       saveBtn?.click();
+      await Promise.resolve();
     });
 
     expect(api.editMessage).toHaveBeenCalledWith(10, 100, {
@@ -408,6 +435,7 @@ describe("ChatThread Component (FE-30)", () => {
           currentUserId={1}
         />,
       );
+      await Promise.resolve();
     });
 
     expect(container.textContent).toContain(
@@ -434,6 +462,7 @@ describe("ChatThread Component (FE-30)", () => {
 
     await act(async () => {
       confirmBtn?.click();
+      await Promise.resolve();
     });
 
     expect(api.deleteMessage).toHaveBeenCalledWith(10, 100);
@@ -454,6 +483,7 @@ describe("ChatThread Component (FE-30)", () => {
           currentUserId={1}
         />,
       );
+      await Promise.resolve();
     });
 
     expect(container.textContent).toContain(
@@ -472,6 +502,7 @@ describe("ChatThread Component (FE-30)", () => {
         status: "sent",
         created_at: new Date().toISOString(),
       });
+      await Promise.resolve();
     });
 
     expect(container.textContent).toContain("Let's speak in 10 minutes.");
@@ -529,6 +560,7 @@ describe("ChatThread Component (FE-30)", () => {
           currentUserId={1}
         />,
       );
+      await Promise.resolve();
     });
 
     expect(
