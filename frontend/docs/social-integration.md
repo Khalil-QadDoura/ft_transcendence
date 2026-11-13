@@ -16,7 +16,7 @@ with the server. Removal requires confirmation, and errors stay inside the open 
 ## Repeatable integration test
 
 Use the disposable loopback database and capture-mail harness in
-[auth-screens.md](auth-screens.md#real-backend-integration). From `frontend`, set
+[auth-screens.md](auth-screens.md#automated-and-browser-checks). From `frontend`, set
 `WOZU_TEST_BACKEND_URL=http://127.0.0.1:8010` and run:
 
 ```sh
