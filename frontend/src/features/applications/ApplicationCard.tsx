@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
+import { useText } from "../../i18n/useText";
 import type { ApplicationItem } from "./types";
 
 export interface ApplicationCardProps {
@@ -14,6 +15,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
   application,
   onWithdraw,
 }) => {
+  const { t } = useText();
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
       setConfirmWithdraw(false);
     } catch (err: unknown) {
       const e = err as { message?: string };
-      setError(e.message || "Failed to withdraw application.");
+      setError(e.message || t("applications.failedToWithdraw"));
     } finally {
       setWithdrawing(false);
     }
@@ -42,31 +44,31 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
       case "submitted":
         return (
           <Badge variant="neutral" data-testid="status-submitted">
-            Submitted
+            {t("applications.statusSubmitted")}
           </Badge>
         );
       case "viewed":
         return (
           <Badge variant="warning" data-testid="status-viewed">
-            Viewed by Employer
+            {t("applications.statusViewed")}
           </Badge>
         );
       case "invited":
         return (
           <Badge variant="success" data-testid="status-invited">
-            Invited to Chat
+            {t("applications.statusInvited")}
           </Badge>
         );
       case "rejected":
         return (
           <Badge variant="danger" data-testid="status-rejected">
-            Not Selected
+            {t("applications.statusRejected")}
           </Badge>
         );
       case "withdrawn":
         return (
           <Badge variant="neutral" data-testid="status-withdrawn">
-            Withdrawn
+            {t("applications.statusWithdrawn")}
           </Badge>
         );
       default:
@@ -75,7 +77,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
   };
 
   const jobTitle = application.job_title || `Role #${application.job_id}`;
-  const companyName = application.company_name || "Company";
+  const companyName = application.company_name || t("applications.defaultCompany");
 
   return (
     <Card
@@ -101,18 +103,31 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
             </p>
 
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-400 dark:text-gray-500">
-              <span>Applied {new Date(application.applied_at).toLocaleDateString()}</span>
+              <span>
+                {t("applications.appliedDate", {
+                  date: new Date(application.applied_at).toLocaleDateString(),
+                })}
+              </span>
               {application.viewed_at && (
-                <span>Viewed {new Date(application.viewed_at).toLocaleDateString()}</span>
+                <span>
+                  {t("applications.viewedDate", {
+                    date: new Date(application.viewed_at).toLocaleDateString(),
+                  })}
+                </span>
               )}
             </div>
 
             {application.cover_note && (
               <div className="mt-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
                 <span className="font-semibold text-gray-500 dark:text-gray-400">
-                  Your Cover Note:
+                  {t("applications.coverNote")}
                 </span>
                 <p className="mt-1 whitespace-pre-wrap">{application.cover_note}</p>
+              </div>
+            )}
+            {error && (
+              <div className="mt-2 text-xs text-red-600 dark:text-red-400">
+                {error}
               </div>
             )}
           </div>
@@ -127,7 +142,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
                   className="w-full sm:w-auto"
                   data-testid={`chat-link-btn-${application.id}`}
                 >
-                  Open Chat ↗
+                  {t("applications.openChat")}
                 </Button>
               </Link>
             )}
@@ -139,7 +154,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
                     className="flex items-center space-x-2 rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/60 dark:text-red-300"
                     data-testid={`withdraw-confirm-box-${application.id}`}
                   >
-                    <span>Withdraw this application?</span>
+                    <span>{t("applications.withdrawPrompt")}</span>
                     <button
                       type="button"
                       disabled={withdrawing}
@@ -147,14 +162,16 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
                       className="font-bold underline hover:text-red-900 disabled:opacity-50"
                       data-testid={`confirm-withdraw-btn-${application.id}`}
                     >
-                      {withdrawing ? "Withdrawing..." : "Yes, withdraw"}
+                      {withdrawing
+                        ? t("applications.withdrawing")
+                        : t("applications.confirmWithdraw")}
                     </button>
                     <button
                       type="button"
                       onClick={() => setConfirmWithdraw(false)}
                       className="text-gray-500 hover:text-gray-700 dark:text-gray-400"
                     >
-                      Cancel
+                      {t("applications.cancel")}
                     </button>
                   </div>
                 ) : (
@@ -166,17 +183,13 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
                     className="text-red-600 hover:text-red-700 dark:text-red-400"
                     data-testid={`withdraw-btn-${application.id}`}
                   >
-                    Withdraw
+                    {t("applications.withdraw")}
                   </Button>
                 )}
               </>
             )}
           </div>
         </div>
-
-        {error && (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
-        )}
       </div>
     </Card>
   );

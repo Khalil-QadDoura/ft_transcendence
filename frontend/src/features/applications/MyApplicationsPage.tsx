@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Spinner } from "../../components/Spinner";
+import { useText } from "../../i18n/useText";
 import { ApplicationCard } from "./ApplicationCard";
 import { listMyApplications, withdrawApplication } from "./api";
 import type { ApplicationItem, ApplicationStatus } from "./types";
@@ -10,6 +11,7 @@ import type { ApplicationItem, ApplicationStatus } from "./types";
 type StatusFilter = "all" | "active" | "invited" | "withdrawn" | "rejected";
 
 export const MyApplicationsPage: React.FC = () => {
+  const { t } = useText();
   const [applications, setApplications] = useState<ApplicationItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
@@ -54,13 +56,13 @@ export const MyApplicationsPage: React.FC = () => {
         setNextCursor(res.next_cursor);
       } catch (err: unknown) {
         const e = err as { message?: string };
-        setError(e.message || "Failed to load applications.");
+        setError(e.message || t("applications.failedToLoad"));
       } finally {
         setLoading(false);
         setLoadingMore(false);
       }
     },
-    [],
+    [t],
   );
 
   useEffect(() => {
@@ -77,11 +79,11 @@ export const MyApplicationsPage: React.FC = () => {
   };
 
   const tabs: Array<{ id: StatusFilter; label: string }> = [
-    { id: "all", label: "All" },
-    { id: "active", label: "In Review" },
-    { id: "invited", label: "Invited" },
-    { id: "withdrawn", label: "Withdrawn" },
-    { id: "rejected", label: "Not Selected" },
+    { id: "all", label: t("applications.tabAll") },
+    { id: "active", label: t("applications.tabActive") },
+    { id: "invited", label: t("applications.tabInvited") },
+    { id: "withdrawn", label: t("applications.tabWithdrawn") },
+    { id: "rejected", label: t("applications.tabRejected") },
   ];
 
   return (
@@ -93,14 +95,16 @@ export const MyApplicationsPage: React.FC = () => {
       <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-            My Applications
+            {t("applications.title")}
           </h1>
           <p className="mt-1 text-base text-gray-600 dark:text-gray-400">
-            Track the status of your video job applications and invitations.
+            {t("applications.subtitle")}
           </p>
         </div>
         <Link to="/jobs">
-          <Button variant="primary">Browse Open Jobs ↗</Button>
+          <Button variant="primary">
+            {t("applications.browseOpenJobs")}
+          </Button>
         </Link>
       </div>
 
@@ -133,13 +137,24 @@ export const MyApplicationsPage: React.FC = () => {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-20" data-testid="applications-loading">
+        <div
+          className="flex justify-center py-20"
+          data-testid="applications-loading"
+        >
           <Spinner size="lg" />
         </div>
       ) : applications.length === 0 ? (
-        <Card className="p-10 text-center" data-testid="empty-applications-card">
+        <Card
+          className="p-10 text-center"
+          data-testid="empty-applications-card"
+        >
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
-            <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg
+              className="h-7 w-7"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -149,17 +164,17 @@ export const MyApplicationsPage: React.FC = () => {
             </svg>
           </div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            No applications found
+            {t("applications.noApplicationsFound")}
           </h2>
           <p className="mx-auto mt-1 max-w-sm text-xs text-gray-500 dark:text-gray-400">
             {statusFilter === "all"
-              ? "You haven't submitted any job applications yet. Apply with your video pitch to get noticed!"
-              : `You have no applications with status "${statusFilter}".`}
+              ? t("applications.noApplicationsEmpty")
+              : t("applications.noApplicationsFilter", { status: statusFilter })}
           </p>
           <div className="mt-5">
             <Link to="/jobs">
               <Button variant="primary" size="sm">
-                Explore Open Jobs
+                {t("applications.exploreOpenJobs")}
               </Button>
             </Link>
           </div>
@@ -184,7 +199,9 @@ export const MyApplicationsPage: React.FC = () => {
                 disabled={loadingMore}
                 data-testid="load-more-btn"
               >
-                {loadingMore ? "Loading more..." : "Load More Applications"}
+                {loadingMore
+                  ? t("applications.loadingMore")
+                  : t("applications.loadMoreApplications")}
               </Button>
             </div>
           )}
