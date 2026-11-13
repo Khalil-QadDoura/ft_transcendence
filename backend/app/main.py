@@ -14,12 +14,14 @@ from app.core.errors import add_error_handlers
 from app.core.internal import require_internal_key
 from app.core.limiter import limiter
 from app.core.logging import configure_logging
+from app.core.metrics import setup_metrics
 from app.core.queue import TaskQueue
 from app.core.redis_client import setup_redis
 from app.core.request_id import request_id_middleware
 from app.core.storage import Storage
 from app.db.session import setup_database
 from app.health import routes as health
+from app.jobs import routes as jobs
 from app.media import routes as media
 from app.realtime import routes as realtime
 from app.users import routes as users
@@ -68,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(users.router)
     api.include_router(companies.router)
     api.include_router(conversations.router)
+    api.include_router(jobs.router)
     api.include_router(realtime.router)  # POST /api/ws/ticket
     api.include_router(media.router)
     app.include_router(api)
@@ -81,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     internal.include_router(health.internal_router)
     app.include_router(internal)
+    setup_metrics(app)
     return app
 
 

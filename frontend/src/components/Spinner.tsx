@@ -1,3 +1,4 @@
+import { useText } from "../i18n/useText";
 import type { HTMLAttributes } from "react";
 
 export interface SpinnerProps extends HTMLAttributes<HTMLSpanElement> {
@@ -9,9 +10,10 @@ export interface SpinnerProps extends HTMLAttributes<HTMLSpanElement> {
 export function Spinner({
   size = "md",
   className = "",
-  label = "Loading...",
+  label,
   ...props
 }: SpinnerProps) {
+  const { t } = useText();
   const sizeClasses = {
     sm: "w-4 h-4 border-2",
     md: "w-5 h-5 border-2",
@@ -21,11 +23,11 @@ export function Spinner({
   return (
     <span
       role="status"
-      aria-label={label}
+      aria-label={label ?? t("controls.loading")}
       className={`inline-block animate-spin rounded-full border-current border-t-transparent ${sizeClasses} ${className}`}
       {...props}
     >
-      <span className="sr-only">{label}</span>
+      <span className="sr-only">{label ?? t("controls.loading")}</span>
     </span>
   );
 }
