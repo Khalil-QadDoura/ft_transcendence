@@ -34,7 +34,27 @@ class Settings(BaseSettings):
 
     # Redis: WebSocket tickets, live events between API processes (pub/sub) and who is online.
     # The default is the "redis" service of the team's Docker Compose (no password, database 0).
+    # The background queue lives there too: confirming a video puts a moderation task on it,
+    # and the Celery worker takes it off (BE-07, BE-29).
     redis_url: str = "redis://redis:6379/0"
+
+    # File storage: MinIO, the "minio" container (INF-04). The API itself talks to MinIO inside
+    # the Docker network, over plain HTTP, at minio_endpoint.
+    minio_endpoint: str = "minio:9000"
+    # The upload and download links we hand out are signed for this public address instead:
+    # the browser opens https://localhost/files/<key>, and the proxy passes it on to MinIO.
+    minio_external_endpoint: str = "https://localhost"
+    minio_bucket: str = "files"
+    # Given here, so signing a link never needs to ask MinIO for it.
+    minio_region: str = "us-east-1"
+    # docker-compose.yml sets them from MINIO_ROOT_USER and MINIO_ROOT_PASSWORD (INF-04).
+    # Empty means the links are not signed and MinIO refuses them.
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+
+    # avatar_url of a user who has no picture (BE-08). By default a path on our own site, where
+    # the API serves a plain grey picture; a full address (https://...) works too.
+    default_avatar_url: str = "/api/media/avatar/default.svg"
 
 
 @lru_cache

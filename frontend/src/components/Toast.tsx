@@ -1,3 +1,4 @@
+import { useText } from "../i18n/useText";
 import {
   createContext,
   useContext,
@@ -119,13 +120,14 @@ export function ToastContainer({
   toasts: ToastItem[];
   onRemove: (id: string) => void;
 }) {
+  const { t } = useText();
   if (toasts.length === 0) return null;
 
   return (
     <div
       aria-live="polite"
       role="region"
-      aria-label="Notifications"
+      aria-label={t("controls.notifications")}
       className="fixed bottom-4 end-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"
     >
       {toasts.map((toast) => (
@@ -146,6 +148,7 @@ function ToastCard({
   toast: ToastItem;
   onDismiss: () => void;
 }) {
+  const { t } = useText();
   const typeStyles = {
     success: "border-success bg-success-subtle text-success",
     error: "border-danger bg-danger-subtle text-danger",
@@ -168,7 +171,7 @@ function ToastCard({
       <button
         type="button"
         onClick={onDismiss}
-        aria-label="Dismiss notification"
+        aria-label={t("controls.dismissNotification")}
         className="shrink-0 p-1 rounded-md text-ink-muted hover:text-ink hover:bg-black/5 transition-colors cursor-pointer"
       >
         <svg
