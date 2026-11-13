@@ -257,7 +257,12 @@ jobs:
       - run: make test
       - run: make files-check
       - run: make mail-check
-      # TODO(INF-06): add make https-check after #28 merges
+      # One HTTPS origin: /, /api, /ws, the http->https redirect, internal routes hidden,
+      # only the proxy publishes ports (INF-03).
+      - run: make https-check
+      # Every compose image, Dockerfile FROM and workflow image: pinned by tag and digest
+      # (INF-07).
+      - run: make images-check
       - name: Service logs
         if: failure()
         run: |
