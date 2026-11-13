@@ -15,6 +15,7 @@ from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
 
 from app.auth import repo as auth_repo
+from app.core.metrics import track_ws_connection
 from app.realtime import repo
 from app.realtime.constants import PRESENCE_TTL_SECONDS, TICKET_LIFETIME_SECONDS
 from app.realtime.schemas import Event, PresenceOut
@@ -98,9 +99,10 @@ async def serve_socket(websocket: WebSocket, user: User) -> None:
     forwarding = asyncio.create_task(forward_events(pubsub, websocket))
     log.info("socket open", user_id=user.id)
     try:
-        if await repo.add_socket(redis, user.id, socket_id, PRESENCE_TTL_SECONDS) == 1:
-            await tell_friends(app, user.id, is_online=True)  # the first socket: now online
-        await read_frames(websocket, redis, user.id, socket_id)
+        async with track_ws_connection(app):
+            if await repo.add_socket(redis, user.id, socket_id, PRESENCE_TTL_SECONDS) == 1:
+                await tell_friends(app, user.id, is_online=True)  # the first socket: now online
+            await read_frames(websocket, redis, user.id, socket_id)
     finally:
         forwarding.cancel()
         await asyncio.wait({forwarding})  # until it has really stopped

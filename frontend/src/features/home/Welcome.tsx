@@ -1,48 +1,54 @@
+import { useText } from "../../i18n/useText";
 import { Link } from "react-router-dom";
 export function Welcome() {
+  const { t } = useText();
   return (
     <>
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">
-            <span className="status-dot" /> FOR THE PERSON BEHIND THE PROFILE
+            <span className="status-dot" />
+            {t("home.forThePersonBehindTheProfile")}
           </p>
           <h1>
-            Your next
+            {t("home.yourNext")}
             <br />
-            <em>chapter,</em>
+            <em>{t("home.chapter")}</em>
             <br />
-            in good company.
+            {t("home.inGoodCompany")}
           </h1>
           <p className="hero-description">
-            You bring the spark. We make the introduction. <br />
-            Find work, meet your people, and let the real you through.
+            {t("home.youBringTheSparkWeMakeTheIntroduction")}
+            <br />
+            {t("home.findWorkMeetYourPeopleAndLetTheReal")}
           </p>
           <div className="hero-actions">
             <Link className="button light" to="/jobs">
-              Find your next chapter <span aria-hidden="true">↗</span>
+              {t("home.findYourNextChapter")}
+              <span aria-hidden="true">↗</span>
             </Link>
             <Link className="text-link" to="/register">
-              Introduce yourself <span aria-hidden="true">→</span>
+              {t("home.introduceYourself")}
+              <span aria-hidden="true">→</span>
             </Link>
           </div>
           <div className="hero-note">
-            <span>01 — DISCOVER</span>
-            <span>02 — CONNECT</span>
-            <span>03 — BELONG</span>
+            <span>{t("home.01Discover")}</span>
+            <span>{t("home.02Connect")}</span>
+            <span>{t("home.03Belong")}</span>
           </div>
         </div>
         <div className="identity-poster" aria-hidden="true">
           <div className="poster-heading">
             <span>
-              THE HUMAN
+              {t("home.theHuman")}
               <br />
-              SIDE OF WORK.
+              {t("home.sideOfWork")}
             </span>
             <span>
               WOZU ✳
               <br />
-              EST. 2026
+              {t("home.est2026")}
             </span>
           </div>
           <div className="poster-art">
@@ -78,27 +84,28 @@ export function Welcome() {
               <circle cx="200" cy="200" r="18" fill="#e9eecc" />
             </svg>
           </div>
-          <span className="poster-word">YOU.</span>
+          <span className="poster-word">{t("home.you")}</span>
           <div className="poster-footer">
             <span>
-              MORE THAN A CV.
-              <br />A WHOLE WORLD OF POSSIBILITY.
+              {t("home.moreThanACv")}
+              <br />
+              {t("home.aWholeWorldOfPossibility")}
             </span>
             <span className="poster-arrow">↗</span>
           </div>
           <div className="poster-stamp">
-            A little
+            {t("home.aLittle")}
             <br />
-            <em>more human.</em>
+            <em>{t("home.moreHuman")}</em>
           </div>
         </div>
       </section>
       <section className="explore" aria-labelledby="explore-heading">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">GOOD THINGS START WITH A HELLO</p>
+            <p className="eyebrow">{t("home.goodThingsStartWithAHello")}</p>
             <h2 id="explore-heading">
-              A world of <em>possibility.</em>
+              {t("home.aWorldOf")} <em>{t("home.possibility")}</em>
             </h2>
           </div>
           <span className="section-number" aria-hidden="true">
@@ -110,25 +117,25 @@ export function Welcome() {
             [
               "01",
               "/jobs",
-              "Find your place.",
-              "Discover work that fits who you are, and who you’re becoming.",
-              "OPPORTUNITIES",
+              t("home.jobTitle"),
+              t("home.jobDescription"),
+              t("home.jobLabel"),
               "↗",
             ],
             [
               "02",
               "/videos",
-              "Let them meet you.",
-              "Turn a first impression into a real connection. Your voice belongs here.",
-              "YOUR INTRODUCTION",
+              t("home.videoTitle"),
+              t("home.videoDescription"),
+              t("home.videoLabel"),
               "▷",
             ],
             [
               "03",
               "/game/rules",
-              "A little human instinct.",
-              "A conversation. A hidden identity. Can you tell who’s really human?",
-              "TURING DUEL",
+              t("home.gameTitle"),
+              t("home.gameDescription"),
+              t("home.gameLabel"),
               "✳",
             ],
           ].map(([number, to, title, description, label, symbol]) => (
@@ -143,7 +150,8 @@ export function Welcome() {
               <h3>{title}</h3>
               <p>{description}</p>
               <span className="card-bottom">
-                Explore <span aria-hidden="true">↗</span>
+                {t("home.explore")}
+                <span aria-hidden="true">↗</span>
               </span>
             </Link>
           ))}

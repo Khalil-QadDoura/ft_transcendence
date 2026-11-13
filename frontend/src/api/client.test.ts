@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   apiClient,
+  refreshAccessToken,
   ApiError,
   setTokens,
   clearTokens,
@@ -23,6 +24,54 @@ describe("FE-20 API Client & Token Management", () => {
   afterEach(() => {
     clearTokens();
     globalThis.fetch = originalFetch;
+  });
+
+  it.each([429, 503])(
+    "keeps credentials when refresh returns %s and retries later",
+    async (status) => {
+      vi.useFakeTimers();
+      try {
+        setTokens({ accessToken: "existing", refreshToken: "keep-me" });
+        globalThis.fetch = vi
+          .fn()
+          .mockResolvedValueOnce(new Response("{}", { status }))
+          .mockResolvedValueOnce(
+            new Response(
+              JSON.stringify({
+                access_token: "renewed",
+                refresh_token: "rotated",
+              }),
+              { headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        await expect(refreshAccessToken()).rejects.toMatchObject({ status });
+        expect(getAccessToken()).toBe("existing");
+        expect(getStoredRefreshToken()).toBe("keep-me");
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(getAccessToken()).toBe("renewed");
+        expect(getStoredRefreshToken()).toBe("rotated");
+      } finally {
+        clearTokens();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("keeps credentials offline, but logout cancels the scheduled retry", async () => {
+    vi.useFakeTimers();
+    try {
+      setTokens({ accessToken: "existing", refreshToken: "keep-me" });
+      globalThis.fetch = vi.fn().mockRejectedValue(new TypeError("offline"));
+      await expect(refreshAccessToken()).rejects.toMatchObject({ status: 0 });
+      expect(getStoredRefreshToken()).toBe("keep-me");
+      clearTokens();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(getStoredRefreshToken()).toBeNull();
+    } finally {
+      clearTokens();
+      vi.useRealTimers();
+    }
   });
 
   describe("Token Storage & In-Memory Model", () => {
