@@ -150,7 +150,7 @@ export const VideoResumePage: React.FC = () => {
           </Badge>
         );
       default:
-        return <Badge variant="neutral">{status}</Badge>;
+        return <Badge variant="default">{status}</Badge>;
     }
   };
 

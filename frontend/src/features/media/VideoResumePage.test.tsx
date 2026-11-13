@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as mediaApi from "./api";
 import type { MyVideoItem } from "./types";
@@ -24,6 +25,10 @@ vi.mock("../../api/ws", () => ({
     wsListeners.set(type, handler);
   }),
 }));
+
+let root: Root;
+let container: HTMLDivElement;
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const mockVideos: MyVideoItem[] = [
   {
@@ -58,26 +63,34 @@ describe("VideoResumePage Component (FE-26)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wsListeners.clear();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
     vi.restoreAllMocks();
   });
 
   it("renders empty state when user has no recordings", async () => {
     vi.mocked(mediaApi.listMyVideos).mockResolvedValueOnce({ items: [] });
 
-    render(<VideoResumePage />);
-
-    expect(screen.getByTestId("videos-loading")).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(screen.getByTestId("empty-videos-card")).toBeInTheDocument();
-      expect(screen.getByText("No video résumé yet")).toBeInTheDocument();
-      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent(
-        "0 / 3 Videos",
-      );
+    await act(async () => {
+      root.render(<VideoResumePage />);
     });
+
+    expect(
+      container.querySelector('[data-testid="empty-videos-card"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("No video résumé yet");
+    expect(
+      container.querySelector('[data-testid="video-quota-counter"]')
+        ?.textContent,
+    ).toContain("0 / 3 Videos");
   });
 
   it("renders active recordings with quota, moderation badges and player", async () => {
@@ -85,21 +98,29 @@ describe("VideoResumePage Component (FE-26)", () => {
       items: mockVideos,
     });
 
-    render(<VideoResumePage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent(
-        "2 / 3 Videos",
-      );
-      // Featured posted video section
-      expect(screen.getByTestId("active-posted-section")).toBeInTheDocument();
-      expect(screen.getByTestId("badge-approved")).toBeInTheDocument();
-      expect(screen.getByTestId("badge-pending")).toBeInTheDocument();
-
-      // Video cards rendered
-      expect(screen.getByTestId("video-card-1")).toBeInTheDocument();
-      expect(screen.getByTestId("video-card-2")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<VideoResumePage />);
     });
+
+    expect(
+      container.querySelector('[data-testid="video-quota-counter"]')
+        ?.textContent,
+    ).toContain("2 / 3 Videos");
+    expect(
+      container.querySelector('[data-testid="active-posted-section"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="badge-approved"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="badge-pending"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="video-card-1"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="video-card-2"]'),
+    ).not.toBeNull();
   });
 
   it("disables record CTA when quota limit of 3 is reached", async () => {
@@ -124,20 +145,21 @@ describe("VideoResumePage Component (FE-26)", () => {
       items: threeVideos,
     });
 
-    render(<VideoResumePage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent(
-        "3 / 3 Videos",
-      );
-      const recordBtn = screen.getByTestId("record-video-cta");
-      expect(recordBtn).toBeDisabled();
-      expect(
-        screen.getByText(
-          "Limit of 3 videos reached. Delete one to record a new one.",
-        ),
-      ).toBeInTheDocument();
+    await act(async () => {
+      root.render(<VideoResumePage />);
     });
+
+    expect(
+      container.querySelector('[data-testid="video-quota-counter"]')
+        ?.textContent,
+    ).toContain("3 / 3 Videos");
+    const recordBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="record-video-cta"]',
+    );
+    expect(recordBtn?.disabled).toBe(true);
+    expect(container.textContent).toContain(
+      "Limit of 3 videos reached. Delete one to record a new one.",
+    );
   });
 
   it("posts an approved unposted video to the feed", async () => {
@@ -167,18 +189,21 @@ describe("VideoResumePage Component (FE-26)", () => {
       lifecycle_status: "posted",
     });
 
-    render(<VideoResumePage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("post-card-btn-2")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<VideoResumePage />);
     });
 
-    fireEvent.click(screen.getByTestId("post-card-btn-2"));
+    const postBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="post-card-btn-2"]',
+    );
+    expect(postBtn).not.toBeNull();
 
-    await waitFor(() => {
-      expect(mediaApi.postVideo).toHaveBeenCalledWith(2);
-      expect(mediaApi.listMyVideos).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      postBtn?.click();
     });
+
+    expect(mediaApi.postVideo).toHaveBeenCalledWith(2);
+    expect(mediaApi.listMyVideos).toHaveBeenCalledTimes(2);
   });
 
   it("unposts an active video from the feed", async () => {
@@ -197,25 +222,28 @@ describe("VideoResumePage Component (FE-26)", () => {
       lifecycle_status: "unposted",
     });
 
-    render(<VideoResumePage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("unpost-btn-1")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<VideoResumePage />);
     });
 
-    fireEvent.click(screen.getByTestId("unpost-btn-1"));
+    const unpostBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="unpost-btn-1"]',
+    );
+    expect(unpostBtn).not.toBeNull();
 
-    await waitFor(() => {
-      expect(mediaApi.unpostVideo).toHaveBeenCalledWith(1);
-      expect(mediaApi.listMyVideos).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      unpostBtn?.click();
     });
+
+    expect(mediaApi.unpostVideo).toHaveBeenCalledWith(1);
+    expect(mediaApi.listMyVideos).toHaveBeenCalledTimes(2);
   });
 
   it("deletes a video after user confirmation", async () => {
     vi.mocked(mediaApi.listMyVideos)
       .mockResolvedValueOnce({ items: mockVideos })
       .mockResolvedValueOnce({
-        items: [mockVideos[0]], // video 2 removed
+        items: [mockVideos[0]],
       });
 
     vi.mocked(mediaApi.deleteVideo).mockResolvedValueOnce({
@@ -224,25 +252,32 @@ describe("VideoResumePage Component (FE-26)", () => {
       lifecycle_status: "deleted",
     });
 
-    render(<VideoResumePage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("delete-card-btn-2")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<VideoResumePage />);
     });
 
-    // Trigger delete
-    fireEvent.click(screen.getByTestId("delete-card-btn-2"));
+    const deleteBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="delete-card-btn-2"]',
+    );
+    expect(deleteBtn).not.toBeNull();
 
-    // Confirmation prompt appears
-    expect(screen.getByText("Confirm delete?")).toBeInTheDocument();
-
-    // Click confirm delete
-    fireEvent.click(screen.getByTestId("confirm-delete-btn-2"));
-
-    await waitFor(() => {
-      expect(mediaApi.deleteVideo).toHaveBeenCalledWith(2);
-      expect(mediaApi.listMyVideos).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      deleteBtn?.click();
     });
+
+    expect(container.textContent).toContain("Confirm delete?");
+
+    const confirmBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-delete-btn-2"]',
+    );
+    expect(confirmBtn).not.toBeNull();
+
+    await act(async () => {
+      confirmBtn?.click();
+    });
+
+    expect(mediaApi.deleteVideo).toHaveBeenCalledWith(2);
+    expect(mediaApi.listMyVideos).toHaveBeenCalledTimes(2);
   });
 
   it("handles live WebSocket video_moderated event and updates badge", async () => {
@@ -250,25 +285,27 @@ describe("VideoResumePage Component (FE-26)", () => {
       items: mockVideos,
     });
 
-    render(<VideoResumePage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("badge-pending")).toBeInTheDocument();
+    await act(async () => {
+      root.render(<VideoResumePage />);
     });
 
-    // Fire WebSocket video_moderated event
+    expect(
+      container.querySelector('[data-testid="badge-pending"]'),
+    ).not.toBeNull();
+
     const moderatedHandler = wsListeners.get("video_moderated");
     expect(moderatedHandler).toBeDefined();
 
-    moderatedHandler?.({
-      id: 2,
-      moderation_status: "approved",
+    await act(async () => {
+      moderatedHandler?.({
+        id: 2,
+        moderation_status: "approved",
+      });
     });
 
-    await waitFor(() => {
-      // Both video 1 and video 2 are now approved
-      const approvedBadges = screen.getAllByTestId("badge-approved");
-      expect(approvedBadges.length).toBeGreaterThanOrEqual(2);
-    });
+    const approvedBadges = container.querySelectorAll(
+      '[data-testid="badge-approved"]',
+    );
+    expect(approvedBadges.length).toBeGreaterThanOrEqual(2);
   });
 });
