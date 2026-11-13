@@ -112,6 +112,7 @@ const mockMessages: MessageItem[] = [
 describe("ChatThread Component (FE-30)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    Element.prototype.scrollTo = vi.fn();
     vi.mocked(api.listMessages).mockResolvedValue({
       items: [],
       prev_before_id: null,
@@ -266,6 +267,7 @@ describe("ChatThread Component (FE-30)", () => {
     await act(async () => {
       sendBtn?.click();
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(container.textContent).toContain("Let's schedule a call at 3pm.");
@@ -331,6 +333,7 @@ describe("ChatThread Component (FE-30)", () => {
     await act(async () => {
       sendBtn?.click();
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     const retryBtn = container.querySelector<HTMLButtonElement>(
@@ -340,6 +343,7 @@ describe("ChatThread Component (FE-30)", () => {
 
     await act(async () => {
       retryBtn?.click();
+      await Promise.resolve();
       await Promise.resolve();
     });
 

@@ -68,10 +68,14 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
   const scrollToBottom = useCallback((smooth = false) => {
     const el = containerRef.current;
     if (!el) return;
-    el.scrollTo({
-      top: el.scrollHeight,
-      behavior: smooth ? "smooth" : "auto",
-    });
+    if (typeof el.scrollTo === "function") {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: smooth ? "smooth" : "auto",
+      });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, []);
 
   const handleScroll = () => {
