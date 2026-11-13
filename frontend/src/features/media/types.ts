@@ -2,8 +2,17 @@
  * Types for Video Resume and Media Uploads (FE-25)
  */
 
-export type ModerationStatus = "pending" | "approved" | "rejected";
+export type ModerationStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "moderation_error";
 export type LifecycleStatus = "loaded" | "posted" | "unposted" | "deleted";
+
+export interface WsVideoModeratedPayload {
+  id: number;
+  moderation_status: ModerationStatus | string;
+}
 
 export interface VideoUploadUrlIn {
   content_type?: string;
