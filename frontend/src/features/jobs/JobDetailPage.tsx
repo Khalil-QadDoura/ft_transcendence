@@ -8,6 +8,7 @@ import { Card } from "../../components/Card";
 import { Modal } from "../../components/Modal";
 import { Spinner } from "../../components/Spinner";
 import { Textarea } from "../../components/Textarea";
+import { useText } from "../../i18n/useText";
 import { applyToJob, fetchJobDetail, formatSalary, recordJobView } from "./api";
 import type { Job } from "./types";
 
@@ -16,6 +17,7 @@ export interface JobDetailPageProps {
 }
 
 export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
+  const { t } = useText();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -54,7 +56,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
           setError(
             err instanceof Error
               ? err.message
-              : "Unable to load job details. The job may no longer be available.",
+              : t("jobs.jobNotFoundDesc"),
           );
         }
       })
@@ -65,7 +67,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [id, t]);
 
   const isOwnJob = Boolean(
     job && currentUserId && job.owner_id === currentUserId,
@@ -100,28 +102,26 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
         // Handle apply guards: profile_incomplete or no_video
         if (err.nextStep === "profile") {
           setApplyError({
-            message:
-              "Your candidate profile is incomplete. Please complete your profile to apply.",
+            message: t("jobs.profileIncomplete"),
             nextStep: "/profile",
           });
         } else if (err.nextStep === "videos" || err.code === "no_video") {
           setApplyError({
-            message:
-              "WOZU requires a video introduction before applying. Please record or upload a video resume.",
+            message: t("jobs.videoRequired"),
             nextStep: "/videos",
           });
         } else if (err.status === 409) {
           setApplyError({
-            message: "You have already applied for this job.",
+            message: t("jobs.alreadyAppliedError"),
           });
           setApplySuccess(true);
         } else if (err.status === 403) {
           setApplyError({
-            message: "You cannot apply to your own job listing.",
+            message: t("jobs.cannotApplyOwnJob"),
           });
         } else {
           setApplyError({
-            message: err.message || "Failed to submit application.",
+            message: err.message || t("jobs.failedToSubmit"),
           });
         }
       } else {
@@ -129,7 +129,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
           message:
             err instanceof Error
               ? err.message
-              : "An unexpected error occurred while submitting your application.",
+              : t("jobs.unexpectedApplyError"),
         });
       }
     } finally {
@@ -140,9 +140,9 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
   if (isLoading) {
     return (
       <div className="py-24 flex flex-col items-center justify-center gap-3">
-        <h1 className="sr-only">Loading job details</h1>
-        <Spinner size="lg" aria-label="Loading job details" />
-        <p className="text-sm text-ink-muted">Loading job information...</p>
+        <h1 className="sr-only">{t("jobs.loadingJobDetails")}</h1>
+        <Spinner size="lg" aria-label={t("jobs.loadingJobDetails")} />
+        <p className="text-sm text-ink-muted">{t("jobs.loadingJobInfo")}</p>
       </div>
     );
   }
@@ -150,19 +150,18 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
   if (error || !job) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-ink">Job Not Found</h1>
+        <h1 className="text-2xl font-bold text-ink">{t("jobs.jobNotFoundTitle")}</h1>
         <p className="text-sm text-ink-muted leading-relaxed">
-          {error ||
-            "The job you are looking for does not exist or has been removed."}
+          {error || t("jobs.jobNotFoundDesc")}
         </p>
         <Link to="/jobs">
-          <Button variant="secondary">Back to Jobs</Button>
+          <Button variant="secondary">{t("jobs.backToJobs")}</Button>
         </Link>
       </div>
     );
   }
 
-  const companyName = job.company_name || "Confidential Company";
+  const companyName = job.company_name || t("jobs.confidentialCompany");
   const salaryText = formatSalary(
     job.salary_amount,
     job.salary_currency,
@@ -170,15 +169,15 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
   );
 
   const urgencyVariants = {
-    hot: { variant: "danger" as const, label: "Hot 🔥" },
-    urgent: { variant: "warning" as const, label: "Urgent ⚡" },
-    normal: { variant: "outline" as const, label: "Normal" },
+    hot: { variant: "danger" as const, label: t("jobs.urgencyHot") },
+    urgent: { variant: "warning" as const, label: t("jobs.urgencyUrgent") },
+    normal: { variant: "outline" as const, label: t("jobs.urgencyNormal") },
   }[job.urgency] || { variant: "outline" as const, label: job.urgency };
 
   const scheduleLabels: Record<string, string> = {
-    full_time: "Full time",
-    part_time: "Part time",
-    internship: "Internship",
+    full_time: t("jobs.scheduleFullTime"),
+    part_time: t("jobs.schedulePartTime"),
+    internship: t("jobs.scheduleInternship"),
   };
 
   return (
@@ -189,7 +188,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
           to="/jobs"
           className="text-xs sm:text-sm font-medium text-ink-muted hover:text-ink flex items-center gap-1.5 focus:outline-none focus:underline"
         >
-          <span aria-hidden="true">←</span> Back to all jobs
+          <span aria-hidden="true">←</span> {t("jobs.backToAllJobs")}
         </Link>
       </div>
 
@@ -200,8 +199,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
           className="p-4 rounded-lg bg-success-subtle border border-success/30 text-success text-sm flex items-center justify-between gap-3"
         >
           <span>
-            ✓ <strong>Application submitted!</strong> The employer will review
-            your profile and video introduction.
+            ✓ <strong>{t("jobs.applicationSubmitted")}</strong> {t("jobs.employerWillReview")}
           </span>
         </div>
       )}
@@ -244,12 +242,12 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
             {isOwnJob ? (
               <Link to={`/employer/jobs/${job.id}/applications`}>
                 <Button variant="secondary" size="md">
-                  View Applications ({job.applications_count}) ↗
+                  {t("jobs.viewApplications", { count: job.applications_count })}
                 </Button>
               </Link>
             ) : applySuccess ? (
               <Button variant="secondary" size="md" disabled>
-                Applied ✓
+                {t("jobs.appliedCheck")}
               </Button>
             ) : (
               <Button
@@ -258,7 +256,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
                 onClick={handleOpenApply}
                 className="w-full sm:w-auto"
               >
-                Apply with Video ↗
+                {t("jobs.applyWithVideo")}
               </Button>
             )}
           </div>
@@ -267,14 +265,14 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
         {/* Job Stats Bar */}
         <div className="flex flex-wrap items-center gap-6 text-xs text-ink-muted pt-4 border-t border-border-subtle">
           <span>
-            👁 <strong>{job.views_count}</strong> views
+            👁 <strong>{job.views_count}</strong> {t("jobs.viewsCount")}
           </span>
           <span>
-            📝 <strong>{job.applications_count}</strong> candidates applied
+            📝 <strong>{job.applications_count}</strong> {t("jobs.candidatesApplied")}
           </span>
           {job.created_at && (
             <span>
-              📅 Posted {new Date(job.created_at).toLocaleDateString()}
+              📅 {t("jobs.postedDate", { date: new Date(job.created_at).toLocaleDateString() })}
             </span>
           )}
         </div>
@@ -283,7 +281,7 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
       {/* Description Section */}
       <Card className="p-6 sm:p-8 space-y-4">
         <h2 className="text-lg font-semibold text-ink border-b border-border-subtle pb-2">
-          About the Role
+          {t("jobs.aboutTheRole")}
         </h2>
         <div className="prose prose-sm max-w-none text-ink leading-relaxed whitespace-pre-wrap text-xs sm:text-sm">
           {job.description}
@@ -294,8 +292,8 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
       <Modal
         isOpen={isApplyOpen}
         onClose={handleCloseApply}
-        title={`Apply to ${job.title}`}
-        description={`Submit your application to ${companyName}. WOZU applications prioritize your video resume and profile.`}
+        title={t("jobs.applyToTitle", { title: job.title })}
+        description={t("jobs.applyModalDesc", { company: companyName })}
         size="md"
       >
         <form onSubmit={handleSubmitApply} className="space-y-4 pt-2">
@@ -316,8 +314,8 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
                   }}
                 >
                   {applyError.nextStep === "/profile"
-                    ? "Complete Profile Now →"
-                    : "Go to Video Resumes →"}
+                    ? t("jobs.completeProfileNow")
+                    : t("jobs.goToVideos")}
                 </Button>
               )}
             </div>
@@ -325,14 +323,14 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
 
           <Textarea
             id="apply-cover-note"
-            label="Cover Note (Optional)"
-            placeholder="Tell the team why you are excited about this role and how your skills align (max 1000 characters)..."
+            label={t("jobs.coverNoteLabel")}
+            placeholder={t("jobs.coverNotePlaceholder")}
             value={coverNote}
             onChange={(e) => setCoverNote(e.target.value)}
             maxLength={1000}
             showCount
             rows={5}
-            helperText="Keep it brief and conversational. Your video resume does the heavy lifting!"
+            helperText={t("jobs.coverNoteHelper")}
           />
 
           <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border-subtle">
@@ -342,16 +340,16 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
               onClick={handleCloseApply}
               disabled={isSubmitting}
             >
-              Cancel
+              {t("jobs.cancel")}
             </Button>
             <Button type="submit" variant="primary" disabled={isSubmitting}>
               {isSubmitting ? (
                 <span className="flex items-center gap-2">
                   <Spinner size="sm" />
-                  Submitting...
+                  {t("jobs.submitting")}
                 </span>
               ) : (
-                "Submit Application"
+                t("jobs.submitApplication")
               )}
             </Button>
           </div>
