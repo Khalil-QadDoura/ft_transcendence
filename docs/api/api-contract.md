@@ -72,8 +72,8 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | POST | `/friends/requests/{id}/accept` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 404, 409 not pending |
 | POST | `/friends/requests/{id}/decline` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 404, 409 not pending |
 | DELETE | `/friends/{id}` | Bearer | — | 204 | 403, 404 |
-| GET | `/friends` | Bearer | — | 200 `[{user_id, first_name, last_name, position, avatar_object_key, avatar_url, is_online}]` | — |
-| GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, avatar_url, is_online, friendship_status}` | 404 |
+| GET | `/friends` | Bearer | — | 200 `[{friendship_id, user_id, first_name, last_name, position, avatar_object_key, avatar_url, is_online}]` | — |
+| GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, avatar_url, is_online, friendship_status, friendship_id}` | 404 |
 | POST | `/conversations` | Bearer | `{type: "direct", peer_user_id, job_id?}` | 201 `ConversationOut` (existing one if the pair already has a chat) | 400 no peer, 403 job not yours |
 | GET | `/conversations` | Bearer | query `limit` ≤ 100 | 200 `ConversationOut[]`, newest first | — |
 | GET | `/conversations/unread` | Bearer | — | 200 `{total_unread}` | — |
@@ -88,7 +88,7 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | DELETE | `/conversations/{id}/messages/{mid}` | Bearer | — | 204 (soft) | 403 not yours |
 | POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403 |
 
-- `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`.
+- `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`; `friendship_id`: `int | null` pointing to the friendship row when a relationship exists.
 - `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at}`.
 - `MessageOut` = `{id, conversation_id, author_id, content, status (sent / delivered / read), message_type, reply_to_id, idempotency_key, edited_at, deleted_at, created_at}`.
 
