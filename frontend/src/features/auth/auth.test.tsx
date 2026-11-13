@@ -229,18 +229,32 @@ test("verification can retry a transient network error", async () => {
   expect(client.verify).toHaveBeenCalledTimes(2);
 });
 test("real gateway drives safe login redirect and sends the refresh token on logout", async () => {
-  const fetcher = vi
-    .fn()
-    .mockResolvedValueOnce(
+  const fetcher = vi.fn().mockImplementation((url) => {
+    const urlStr = String(url);
+    if (urlStr.includes("/auth/token")) {
+      return Promise.resolve(
+        jsonResponse(
+          JSON.stringify({
+            access_token: "access-test",
+            refresh_token: "refresh-test",
+            token_type: "bearer",
+          }),
+        ),
+      );
+    }
+    if (urlStr.includes("/auth/logout")) {
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    return Promise.resolve(
       jsonResponse(
         JSON.stringify({
-          access_token: "access-test",
-          refresh_token: "refresh-test",
-          token_type: "bearer",
+          items: [],
+          total: 0,
+          next_cursor: null,
         }),
       ),
-    )
-    .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    );
+  });
   vi.stubGlobal("fetch", fetcher);
   client = createAuthGateway();
   const router = await render("/login?next=%2Fjobs%3Fview%3Dall%23latest");
@@ -259,7 +273,10 @@ test("real gateway drives safe login redirect and sends the refresh token on log
   });
   expect(router.state.location.pathname).toBe("/login");
   expect(client.getStatus()).toBe("anonymous");
-  expect(fetcher.mock.calls[1][1].body).toBe(
+  const logoutCall = fetcher.mock.calls.find((call) =>
+    String(call[0]).includes("/auth/logout"),
+  );
+  expect(logoutCall?.[1]?.body).toBe(
     JSON.stringify({ refresh_token: "refresh-test" }),
   );
 });
