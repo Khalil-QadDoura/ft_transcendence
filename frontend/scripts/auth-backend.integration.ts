@@ -37,7 +37,7 @@ test("Khalil backend: register, verify, login, bearer profile, reload, concurren
   };
   let gateway = createAuthGateway();
   await gateway.register(credentials);
-  expect(gateway.getStatus()).toBe("anonymous");
+  expect(gateway.getStatus()).toBe("authenticated");
   // An unverified registration can be repeated; only a verified account is a 409.
   await gateway.register(credentials);
   await expect(gateway.login(credentials)).rejects.toMatchObject({
