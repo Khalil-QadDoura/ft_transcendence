@@ -258,6 +258,7 @@ Depends on: <CARD-ID>
 | 2026-11-09 | File storage at `/files`: `minio-init` on the `pgsty/minio` image, private bucket with anonymous download on `avatars/` and `logos/` only, signing region `us-east-1` (details below) | byul-byul | Decided, except the public prefixes: proposed to Khalil (BE-08) in the INF-04 PR |
 | 2026-11-12 | Every image is pinned by tag and digest; `make images-check` enforces it (INF-07) | byul-byul | Decided |
 | 2026-11-12 | CI is one workflow `ci.yml` with a `ci-ok` gate; `ci-ok` is the only required check on `main` (INF-06) | byul-byul | Decided; branch protection on `main` to be applied by Khalil (repo admin) |
+| 2026-11-13 | Logs and metrics kept for at most 30 days (was 15): server logs, including IP addresses in the proxy access logs, and service metrics; Privacy Policy sections 2 and 6 | byul-byul | Decided; the enforcing mechanism is open (infrastructure doc, "Logs") |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
