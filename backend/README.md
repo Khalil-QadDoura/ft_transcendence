@@ -21,6 +21,7 @@ app/
   users/         /api/users/me: read, partial update, soft delete (BE-05), avatar_url (BE-08),
                  plus constants (minimum age, field lengths)
   companies/     CRUD, /companies/me returns 200 null for job seekers (BE-21)
+  jobs/          CRUD, /jobs/mine counters, draft vs open visibility (BE-25)
   realtime/      POST /api/ws/ticket and the WebSocket at /ws (BE-06): one-time tickets,
                  authenticate_ws(), send_to_user() through Redis pub/sub, presence in Redis,
                  plus constants (ticket lifetime, presence TTL); connection_manager.py is
@@ -29,7 +30,7 @@ app/
                  feed (BE-07); avatar and company logo upload-url and confirm, the default
                  avatar picture (BE-08); plus constants (video and picture limits, link lifetimes)
   worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
-  friends/ jobs/ conversations/ applications/ game/
+  friends/ conversations/ applications/ game/
                  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
