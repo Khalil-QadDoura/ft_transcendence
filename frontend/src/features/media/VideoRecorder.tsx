@@ -74,7 +74,11 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user",
+        },
         audio: true,
       });
 
@@ -99,9 +103,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
       ) {
         setErrorMessage(t("media.deviceNotFound"));
       } else {
-        setErrorMessage(
-          error.message || t("media.unableToAccess"),
-        );
+        setErrorMessage(error.message || t("media.unableToAccess"));
       }
     }
   };
@@ -128,7 +130,9 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
       }
 
       const recorder = new MediaRecorder(mediaStream, {
-        mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : undefined,
+        mimeType: MediaRecorder.isTypeSupported(mimeType)
+          ? mimeType
+          : undefined,
       });
 
       recorder.ondataavailable = (event) => {
@@ -246,9 +250,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
     } catch (err: unknown) {
       setState("error");
       const error = err as { message?: string };
-      setErrorMessage(
-        error.message || t("media.uploadFailed"),
-      );
+      setErrorMessage(error.message || t("media.uploadFailed"));
     }
   };
 
@@ -278,7 +280,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
               <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500"></span>
             </span>
-            <span className="font-mono text-sm font-bold" data-testid="recording-timer">
+            <span
+              className="font-mono text-sm font-bold"
+              data-testid="recording-timer"
+            >
               {formatTime(elapsedSec)} / {formatTime(maxDurationSec)}
             </span>
           </div>
@@ -305,7 +310,11 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
             <p className="mb-4 text-sm text-gray-300">
               {t("media.cameraRequired")}
             </p>
-            <Button onClick={startCamera} variant="primary" data-testid="start-camera-button">
+            <Button
+              onClick={startCamera}
+              variant="primary"
+              data-testid="start-camera-button"
+            >
               {t("media.enableCamera")}
             </Button>
           </div>
@@ -314,7 +323,9 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         {state === "requesting_permission" && (
           <div className="flex flex-col items-center justify-center space-y-3">
             <Spinner size="lg" />
-            <p className="text-sm text-gray-300">{t("media.requestingCamera")}</p>
+            <p className="text-sm text-gray-300">
+              {t("media.requestingCamera")}
+            </p>
           </div>
         )}
 
@@ -334,16 +345,19 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
           />
         )}
 
-        {(state === "recorded" || state === "uploading" || state === "success") && previewUrl && (
-          <video
-            ref={playbackVideoRef}
-            src={previewUrl}
-            controls
-            playsInline
-            className="h-full w-full object-cover"
-            data-testid="recorded-video-playback"
-          />
-        )}
+        {(state === "recorded" ||
+          state === "uploading" ||
+          state === "success") &&
+          previewUrl && (
+            <video
+              ref={playbackVideoRef}
+              src={previewUrl}
+              controls
+              playsInline
+              className="h-full w-full object-cover"
+              data-testid="recorded-video-playback"
+            />
+          )}
 
         {state === "error" && !mediaStream && (
           <div className="flex flex-col items-center justify-center p-6 text-center">
@@ -360,10 +374,17 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
                 d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
               />
             </svg>
-            <p className="mb-4 max-w-sm text-sm text-red-200" data-testid="error-message">
+            <p
+              className="mb-4 max-w-sm text-sm text-red-200"
+              data-testid="error-message"
+            >
               {errorMessage || t("media.errorDefault")}
             </p>
-            <Button onClick={startCamera} variant="secondary" data-testid="retry-camera-button">
+            <Button
+              onClick={startCamera}
+              variant="secondary"
+              data-testid="retry-camera-button"
+            >
               {t("media.tryAgain")}
             </Button>
           </div>
@@ -373,7 +394,9 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         {state === "uploading" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-6">
             <Spinner size="lg" className="mb-4 text-primary-500" />
-            <p className="mb-2 text-sm font-medium text-white">{t("media.uploadingVideo")}</p>
+            <p className="mb-2 text-sm font-medium text-white">
+              {t("media.uploadingVideo")}
+            </p>
             <div className="h-2.5 w-64 rounded-full bg-gray-700">
               <div
                 className="h-2.5 rounded-full bg-primary-500 transition-all duration-300"
@@ -381,7 +404,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
                 data-testid="upload-progress-bar"
               />
             </div>
-            <span className="mt-2 text-xs text-gray-300 font-mono" data-testid="upload-percent">
+            <span
+              className="mt-2 text-xs text-gray-300 font-mono"
+              data-testid="upload-percent"
+            >
               {uploadPercent}%
             </span>
           </div>
@@ -391,11 +417,23 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         {state === "success" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-6 text-center">
             <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-500/20 text-green-400">
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
               </svg>
             </div>
-            <h4 className="mb-1 text-base font-semibold text-white">{t("media.uploadComplete")}</h4>
+            <h4 className="mb-1 text-base font-semibold text-white">
+              {t("media.uploadComplete")}
+            </h4>
             <p className="text-xs text-gray-300">
               {t("media.uploadCompleteDesc")}
             </p>
@@ -414,7 +452,11 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center space-x-2">
           {onCancel && state !== "uploading" && (
-            <Button onClick={onCancel} variant="ghost" data-testid="cancel-button">
+            <Button
+              onClick={onCancel}
+              variant="ghost"
+              data-testid="cancel-button"
+            >
               {t("media.cancel")}
             </Button>
           )}

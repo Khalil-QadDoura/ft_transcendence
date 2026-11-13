@@ -92,7 +92,10 @@ export const VideoResumePage: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8" data-testid="video-resume-page">
+    <div
+      className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8"
+      data-testid="video-resume-page"
+    >
       <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
@@ -151,7 +154,9 @@ export const VideoResumePage: React.FC = () => {
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
               <div className="text-xs text-gray-500 dark:text-gray-400">
-                {t("media.createdDate", { date: new Date(activeVideo.created_at).toLocaleDateString() })}
+                {t("media.createdDate", {
+                  date: new Date(activeVideo.created_at).toLocaleDateString(),
+                })}
               </div>
               <div className="flex items-center space-x-2">
                 {activeVideo.lifecycle_status === "posted" ? (
@@ -192,7 +197,12 @@ export const VideoResumePage: React.FC = () => {
       ) : (
         <Card className="mb-10 p-10 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-50 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400">
-            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg
+              className="h-8 w-8"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -218,19 +228,25 @@ export const VideoResumePage: React.FC = () => {
       {/* Recording Best Practices Guide */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip1Title")}</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">
+            {t("media.tip1Title")}
+          </h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {t("media.tip1Desc")}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip2Title")}</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">
+            {t("media.tip2Title")}
+          </h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {t("media.tip2Desc")}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip3Title")}</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">
+            {t("media.tip3Title")}
+          </h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {t("media.tip3Desc")}
           </p>
