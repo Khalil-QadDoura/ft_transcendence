@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # make images-check (INF-07): every image the stack pulls must be pinned by an explicit tag
 # and a digest, `name:tag@sha256:<64 hex>`, and the tag must not be `latest`.
-# Checks the `image:` of every compose service (all profiles, YAML anchors resolved) and
-# every FROM in the repository's Dockerfiles; a FROM that names an earlier stage of the same
-# Dockerfile (or `scratch`) is not an image and is skipped. Prints each offender, exits 1
-# if there is one. Needs only Docker (compose v2), bash and awk; no .env.
+# Checks the `image:` of every compose service (all profiles, YAML anchors resolved),
+# every FROM in the repository's Dockerfiles (a FROM that names an earlier stage of the same
+# Dockerfile, or `scratch`, is not an image and is skipped) and every image a GitHub Actions
+# workflow pulls (INF-06): `image:` of service containers and `container:`, the short form
+# `container: <ref>`, and `uses: docker://<ref>`. Prints each offender, exits 1 if there is
+# one. Needs only Docker (compose v2), bash and awk; no .env.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -72,6 +74,43 @@ while IFS= read -r file; do
 		}' "$file")
 done < <(git ls-files --cached --others --exclude-standard -- \
 	'Dockerfile' '*/Dockerfile' '*.Dockerfile' '*/Dockerfile.*' 'Dockerfile.*')
+
+# Workflows (INF-06): read as text, line by line, so each offender names its file and line.
+# In a workflow these keys always name an image: `image:` (service containers and the long
+# form of `container:`, block or flow style), `container: <ref>` (short form) and
+# `uses: docker://<ref>`. A value that is an expression (`${{ ... }}`) or a block scalar
+# cannot be checked here and fails. Not covered: an image named inside a `run:` script
+# (the MinIO `docker run` in ci.yml carries the compose digest by hand).
+while IFS= read -r file; do
+	[[ -f "$file" ]] || continue
+	while IFS=$'\t' read -r line ref; do
+		report "$file:$line image" "$ref"
+	done < <(awk '
+		function emit(ref) {
+			sub(/[ \t]+#.*$/, "", ref)
+			gsub(/["\047]/, "", ref)
+			sub(/[ \t]+$/, "", ref)
+			if (ref != "") print FNR "\t" ref
+		}
+		{ text = $0 }
+		text ~ /^[ \t]*#/ { next }
+		match(text, /^[ \t]*(-[ \t]+)?image:[ \t]*/) {
+			emit(substr(text, RSTART + RLENGTH)); next
+		}
+		match(text, /^[ \t]*(-[ \t]+)?container:[ \t]*/) {
+			rest = substr(text, RSTART + RLENGTH)
+			if (rest != "" && rest !~ /^[{#]/) { emit(rest); next }
+		}
+		match(text, /^[ \t]*(-[ \t]+)?uses:[ \t]*["\047]?docker:\/\//) {
+			emit(substr(text, RSTART + RLENGTH)); next
+		}
+		match(text, /[{,][ \t]*image:[ \t]*/) {
+			rest = substr(text, RSTART + RLENGTH)
+			sub(/[,}].*$/, "", rest)
+			emit(rest)
+		}' "$file")
+done < <(git ls-files --cached --others --exclude-standard -- \
+	'.github/workflows/*.yml' '.github/workflows/*.yaml')
 
 if ((failed)); then
 	echo "images-check: $failed of $checked images not pinned by tag and digest (name:tag@sha256:...)"
