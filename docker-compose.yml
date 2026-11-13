@@ -144,10 +144,11 @@ services:
     restart: unless-stopped
     logging: *logging
 
-  # Celery worker + beat for video moderation. Enabled by BE-29: the backend has no Celery
-  # app yet, so the service is off by default and starts only with `--profile worker`.
-  # No health check until then (INF-07 exemption): there is no worker to ask. BE-29 adds
-  # one, e.g. `celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME`.
+  # Celery worker + beat for video moderation. The Celery app exists since BE-07
+  # (backend/app/worker/celery_app.py), but there is no task to run until BE-29 adds the
+  # moderation task, so the service is off by default and starts only with `--profile worker`.
+  # No health check until it runs by default (INF-07 exemption); then it gets one, e.g.
+  # `celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME`.
   worker:
     profiles: ["worker"]
     build:
