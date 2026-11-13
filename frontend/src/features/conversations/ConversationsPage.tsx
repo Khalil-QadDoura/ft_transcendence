@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ConversationList } from "./ConversationList";
+import { ChatThread } from "./ChatThread";
 import type { ConversationItem } from "./types";
 
 export const ConversationsPage: React.FC = () => {
@@ -40,54 +41,11 @@ export const ConversationsPage: React.FC = () => {
           }`}
         >
           {selectedConvId ? (
-            <div className="flex h-full flex-col" data-testid="chat-thread-container">
-              {/* Header with back button for mobile */}
-              <div className="flex items-center space-x-3 border-b border-gray-100 p-4 dark:border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => navigate("/chat")}
-                  className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 md:hidden"
-                  data-testid="back-to-conversations-btn"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
-                    {selectedConversation?.peer?.display_name ||
-                      selectedConversation?.title ||
-                      `Conversation #${selectedConvId}`}
-                  </h3>
-                  {selectedConversation?.job_title && (
-                    <p className="truncate text-xs text-primary-600 dark:text-primary-400">
-                      Applied for: {selectedConversation.job_title}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Chat Thread Placeholder / Message History (FE-30) */}
-              <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400">
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                    />
-                  </svg>
-                </div>
-                <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                  Conversation Thread
-                </h4>
-                <p className="mt-1 max-w-sm text-xs text-gray-500 dark:text-gray-400">
-                  Connected via WebSocket. Live message history and interactive messaging thread
-                  ready.
-                </p>
-              </div>
-            </div>
+            <ChatThread
+              conversationId={selectedConvId}
+              conversation={selectedConversation}
+              onBack={() => navigate("/chat")}
+            />
           ) : (
             <div className="p-8 text-center" data-testid="select-conversation-prompt">
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
