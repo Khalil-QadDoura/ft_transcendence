@@ -1,6 +1,7 @@
 import React from "react";
 import { Avatar } from "../../components/Avatar";
 import { Badge } from "../../components/Badge";
+import { useText } from "../../i18n/useText";
 import type { ConversationItem } from "./types";
 
 export interface ConversationCardProps {
@@ -14,10 +15,13 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
   isSelected = false,
   onClick,
 }) => {
+  const { t } = useText();
   const displayName =
     conversation.peer?.display_name ||
     conversation.title ||
-    (conversation.type === "ai" ? "WOZU Assistant" : "Direct Conversation");
+    (conversation.type === "ai"
+      ? t("chat.assistant")
+      : t("chat.directConversation"));
 
   const avatarUrl = conversation.peer?.avatar_url || undefined;
 
@@ -30,10 +34,13 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
       const diffMins = Math.floor(diffMs / (1000 * 60));
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
 
-      if (diffMins < 1) return "Just now";
+      if (diffMins < 1) return t("chat.justNow");
       if (diffMins < 60) return `${diffMins}m ago`;
       if (diffHours < 24) return `${diffHours}h ago`;
-      return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      return date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      });
     } catch {
       return "";
     }
@@ -51,15 +58,16 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
       data-testid={`conversation-card-${conversation.id}`}
     >
       <div className="relative shrink-0">
-        <Avatar
-          src={avatarUrl}
-          name={displayName}
-          size="md"
-        />
+        <Avatar src={avatarUrl} name={displayName} size="md" />
         {conversation.unread_count > 0 && (
           <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-400 opacity-75"></span>
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary-600"></span>
+            <span
+              className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary-600"
+              data-testid="unread-badge"
+            >
+              <span className="sr-only">{conversation.unread_count}</span>
+            </span>
           </span>
         )}
       </div>
@@ -78,7 +86,11 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
               {displayName}
             </span>
             {conversation.job_title && (
-              <Badge variant="neutral" size="sm" className="hidden sm:inline-flex">
+              <Badge
+                variant="neutral"
+                size="sm"
+                className="hidden sm:inline-flex"
+              >
                 {conversation.job_title}
               </Badge>
             )}
@@ -97,19 +109,8 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
             }`}
             data-testid="conversation-snippet"
           >
-            {conversation.last_message_content || "No messages yet"}
+            {conversation.last_message_content || t("chat.noMessagesYet")}
           </p>
-
-          {conversation.unread_count > 0 && (
-            <Badge
-              variant="primary"
-              size="sm"
-              className="ml-2 shrink-0 font-semibold"
-              data-testid="unread-badge"
-            >
-              {conversation.unread_count}
-            </Badge>
-          )}
         </div>
       </div>
     </button>
