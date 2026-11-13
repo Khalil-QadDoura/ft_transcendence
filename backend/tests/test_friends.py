@@ -360,8 +360,8 @@ def test_list_friends_returns_avatar_url_and_online_status(client):
     """GET /api/friends uses Storage.avatar_url and batch online_user_ids cleanly."""
     client.app.dependency_overrides[get_current_user] = lambda: USER_A
     rows = [
-        (20, "Bob", "Builder", "Chef", "avatars/20/custom.png"),
-        (30, "Charlie", "Chaplin", "Actor", None),
+        (101, 20, "Bob", "Builder", "Chef", "avatars/20/custom.png"),
+        (102, 30, "Charlie", "Chaplin", "Actor", None),
     ]
 
     with (
@@ -375,6 +375,7 @@ def test_list_friends_returns_avatar_url_and_online_status(client):
     items = resp.json()
     assert len(items) == 2
     assert items[0] == {
+        "friendship_id": 101,
         "user_id": 20,
         "first_name": "Bob",
         "last_name": "Builder",
@@ -383,6 +384,7 @@ def test_list_friends_returns_avatar_url_and_online_status(client):
         "avatar_url": client.app.state.storage.public_url("avatars/20/custom.png"),
         "is_online": True,
     }
+    assert items[1]["friendship_id"] == 102
     assert items[1]["avatar_object_key"] is None
     assert items[1]["avatar_url"] == client.app.state.settings.default_avatar_url
     assert items[1]["is_online"] is False
@@ -411,12 +413,24 @@ def test_public_profile_friendship_statuses_and_privacy(client):
 
     bob = _fake_user(20, avatar_object_key="avatars/20/pic.webp")
     cases = [
-        (None, None),
-        (_fake_friendship(requester_id=10, addressee_id=20, status="pending"), "pending_sent"),
-        (_fake_friendship(requester_id=20, addressee_id=10, status="pending"), "pending_received"),
-        (_fake_friendship(requester_id=20, addressee_id=10, status="accepted"), "accepted"),
+        (None, None, None),
+        (
+            _fake_friendship(id=51, requester_id=10, addressee_id=20, status="pending"),
+            "pending_sent",
+            51,
+        ),
+        (
+            _fake_friendship(id=52, requester_id=20, addressee_id=10, status="pending"),
+            "pending_received",
+            52,
+        ),
+        (
+            _fake_friendship(id=53, requester_id=20, addressee_id=10, status="accepted"),
+            "accepted",
+            53,
+        ),
     ]
-    for rel, expected_status in cases:
+    for rel, expected_status, expected_fid in cases:
         with (
             patch("app.friends.repo.get_active_user", new_callable=AsyncMock, return_value=bob),
             patch(
@@ -431,13 +445,15 @@ def test_public_profile_friendship_statuses_and_privacy(client):
         data = resp.json()
         assert data["id"] == 20
         assert data["friendship_status"] == expected_status
+        assert data["friendship_id"] == expected_fid
         assert data["is_online"] is True
         assert data["avatar_url"] == client.app.state.storage.public_url("avatars/20/pic.webp")
         assert "email" not in data
         assert "birth_date" not in data
         assert "status" not in data
 
-    # Own profile returns friendship_status=None and survives Redis outage cleanly
+    # Own profile returns friendship_status=None, friendship_id=None
+    # and survives Redis outage cleanly
     alice = _fake_user(10, avatar_object_key=None)
     with (
         patch("app.friends.repo.get_active_user", new_callable=AsyncMock, return_value=alice),
@@ -450,6 +466,7 @@ def test_public_profile_friendship_statuses_and_privacy(client):
         own_resp = client.get("/api/users/10/profile", headers=AUTH_HEADER_A)
     assert own_resp.status_code == 200
     assert own_resp.json()["friendship_status"] is None
+    assert own_resp.json()["friendship_id"] is None
     assert own_resp.json()["is_online"] is False
     assert own_resp.json()["avatar_url"] == client.app.state.settings.default_avatar_url
 
@@ -570,18 +587,17 @@ def test_friends_real_database_lifecycle_and_single_query():
             == 409
         )
 
-        assert (
-            tc.get(f"/api/users/{bob_id}/profile", headers=alice_h).json()["friendship_status"]
-            == "pending_sent"
-        )
-        assert (
-            tc.get(f"/api/users/{alice_id}/profile", headers=bob_h).json()["friendship_status"]
-            == "pending_received"
-        )
-        assert (
-            tc.get(f"/api/users/{bob_id}/profile", headers=charlie_h).json()["friendship_status"]
-            is None
-        )
+        prof_bob = tc.get(f"/api/users/{bob_id}/profile", headers=alice_h).json()
+        assert prof_bob["friendship_status"] == "pending_sent"
+        assert prof_bob["friendship_id"] == req1_id
+
+        prof_alice = tc.get(f"/api/users/{alice_id}/profile", headers=bob_h).json()
+        assert prof_alice["friendship_status"] == "pending_received"
+        assert prof_alice["friendship_id"] == req1_id
+
+        prof_charlie = tc.get(f"/api/users/{bob_id}/profile", headers=charlie_h).json()
+        assert prof_charlie["friendship_status"] is None
+        assert prof_charlie["friendship_id"] is None
 
         # 3. Incoming lists & non-addressee protections
         assert tc.get("/api/friends/requests", headers=alice_h).json() == []
@@ -600,10 +616,9 @@ def test_friends_real_database_lifecycle_and_single_query():
             == "declined"
         )
         assert tc.post(f"/api/friends/requests/{req1_id}/accept", headers=bob_h).status_code == 409
-        assert (
-            tc.get(f"/api/users/{bob_id}/profile", headers=alice_h).json()["friendship_status"]
-            is None
-        )
+        prof_bob_declined = tc.get(f"/api/users/{bob_id}/profile", headers=alice_h).json()
+        assert prof_bob_declined["friendship_status"] is None
+        assert prof_bob_declined["friendship_id"] is None
 
         # 5. Re-request B -> A and accept; also friend Charlie -> A (custom avatar_object_key)
         r2 = tc.post("/api/friends/requests", json={"addressee_id": alice_id}, headers=bob_h)
@@ -613,6 +628,10 @@ def test_friends_real_database_lifecycle_and_single_query():
             tc.post(f"/api/friends/requests/{req2_id}/accept", headers=alice_h).json()["status"]
             == "accepted"
         )
+
+        prof_bob_accepted = tc.get(f"/api/users/{bob_id}/profile", headers=alice_h).json()
+        assert prof_bob_accepted["friendship_status"] == "accepted"
+        assert prof_bob_accepted["friendship_id"] == req2_id
 
         r3 = tc.post("/api/friends/requests", json={"addressee_id": alice_id}, headers=charlie_h)
         assert r3.status_code == 201
@@ -636,6 +655,7 @@ def test_friends_real_database_lifecycle_and_single_query():
         assert friends_resp.status_code == 200
         friend_items = friends_resp.json()
         assert [f["user_id"] for f in friend_items] == [bob_id, charlie_id]
+        assert [f["friendship_id"] for f in friend_items] == [req2_id, r3.json()["id"]]
         assert friend_items[0]["avatar_url"] == app.state.settings.default_avatar_url
         assert friend_items[1]["avatar_url"] == app.state.storage.public_url("avatars/3/pic.png")
         assert len(executed_sql) == 2  # 1 auth query + 1 joined friends query (zero N+1)
