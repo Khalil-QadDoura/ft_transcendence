@@ -103,7 +103,13 @@ async def get_room(session: AsyncSession, room_id: int) -> GameRoom | None:
 
 
 async def get_room_for_update(session: AsyncSession, room_id: int) -> GameRoom | None:
-    return await session.scalar(select(GameRoom).where(GameRoom.id == room_id).with_for_update())
+    stmt = (
+        select(GameRoom)
+        .where(GameRoom.id == room_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return await session.scalar(stmt)
 
 
 async def list_participants(session: AsyncSession, room_id: int) -> list[GameParticipant]:
