@@ -1,3 +1,4 @@
+import { ProfilePage } from "../features/profile/ProfilePage";
 import { useText } from "../i18n/useText";
 import {
   ForgotPassword,
@@ -83,8 +84,8 @@ export const routes: RouteObject[] = [
         element: <RequireSession />,
         children: [
           { path: "settings", element: <AccountSettings /> },
+          { path: "profile", element: <ProfilePage /> },
           ...pages([
-            ["profile", "routes.profile"],
             ["friends", "routes.friends"],
             ["chat", "routes.chat"],
             ["chat/:id", "routes.conversation"],

@@ -191,3 +191,51 @@ test("Khalil backend: recovery, one-use reset, password change and account delet
     gateway.login({ ...credentials, password: "a-new-password-for-testing" }),
   ).rejects.toMatchObject({ status: 401 });
 });
+
+test("Khalil backend: profile read, changed-fields PATCH, age validation and persisted data", async () => {
+  activeClient = await import("../src/api/client");
+  const { profileApi } = await import("../src/features/profile/api");
+  const gateway = (
+    await import("../src/features/auth/gateway")
+  ).createAuthGateway();
+  const credentials = {
+    email: `fe09-${crypto.randomUUID()}@example.com`,
+    password: `Test-${crypto.randomUUID()}`,
+  };
+  await gateway.register(credentials);
+  const mail = await waitForMail(credentials.email);
+  await gateway.verify(
+    new URL(((await mail.json()) as { link: string }).link).searchParams.get(
+      "token",
+    )!,
+  );
+  await gateway.login(credentials);
+  try {
+    const initial = await profileApi.get();
+    expect(initial.email).toBe(credentials.email);
+    expect(initial.first_name).toBeNull();
+    const saved = await profileApi.patch({
+      first_name: "Profile",
+      last_name: "Review",
+      position: "Engineer",
+      birth_date: "1990-01-02",
+      bio: "Integration test",
+    });
+    expect(saved.position).toBe("Engineer");
+    await profileApi.patch({ bio: "Changed biography only" });
+    const updated = await profileApi.get();
+    expect(updated).toMatchObject({
+      first_name: "Profile",
+      last_name: "Review",
+      position: "Engineer",
+      birth_date: "1990-01-02",
+      bio: "Changed biography only",
+    });
+    await expect(
+      profileApi.patch({ birth_date: `${new Date().getFullYear() - 5}-01-01` }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect((await profileApi.get()).birth_date).toBe("1990-01-02");
+  } finally {
+    await (await import("../src/features/account/api")).accountApi.remove();
+  }
+});
