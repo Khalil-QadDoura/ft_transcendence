@@ -8,7 +8,7 @@ const friend = z.object({
   position: z.string().nullable(),
   avatar_url: z.string(),
   is_online: z.boolean(),
-  friendship_id: userId.optional(),
+  friendship_id: userId,
 });
 const request = z.object({
   id: userId,
