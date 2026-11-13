@@ -3,11 +3,13 @@ import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Spinner } from "../../components/Spinner";
+import { useText } from "../../i18n/useText";
 import { deleteVideo, listMyVideos, postVideo, unpostVideo } from "./api";
 import type { MyVideoItem } from "./types";
 import { VideoRecorderModal } from "./VideoRecorderModal";
 
 export const VideoResumePage: React.FC = () => {
+  const { t } = useText();
   const [videos, setVideos] = useState<MyVideoItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export const VideoResumePage: React.FC = () => {
       await fetchVideos();
     } catch (err: unknown) {
       const error = err as { message?: string };
-      setError(error.message || "Failed to post video.");
+      setError(error.message || t("media.uploadFailed"));
     } finally {
       setActionLoading(null);
     }
@@ -52,7 +54,7 @@ export const VideoResumePage: React.FC = () => {
       await fetchVideos();
     } catch (err: unknown) {
       const error = err as { message?: string };
-      setError(error.message || "Failed to unpost video.");
+      setError(error.message || t("media.uploadFailed"));
     } finally {
       setActionLoading(null);
     }
@@ -68,7 +70,7 @@ export const VideoResumePage: React.FC = () => {
       await fetchVideos();
     } catch (err: unknown) {
       const error = err as { message?: string };
-      setError(error.message || "Failed to delete video.");
+      setError(error.message || t("media.uploadFailed"));
     } finally {
       setActionLoading(null);
     }
@@ -79,11 +81,11 @@ export const VideoResumePage: React.FC = () => {
   const getModerationBadge = (status: string) => {
     switch (status) {
       case "approved":
-        return <Badge variant="success">Approved</Badge>;
+        return <Badge variant="success">{t("media.approved")}</Badge>;
       case "pending":
-        return <Badge variant="warning">In Review</Badge>;
+        return <Badge variant="warning">{t("media.inReview")}</Badge>;
       case "rejected":
-        return <Badge variant="danger">Needs Attention</Badge>;
+        return <Badge variant="danger">{t("media.needsAttention")}</Badge>;
       default:
         return <Badge variant="neutral">{status}</Badge>;
     }
@@ -94,10 +96,10 @@ export const VideoResumePage: React.FC = () => {
       <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-            Video Résumé
+            {t("media.videoResume")}
           </h1>
           <p className="mt-1 text-base text-gray-600 dark:text-gray-400">
-            A 30-second introduction that brings your story and passion to life.
+            {t("media.pageSubtitle")}
           </p>
         </div>
         <Button
@@ -105,7 +107,7 @@ export const VideoResumePage: React.FC = () => {
           variant="primary"
           data-testid="record-video-cta"
         >
-          {activeVideo ? "Record New Video" : "Record Your Pitch"}
+          {activeVideo ? t("media.recordNewVideo") : t("media.recordYourPitch")}
         </Button>
       </div>
 
@@ -125,15 +127,15 @@ export const VideoResumePage: React.FC = () => {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center space-x-3">
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                  Current Pitch
+                  {t("media.currentPitch")}
                 </h2>
                 {getModerationBadge(activeVideo.moderation_status)}
                 {activeVideo.lifecycle_status === "posted" && (
-                  <Badge variant="primary">Published in Feed</Badge>
+                  <Badge variant="primary">{t("media.publishedInFeed")}</Badge>
                 )}
               </div>
               <span className="text-xs text-gray-400 font-mono">
-                Duration: {activeVideo.duration_sec}s
+                {t("media.durationSec", { duration: activeVideo.duration_sec })}
               </span>
             </div>
 
@@ -149,7 +151,7 @@ export const VideoResumePage: React.FC = () => {
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
               <div className="text-xs text-gray-500 dark:text-gray-400">
-                Created: {new Date(activeVideo.created_at).toLocaleDateString()}
+                {t("media.createdDate", { date: new Date(activeVideo.created_at).toLocaleDateString() })}
               </div>
               <div className="flex items-center space-x-2">
                 {activeVideo.lifecycle_status === "posted" ? (
@@ -159,7 +161,7 @@ export const VideoResumePage: React.FC = () => {
                     size="sm"
                     disabled={actionLoading === activeVideo.id}
                   >
-                    Unpost from Feed
+                    {t("media.unpostFromFeed")}
                   </Button>
                 ) : (
                   <Button
@@ -171,7 +173,7 @@ export const VideoResumePage: React.FC = () => {
                       actionLoading === activeVideo.id
                     }
                   >
-                    Post to Feed
+                    {t("media.postToFeed")}
                   </Button>
                 )}
                 <Button
@@ -181,7 +183,7 @@ export const VideoResumePage: React.FC = () => {
                   className="text-red-600 hover:text-red-700 dark:text-red-400"
                   disabled={actionLoading === activeVideo.id}
                 >
-                  Delete
+                  {t("media.delete")}
                 </Button>
               </div>
             </div>
@@ -200,15 +202,14 @@ export const VideoResumePage: React.FC = () => {
             </svg>
           </div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-            No video résumé yet
+            {t("media.noVideoYet")}
           </h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-gray-500 dark:text-gray-400">
-            Companies receive dozens of identical text CVs. A short 30-second video introduction
-            dramatically increases your interview callback rate.
+            {t("media.noVideoDesc")}
           </p>
           <div className="mt-6">
             <Button onClick={() => setIsModalOpen(true)} variant="primary">
-              Record Your Video Now
+              {t("media.recordVideoNow")}
             </Button>
           </div>
         </Card>
@@ -217,21 +218,21 @@ export const VideoResumePage: React.FC = () => {
       {/* Recording Best Practices Guide */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">1. Good Lighting & Sound</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip1Title")}</h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Face a window or lamp, position your camera at eye level, and ensure minimal background noise.
+            {t("media.tip1Desc")}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">2. The 30-Second Formula</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip2Title")}</h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Who you are (5s), your core expertise & favorite technologies (15s), and what exciting challenges you seek (10s).
+            {t("media.tip2Desc")}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">3. Be Authentic</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip3Title")}</h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Speak naturally like you're talking to a future colleague. You can retake as many times as you like before submitting!
+            {t("media.tip3Desc")}
           </p>
         </div>
       </div>
