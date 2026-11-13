@@ -7,7 +7,7 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
 
-.PHONY: all env certs up down logs test files-check mail-check fclean re
+.PHONY: all env certs up down logs test https-check files-check mail-check fclean re
 
 all: env up
 
@@ -50,6 +50,11 @@ test: env
 	docker build -q --target build -t wozu-frontend-test ./frontend
 	docker run --rm wozu-frontend-test \
 		sh -c 'npm run lint && npm run format:check && npm run typecheck && npm test'
+
+# Routes of the one HTTPS origin against the running stack: frontend with SPA fallback,
+# /api, the /ws handshake, redirects, internal routes blocked (INF-03).
+https-check:
+	@./infra/proxy/smoke-test.sh
 
 # Presigned upload and download through https://<host>/files and the bucket policy, against
 # the running stack; ends with a snippet for the Chrome console (INF-04).
