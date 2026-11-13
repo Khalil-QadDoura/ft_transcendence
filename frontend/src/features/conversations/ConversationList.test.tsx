@@ -2,7 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
 import { ConversationList } from "./ConversationList";
-import type { ConversationItem, WsConversationUpdatedPayload, WsMessagePayload } from "./types";
+import type {
+  ConversationItem,
+  WsConversationUpdatedPayload,
+  WsMessagePayload,
+} from "./types";
 
 // Mock the API module
 vi.mock("./api", () => ({
@@ -79,13 +83,17 @@ describe("ConversationList Component (FE-29)", () => {
     await waitFor(() => {
       // First conversation details
       expect(screen.getByText("Sarah Recruiter")).toBeInTheDocument();
-      expect(screen.getByText("Looking forward to meeting you!")).toBeInTheDocument();
+      expect(
+        screen.getByText("Looking forward to meeting you!"),
+      ).toBeInTheDocument();
       expect(screen.getByText("Senior Frontend Engineer")).toBeInTheDocument();
       expect(screen.getByTestId("unread-badge")).toHaveTextContent("2");
 
       // Second conversation details (unread count 0 -> no unread badge)
       expect(screen.getByText("Khalil Kaddoura")).toBeInTheDocument();
-      expect(screen.getByText("Did you check the pull request?")).toBeInTheDocument();
+      expect(
+        screen.getByText("Did you check the pull request?"),
+      ).toBeInTheDocument();
     });
   });
 
@@ -103,12 +111,17 @@ describe("ConversationList Component (FE-29)", () => {
     fireEvent.click(card);
 
     expect(mockOnSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 1, last_message_content: "Looking forward to meeting you!" }),
+      expect.objectContaining({
+        id: 1,
+        last_message_content: "Looking forward to meeting you!",
+      }),
     );
   });
 
   it("updates snippet, increments unread count, and bumps conversation to top on WebSocket message", async () => {
-    vi.mocked(api.listConversations).mockResolvedValueOnce([...mockConversations]);
+    vi.mocked(api.listConversations).mockResolvedValueOnce([
+      ...mockConversations,
+    ]);
     const mockOnSelect = vi.fn();
 
     render(<ConversationList onSelectConversation={mockOnSelect} />);
@@ -118,7 +131,8 @@ describe("ConversationList Component (FE-29)", () => {
     });
 
     // Simulate real-time message arriving for conversation 2 (currently at index 1)
-    const messageHandler = wsListeners.get("message") as WsCallback<WsMessagePayload> | undefined;
+    const messageHandler = wsListeners.get("message") as
+      WsCallback<WsMessagePayload> | undefined;
     expect(messageHandler).toBeDefined();
 
     messageHandler?.({
@@ -131,7 +145,9 @@ describe("ConversationList Component (FE-29)", () => {
 
     await waitFor(() => {
       // The updated message snippet must be displayed
-      expect(screen.getByText("Let's review the WebSocket client together!")).toBeInTheDocument();
+      expect(
+        screen.getByText("Let's review the WebSocket client together!"),
+      ).toBeInTheDocument();
 
       // Check card order in DOM: conversation 2 should now be first!
       const cards = screen.getAllByTestId(/^conversation-card-/);
@@ -141,7 +157,9 @@ describe("ConversationList Component (FE-29)", () => {
   });
 
   it("updates unread count when conversation_updated event is received", async () => {
-    vi.mocked(api.listConversations).mockResolvedValueOnce([...mockConversations]);
+    vi.mocked(api.listConversations).mockResolvedValueOnce([
+      ...mockConversations,
+    ]);
     const mockOnSelect = vi.fn();
 
     render(<ConversationList onSelectConversation={mockOnSelect} />);
@@ -151,8 +169,7 @@ describe("ConversationList Component (FE-29)", () => {
     });
 
     const updateHandler = wsListeners.get("conversation_updated") as
-      | WsCallback<WsConversationUpdatedPayload>
-      | undefined;
+      WsCallback<WsConversationUpdatedPayload> | undefined;
     expect(updateHandler).toBeDefined();
 
     updateHandler?.({

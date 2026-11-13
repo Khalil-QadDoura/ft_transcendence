@@ -104,8 +104,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 remainingChars < 0
                   ? "text-red-500"
                   : remainingChars < 50
-                  ? "text-amber-500"
-                  : "text-gray-400"
+                    ? "text-amber-500"
+                    : "text-gray-400"
               }`}
               data-testid="char-counter"
             >

@@ -347,7 +347,8 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       yesterday.setDate(yesterday.getDate() - 1);
 
       if (d.toDateString() === today.toDateString()) return t("chat.today");
-      if (d.toDateString() === yesterday.toDateString()) return t("chat.yesterday");
+      if (d.toDateString() === yesterday.toDateString())
+        return t("chat.yesterday");
       return d.toLocaleDateString(undefined, {
         month: "short",
         day: "numeric",

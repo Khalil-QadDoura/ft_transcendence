@@ -163,8 +163,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 ? "border border-gray-200 bg-gray-50 text-gray-400 italic dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-500"
                 : "bg-primary-600 text-white dark:bg-primary-500"
               : isDeleted
-              ? "border border-gray-200 bg-gray-50 text-gray-400 italic dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-500"
-              : "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                ? "border border-gray-200 bg-gray-50 text-gray-400 italic dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-500"
+                : "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
           }`}
         >
           {isDeleted ? (

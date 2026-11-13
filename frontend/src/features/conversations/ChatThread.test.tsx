@@ -106,12 +106,20 @@ describe("ChatThread Component (FE-30)", () => {
 
     await waitFor(() => {
       // Header details
-      expect(screen.getByTestId("thread-peer-name")).toHaveTextContent("Sarah Recruiter");
-      expect(screen.getByText("Applied for: Full Stack Developer")).toBeInTheDocument();
+      expect(screen.getByTestId("thread-peer-name")).toHaveTextContent(
+        "Sarah Recruiter",
+      );
+      expect(
+        screen.getByText("Applied for: Full Stack Developer"),
+      ).toBeInTheDocument();
 
       // Messages rendered
-      expect(screen.getByText("Hi Sarah, thanks for reaching out!")).toBeInTheDocument();
-      expect(screen.getByText("Are you available for a chat today?")).toBeInTheDocument();
+      expect(
+        screen.getByText("Hi Sarah, thanks for reaching out!"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Are you available for a chat today?"),
+      ).toBeInTheDocument();
     });
 
     // Mark as read was called for incoming message (id: 101)
@@ -150,7 +158,9 @@ describe("ChatThread Component (FE-30)", () => {
 
     await waitFor(() => {
       expect(api.listMessages).toHaveBeenCalledWith(10, 100, 50);
-      expect(screen.getByText("Hi Sarah, thanks for reaching out!")).toBeInTheDocument();
+      expect(
+        screen.getByText("Hi Sarah, thanks for reaching out!"),
+      ).toBeInTheDocument();
       expect(screen.queryByTestId("load-older-btn")).not.toBeInTheDocument();
     });
   });
@@ -190,11 +200,15 @@ describe("ChatThread Component (FE-30)", () => {
     const textarea = screen.getByTestId("message-textarea");
     const sendBtn = screen.getByTestId("send-message-btn");
 
-    fireEvent.change(textarea, { target: { value: "Let's schedule a call at 3pm." } });
+    fireEvent.change(textarea, {
+      target: { value: "Let's schedule a call at 3pm." },
+    });
     fireEvent.click(sendBtn);
 
     // Optimistically rendered immediately
-    expect(screen.getByText("Let's schedule a call at 3pm.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Let's schedule a call at 3pm."),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(api.sendMessage).toHaveBeenCalledWith(
@@ -245,12 +259,16 @@ describe("ChatThread Component (FE-30)", () => {
     const textarea = screen.getByTestId("message-textarea");
     const sendBtn = screen.getByTestId("send-message-btn");
 
-    fireEvent.change(textarea, { target: { value: "Retried message content" } });
+    fireEvent.change(textarea, {
+      target: { value: "Retried message content" },
+    });
     fireEvent.click(sendBtn);
 
     // Wait for failure state
     await waitFor(() => {
-      expect(screen.getByTitle("Failed to send. Click to retry.")).toBeInTheDocument();
+      expect(
+        screen.getByTitle("Failed to send. Click to retry."),
+      ).toBeInTheDocument();
     });
 
     // Click retry
@@ -286,7 +304,9 @@ describe("ChatThread Component (FE-30)", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Hi Sarah, thanks for reaching out!")).toBeInTheDocument();
+      expect(
+        screen.getByText("Hi Sarah, thanks for reaching out!"),
+      ).toBeInTheDocument();
     });
 
     // Click edit button
@@ -294,7 +314,9 @@ describe("ChatThread Component (FE-30)", () => {
     fireEvent.click(editBtn);
 
     const editInput = screen.getByTestId("edit-msg-input-100");
-    fireEvent.change(editInput, { target: { value: "Updated greeting message" } });
+    fireEvent.change(editInput, {
+      target: { value: "Updated greeting message" },
+    });
 
     const saveBtn = screen.getByTestId("save-edit-btn-100");
     fireEvent.click(saveBtn);
@@ -304,7 +326,9 @@ describe("ChatThread Component (FE-30)", () => {
         content: "Updated greeting message",
       });
       expect(screen.getByText("Updated greeting message")).toBeInTheDocument();
-      expect(screen.getByTestId("edited-badge-100")).toHaveTextContent("(edited)");
+      expect(screen.getByTestId("edited-badge-100")).toHaveTextContent(
+        "(edited)",
+      );
     });
   });
 
@@ -325,7 +349,9 @@ describe("ChatThread Component (FE-30)", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Hi Sarah, thanks for reaching out!")).toBeInTheDocument();
+      expect(
+        screen.getByText("Hi Sarah, thanks for reaching out!"),
+      ).toBeInTheDocument();
     });
 
     // Click delete trigger
@@ -359,7 +385,9 @@ describe("ChatThread Component (FE-30)", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Hi Sarah, thanks for reaching out!")).toBeInTheDocument();
+      expect(
+        screen.getByText("Hi Sarah, thanks for reaching out!"),
+      ).toBeInTheDocument();
     });
 
     // 1. Incoming live message from peer
@@ -376,7 +404,9 @@ describe("ChatThread Component (FE-30)", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Let's speak in 10 minutes.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Let's speak in 10 minutes."),
+      ).toBeInTheDocument();
     });
 
     // 2. Incoming message_updated event
@@ -392,7 +422,9 @@ describe("ChatThread Component (FE-30)", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Let's speak in 20 minutes instead.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Let's speak in 20 minutes instead."),
+      ).toBeInTheDocument();
     });
 
     // 3. Incoming message_deleted event

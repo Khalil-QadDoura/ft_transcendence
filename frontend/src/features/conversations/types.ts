@@ -33,11 +33,7 @@ export interface UnreadSummary {
 }
 
 export type MessageStatus =
-  | "sending"
-  | "sent"
-  | "delivered"
-  | "read"
-  | "failed";
+  "sending" | "sent" | "delivered" | "read" | "failed";
 
 export interface MessageItem {
   id: number;
