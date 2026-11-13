@@ -6,6 +6,7 @@ import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
+import { MyApplicationsPage } from "../features/applications/MyApplicationsPage";
 function ComingSoon({ title }: { title: string }) {
   const { t } = useText();
   return (
@@ -78,17 +79,20 @@ export const routes: RouteObject[] = [
       ]),
       {
         element: <RequireSession />,
-        children: pages([
-          ["profile", "routes.profile"],
-          ["friends", "routes.friends"],
-          ["chat", "routes.chat"],
-          ["chat/:id", "routes.conversation"],
-          ["videos", "routes.videos"],
-          ["employer/*", "routes.employer"],
-          ["game", "routes.game"],
-          ["game/rooms/:id", "routes.room"],
-          ["settings", "routes.settings"],
-        ]),
+        children: [
+          ...pages([
+            ["profile", "routes.profile"],
+            ["friends", "routes.friends"],
+            ["chat", "routes.chat"],
+            ["chat/:id", "routes.conversation"],
+            ["videos", "routes.videos"],
+            ["employer/*", "routes.employer"],
+            ["game", "routes.game"],
+            ["game/rooms/:id", "routes.room"],
+            ["settings", "routes.settings"],
+          ]),
+          { path: "applications", element: <MyApplicationsPage /> },
+        ],
       },
       { path: "*", element: <Missing /> },
     ],
