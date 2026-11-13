@@ -74,17 +74,23 @@ describe("VideoResumePage Component (FE-26)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("empty-videos-card")).toBeInTheDocument();
       expect(screen.getByText("No video résumé yet")).toBeInTheDocument();
-      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent("0 / 3 Videos");
+      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent(
+        "0 / 3 Videos",
+      );
     });
   });
 
   it("renders active recordings with quota, moderation badges and player", async () => {
-    vi.mocked(mediaApi.listMyVideos).mockResolvedValueOnce({ items: mockVideos });
+    vi.mocked(mediaApi.listMyVideos).mockResolvedValueOnce({
+      items: mockVideos,
+    });
 
     render(<VideoResumePage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent("2 / 3 Videos");
+      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent(
+        "2 / 3 Videos",
+      );
       // Featured posted video section
       expect(screen.getByTestId("active-posted-section")).toBeInTheDocument();
       expect(screen.getByTestId("badge-approved")).toBeInTheDocument();
@@ -114,16 +120,22 @@ describe("VideoResumePage Component (FE-26)", () => {
       },
     ];
 
-    vi.mocked(mediaApi.listMyVideos).mockResolvedValueOnce({ items: threeVideos });
+    vi.mocked(mediaApi.listMyVideos).mockResolvedValueOnce({
+      items: threeVideos,
+    });
 
     render(<VideoResumePage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent("3 / 3 Videos");
+      expect(screen.getByTestId("video-quota-counter")).toHaveTextContent(
+        "3 / 3 Videos",
+      );
       const recordBtn = screen.getByTestId("record-video-cta");
       expect(recordBtn).toBeDisabled();
       expect(
-        screen.getByText("Limit of 3 videos reached. Delete one to record a new one."),
+        screen.getByText(
+          "Limit of 3 videos reached. Delete one to record a new one.",
+        ),
       ).toBeInTheDocument();
     });
   });
@@ -234,7 +246,9 @@ describe("VideoResumePage Component (FE-26)", () => {
   });
 
   it("handles live WebSocket video_moderated event and updates badge", async () => {
-    vi.mocked(mediaApi.listMyVideos).mockResolvedValueOnce({ items: mockVideos });
+    vi.mocked(mediaApi.listMyVideos).mockResolvedValueOnce({
+      items: mockVideos,
+    });
 
     render(<VideoResumePage />);
 

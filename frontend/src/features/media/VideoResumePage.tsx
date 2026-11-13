@@ -23,22 +23,25 @@ export const VideoResumePage: React.FC = () => {
 
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchVideos = useCallback(async (silent = false) => {
-    try {
-      if (!silent) setLoading(true);
-      setError(null);
-      const res = await listMyVideos();
-      setVideos(res.items || []);
-    } catch (err: unknown) {
-      const e = err as { message?: string };
-      if (!silent) {
-        setError(e.message || t("media.failedToLoad"));
-        setVideos([]);
+  const fetchVideos = useCallback(
+    async (silent = false) => {
+      try {
+        if (!silent) setLoading(true);
+        setError(null);
+        const res = await listMyVideos();
+        setVideos(res.items || []);
+      } catch (err: unknown) {
+        const e = err as { message?: string };
+        if (!silent) {
+          setError(e.message || t("media.failedToLoad"));
+          setVideos([]);
+        }
+      } finally {
+        if (!silent) setLoading(false);
       }
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [t]);
+    },
+    [t],
+  );
 
   useEffect(() => {
     fetchVideos();
@@ -164,7 +167,6 @@ export const VideoResumePage: React.FC = () => {
       className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8"
       data-testid="video-resume-page"
     >
-      {/* Header section with quota and action button */}
       <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
@@ -178,7 +180,10 @@ export const VideoResumePage: React.FC = () => {
               className="font-medium text-gray-700 dark:text-gray-300"
               data-testid="video-quota-counter"
             >
-              {t("media.quotaVideos", { count: activeVideos.length, max: MAX_VIDEOS })}
+              {t("media.quotaVideos", {
+                count: activeVideos.length,
+                max: MAX_VIDEOS,
+              })}
             </span>
           </div>
         </div>
@@ -190,7 +195,9 @@ export const VideoResumePage: React.FC = () => {
             disabled={isAtLimit}
             data-testid="record-video-cta"
           >
-            {activeVideos.length === 0 ? t("media.recordYourPitch") : t("media.recordNewVideo")}
+            {activeVideos.length === 0
+              ? t("media.recordYourPitch")
+              : t("media.recordNewVideo")}
           </Button>
           {isAtLimit && (
             <span className="mt-1 text-xs text-amber-600 dark:text-amber-400">
@@ -211,9 +218,17 @@ export const VideoResumePage: React.FC = () => {
           <Spinner size="lg" />
         </div>
       ) : activeVideos.length === 0 ? (
-        <Card className="mb-10 p-10 text-center" data-testid="empty-videos-card">
+        <Card
+          className="mb-10 p-10 text-center"
+          data-testid="empty-videos-card"
+        >
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-50 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400">
-            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg
+              className="h-8 w-8"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -257,8 +272,12 @@ export const VideoResumePage: React.FC = () => {
                     <div className="flex items-center space-x-3">
                       {getModerationBadge(postedVideo.moderation_status)}
                       <span className="text-xs text-gray-400 font-mono">
-                        {t("media.durationSec", { duration: postedVideo.duration_sec })}
-                        {postedVideo.size_bytes ? ` • ${formatFileSize(postedVideo.size_bytes)}` : ""}
+                        {t("media.durationSec", {
+                          duration: postedVideo.duration_sec,
+                        })}
+                        {postedVideo.size_bytes
+                          ? ` • ${formatFileSize(postedVideo.size_bytes)}`
+                          : ""}
                       </span>
                     </div>
                   </div>
@@ -275,7 +294,11 @@ export const VideoResumePage: React.FC = () => {
 
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {t("media.createdDate", { date: new Date(postedVideo.created_at).toLocaleDateString() })}
+                      {t("media.createdDate", {
+                        date: new Date(
+                          postedVideo.created_at,
+                        ).toLocaleDateString(),
+                      })}
                     </div>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -311,7 +334,10 @@ export const VideoResumePage: React.FC = () => {
                 {t("media.allVideosTitle")}
               </h2>
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                {t("media.allVideosQuota", { count: activeVideos.length, max: MAX_VIDEOS })}
+                {t("media.allVideosQuota", {
+                  count: activeVideos.length,
+                  max: MAX_VIDEOS,
+                })}
               </span>
             </div>
 
@@ -348,11 +374,19 @@ export const VideoResumePage: React.FC = () => {
 
                       <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
                         <div className="flex justify-between font-mono">
-                          <span>{t("media.durationSec", { duration: video.duration_sec })}</span>
+                          <span>
+                            {t("media.durationSec", {
+                              duration: video.duration_sec,
+                            })}
+                          </span>
                           <span>{formatFileSize(video.size_bytes)}</span>
                         </div>
                         <div>
-                          {t("media.createdDate", { date: new Date(video.created_at).toLocaleDateString() })}
+                          {t("media.createdDate", {
+                            date: new Date(
+                              video.created_at,
+                            ).toLocaleDateString(),
+                          })}
                         </div>
                       </div>
                     </div>
@@ -401,7 +435,9 @@ export const VideoResumePage: React.FC = () => {
                                 onClick={() => handlePost(video.id)}
                                 variant="secondary"
                                 size="sm"
-                                disabled={!isApproved || actionLoading === video.id}
+                                disabled={
+                                  !isApproved || actionLoading === video.id
+                                }
                                 title={
                                   !isApproved
                                     ? isPending
@@ -440,19 +476,25 @@ export const VideoResumePage: React.FC = () => {
       {/* Recording Best Practices Guide */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip1Title")}</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">
+            {t("media.tip1Title")}
+          </h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {t("media.tip1Desc")}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip2Title")}</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">
+            {t("media.tip2Title")}
+          </h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {t("media.tip2Desc")}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100">{t("media.tip3Title")}</h3>
+          <h3 className="font-medium text-gray-900 dark:text-gray-100">
+            {t("media.tip3Title")}
+          </h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {t("media.tip3Desc")}
           </p>

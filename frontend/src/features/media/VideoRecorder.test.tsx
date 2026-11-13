@@ -43,7 +43,9 @@ describe("VideoRecorder Component (FE-25)", () => {
       stop() {
         this.state = "inactive";
         if (this.ondataavailable) {
-          this.ondataavailable({ data: new Blob(["dummy-video-data"], { type: "video/mp4" }) });
+          this.ondataavailable({
+            data: new Blob(["dummy-video-data"], { type: "video/mp4" }),
+          });
         }
         if (this.onstop) {
           this.onstop();
@@ -83,14 +85,18 @@ describe("VideoRecorder Component (FE-25)", () => {
   it("handles camera permission denied with helpful error message", async () => {
     const permError = new Error("Permission denied");
     permError.name = "NotAllowedError";
-    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValueOnce(permError);
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValueOnce(
+      permError,
+    );
 
     render(<VideoRecorder />);
     fireEvent.click(screen.getByTestId("start-camera-button"));
 
     await waitFor(() => {
       expect(screen.getByTestId("error-message")).toBeInTheDocument();
-      expect(screen.getByText(/Camera or microphone permission was denied/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Camera or microphone permission was denied/i),
+      ).toBeInTheDocument();
       expect(screen.getByTestId("retry-camera-button")).toBeInTheDocument();
     });
   });
@@ -108,11 +114,15 @@ describe("VideoRecorder Component (FE-25)", () => {
     fireEvent.click(recordBtn);
 
     expect(screen.getByTestId("stop-recording-button")).toBeInTheDocument();
-    expect(screen.getByTestId("recording-timer")).toHaveTextContent("00:00 / 00:10");
+    expect(screen.getByTestId("recording-timer")).toHaveTextContent(
+      "00:00 / 00:10",
+    );
 
     // Advance 3 seconds
     vi.advanceTimersByTime(3000);
-    expect(screen.getByTestId("recording-timer")).toHaveTextContent("00:03 / 00:10");
+    expect(screen.getByTestId("recording-timer")).toHaveTextContent(
+      "00:03 / 00:10",
+    );
 
     // Click stop recording
     fireEvent.click(screen.getByTestId("stop-recording-button"));
@@ -138,7 +148,9 @@ describe("VideoRecorder Component (FE-25)", () => {
     fireEvent.click(retakeBtn);
 
     await waitFor(() => {
-      expect(global.URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-video-url");
+      expect(global.URL.revokeObjectURL).toHaveBeenCalledWith(
+        "blob:mock-video-url",
+      );
       expect(screen.getByTestId("live-camera-preview")).toBeInTheDocument();
     });
   });
@@ -222,7 +234,9 @@ describe("VideoRecorder Component (FE-25)", () => {
     fireEvent.click(uploadBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Storage server unreachable/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Storage server unreachable/i),
+      ).toBeInTheDocument();
       expect(screen.getByText("Retry Upload")).toBeInTheDocument();
     });
   });

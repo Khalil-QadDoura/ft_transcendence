@@ -31,7 +31,12 @@ export async function requestVideoUploadUrl(
     });
   } catch (err: unknown) {
     // Graceful fallback for alternate backend route mount
-    if (typeof err === "object" && err !== null && "status" in err && (err as { status: number }).status === 404) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "status" in err &&
+      (err as { status: number }).status === 404
+    ) {
       return await apiClient<VideoUploadUrlOut>("/videos/upload-url", {
         method: "POST",
         body,
@@ -58,7 +63,10 @@ export function uploadVideoWithProgress(
     if (xhr.upload && onProgress) {
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
-          const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+          const percent = Math.min(
+            100,
+            Math.round((event.loaded / event.total) * 100),
+          );
           onProgress(percent);
         }
       };
@@ -69,12 +77,20 @@ export function uploadVideoWithProgress(
         if (onProgress) onProgress(100);
         resolve();
       } else {
-        reject(new Error(`Upload failed with storage status ${xhr.status}: ${xhr.statusText}`));
+        reject(
+          new Error(
+            `Upload failed with storage status ${xhr.status}: ${xhr.statusText}`,
+          ),
+        );
       }
     };
 
     xhr.onerror = () => {
-      reject(new Error("Network error during video upload. Please check connection and retry."));
+      reject(
+        new Error(
+          "Network error during video upload. Please check connection and retry.",
+        ),
+      );
     };
 
     xhr.ontimeout = () => {
@@ -97,7 +113,12 @@ export async function confirmVideoUpload(
       body: payload,
     });
   } catch (err: unknown) {
-    if (typeof err === "object" && err !== null && "status" in err && (err as { status: number }).status === 404) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "status" in err &&
+      (err as { status: number }).status === 404
+    ) {
       return await apiClient<VideoStatusOut>("/videos/confirm", {
         method: "POST",
         body: payload,
@@ -116,7 +137,12 @@ export async function listMyVideos(): Promise<MyVideosOut> {
       method: "GET",
     });
   } catch (err: unknown) {
-    if (typeof err === "object" && err !== null && "status" in err && (err as { status: number }).status === 404) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "status" in err &&
+      (err as { status: number }).status === 404
+    ) {
       return await apiClient<MyVideosOut>("/videos/mine", {
         method: "GET",
       });
@@ -138,16 +164,22 @@ export async function postVideo(videoId: number): Promise<VideoStatusOut> {
  * Unpost a video from the feed.
  */
 export async function unpostVideo(videoId: number): Promise<VideoStatusOut> {
-  return await apiClient<VideoStatusOut>(`/media/intro-video/${videoId}/unpost`, {
-    method: "POST",
-  });
+  return await apiClient<VideoStatusOut>(
+    `/media/intro-video/${videoId}/unpost`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 /**
  * Soft delete an intro video.
  */
 export async function deleteVideo(videoId: number): Promise<VideoStatusOut> {
-  return await apiClient<VideoStatusOut>(`/media/intro-video/${videoId}/delete`, {
-    method: "POST",
-  });
+  return await apiClient<VideoStatusOut>(
+    `/media/intro-video/${videoId}/delete`,
+    {
+      method: "POST",
+    },
+  );
 }

@@ -3,10 +3,7 @@
  */
 
 export type ModerationStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "moderation_error";
+  "pending" | "approved" | "rejected" | "moderation_error";
 export type LifecycleStatus = "loaded" | "posted" | "unposted" | "deleted";
 
 export interface WsVideoModeratedPayload {
