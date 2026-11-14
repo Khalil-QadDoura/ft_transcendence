@@ -53,7 +53,7 @@ def main():
     app.dependency_overrides[get_mailer] = CapturedMail
 
     def link(message):
-        return re.search(re.escape(frontend.rstrip("/")) + r"/verify-email\?token=\S+", message["body"])[0]
+        return re.search(re.escape(frontend.rstrip("/")) + r"/(?:verify-email|reset-password)\?token=\S+", message["body"])[0]
 
     @app.get("/__review/mail", include_in_schema=False)
     def mail(email: str):
@@ -67,7 +67,7 @@ def main():
     def inbox():
         return "<h1>Local test inbox</h1><p>Captured mail only.</p>" + "".join(
             f'<article><h2>{html.escape(message["to"])}</h2>'
-            f'<a href="{html.escape(link(message))}">Verify test account</a></article>'
+            f'<a href="{html.escape(link(message))}">Open test email link</a></article>'
             for message in reversed(messages)
         )
 
