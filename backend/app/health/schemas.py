@@ -18,7 +18,10 @@ class HealthOut(BaseModel):
     """Overall service health status and per-component breakdown (BE-31 / M14)."""
 
     status: Literal["ok", "degraded", "down"] = Field(
-        description="Overall service health: ok when all components are up, degraded if worker or minio are down, down if db or redis are down."
+        description=(
+            "Overall service health: ok when all components are up, "
+            "degraded if worker or minio are down, down if db or redis are down."
+        )
     )
     components: HealthComponentsOut
 

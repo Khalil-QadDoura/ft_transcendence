@@ -15,7 +15,8 @@ app/
                  queue (Celery tasks on Redis)
   db/            base (Base + naming convention), session (each app's engine, get_session),
                  mixins (TimestampMixin, AuditMixin), models (imports every table model)
-  health/        GET /api/health and the internal database check
+  health/        GET /api/health with per-component checks (db, redis, minio, worker)
+                 and the internal database check (BE-31)
   auth/          /api/auth: register, verify, login, refresh, logout (BE-03), change-password,
                  forgot-password, reset-password (BE-04), plus constants (lifetimes, rate limits),
                  security (Argon2id, JWT, reset tokens), deps (get_current_user)
