@@ -321,14 +321,20 @@ async def list_participants(session: AsyncSession, conv_id: int) -> list[Convers
 async def mark_read(
     session: AsyncSession, conv_id: int, user_id: int, last_message_id: int
 ) -> None:
-    """Advance participant's last_read_message_id pointer."""
+    """Advance active participant's last_read_message_id pointer monotonically."""
     await session.execute(
         update(ConversationParticipant)
         .where(
             ConversationParticipant.conversation_id == conv_id,
             ConversationParticipant.user_id == user_id,
+            ConversationParticipant.left_at.is_(None),
         )
-        .values(last_read_message_id=last_message_id)
+        .values(
+            last_read_message_id=func.greatest(
+                func.coalesce(ConversationParticipant.last_read_message_id, 0),
+                last_message_id,
+            )
+        )
     )
 
 
@@ -384,7 +390,7 @@ async def list_messages(
         Message.conversation_id == conv_id,
         Message.deleted_at.is_(None),
     )
-    if before_id:
+    if before_id is not None:
         q = q.where(Message.id < before_id)
     q = q.order_by(Message.id.desc()).limit(limit + 1)
     rows = list((await session.execute(q)).scalars().all())
@@ -393,42 +399,57 @@ async def list_messages(
     return list(reversed(items)), prev_before
 
 
-async def mark_delivered(session: AsyncSession, msg_id: int) -> Message | None:
-    """Transition message status from sent to delivered."""
+async def mark_delivered(
+    session: AsyncSession, msg_id: int, *, viewer_id: int | None = None
+) -> Message | None:
+    """Transition message status from sent to delivered for a recipient."""
+    q = update(Message).where(
+        Message.id == msg_id,
+        Message.deleted_at.is_(None),
+        Message.status == "sent",
+    )
+    if viewer_id is not None:
+        q = q.where(Message.author_id.is_distinct_from(viewer_id))
     result = await session.execute(
-        update(Message)
-        .where(Message.id == msg_id, Message.status == "sent")
-        .values(status="delivered")
-        .returning(Message)
+        q.values(status="delivered").returning(Message).execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 
 
-async def mark_message_read(session: AsyncSession, conv_id: int, up_to_id: int) -> None:
-    """Mark all messages up to specified ID as read."""
-    await session.execute(
-        update(Message)
-        .where(
-            Message.conversation_id == conv_id,
-            Message.id <= up_to_id,
-            Message.status != "read",
-        )
-        .values(status="read")
+async def mark_message_read(
+    session: AsyncSession, conv_id: int, up_to_id: int, *, viewer_id: int | None = None
+) -> None:
+    """Mark non-deleted peer messages up to specified ID as read."""
+    q = update(Message).where(
+        Message.conversation_id == conv_id,
+        Message.id <= up_to_id,
+        Message.deleted_at.is_(None),
+        Message.status != "read",
     )
+    if viewer_id is not None:
+        q = q.where(Message.author_id.is_distinct_from(viewer_id))
+    await session.execute(q.values(status="read"))
 
 
-async def soft_delete_message(session: AsyncSession, msg_id: int) -> None:
-    """Mark message deleted_at timestamp without removing row."""
-    await session.execute(update(Message).where(Message.id == msg_id).values(deleted_at=func.now()))
+async def soft_delete_message(session: AsyncSession, msg_id: int) -> bool:
+    """Mark message deleted_at timestamp once without removing the row."""
+    result = await session.execute(
+        update(Message)
+        .where(Message.id == msg_id, Message.deleted_at.is_(None))
+        .values(deleted_at=func.now())
+        .returning(Message.id)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def edit_message(session: AsyncSession, msg_id: int, content: str) -> Message | None:
-    """Update message content and set edited_at timestamp."""
+    """Update non-deleted message content and set edited_at timestamp."""
     result = await session.execute(
         update(Message)
         .where(Message.id == msg_id, Message.deleted_at.is_(None))
         .values(content=content, edited_at=func.now())
         .returning(Message)
+        .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 

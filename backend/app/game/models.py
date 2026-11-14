@@ -1,6 +1,7 @@
 """Turing Duel: rooms, who is in them (people and bots), their chat and their votes."""
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -14,13 +15,14 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
 # The server moves a room through these states on its own clock.
-ROOM_STATES = ("waiting", "discussion", "voting", "finished")
+ROOM_STATES = ("waiting", "discussion", "voting", "finished", "closed")
 GUESSES = ("bot", "human")
 
 
@@ -33,6 +35,10 @@ class GameRoom(TimestampMixin, Base):
     state: Mapped[str] = mapped_column(
         Enum(*ROOM_STATES, name="game_room_state"), server_default="waiting"
     )
+    # Set once on room creation (created + 180 s), never extended, used to close/auto-start.
+    room_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Server-only hidden bot schedule (never exposed in any schema or WebSocket event).
+    bot_plan: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     discussion_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     voting_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
