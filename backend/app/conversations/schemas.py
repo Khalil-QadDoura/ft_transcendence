@@ -36,6 +36,16 @@ class ParticipantOut(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
+class PeerOut(BaseModel):
+    id: int
+    first_name: str | None = None
+    last_name: str | None = None
+    display_name: str
+    avatar_url: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class ConversationOut(BaseModel):
     id: int
     type: str
@@ -47,6 +57,7 @@ class ConversationOut(BaseModel):
     last_message_author_id: int | None = None
     unread_count: int = 0
     updated_at: datetime
+    peer: PeerOut | None = None
 
     model_config = {"from_attributes": True}
 

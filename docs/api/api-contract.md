@@ -89,7 +89,7 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403, 404 |
 
 - `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`; `friendship_id`: `int | null` pointing to the friendship row when a relationship exists.
-- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at}`.
+- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at, peer}`. For direct conversations (`type: "direct"`), `peer` is `{id, first_name, last_name, display_name, avatar_url}` representing the other participant; `peer` is `null` for non-direct chats.
 - `MessageOut` = `{id, conversation_id, author_id, content, status (sent / delivered / read), message_type, reply_to_id, idempotency_key, edited_at, deleted_at, created_at}`.
 
 ## Companies, jobs and applications
@@ -214,8 +214,8 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | Direction | `type` | Payload | When |
 | --- | --- | --- | --- |
 | client → server | `ping` | — | Keep-alive; send every 25–30 s. It also keeps you online: a socket that has not pinged for 60 s stops counting as online |
-| client → server | `delivered` | `{message_id}` at top level | Message shown on this device |
-| client → server | `read` | `{conversation_id, last_message_id}` at top level | Conversation opened / scrolled to bottom |
+| client → server | `delivered` | `{message_id}` (top-level or inside `payload`) | Message shown on this device |
+| client → server | `read` | `{conversation_id, last_message_id}` (top-level or inside `payload`) | Conversation opened / scrolled to bottom |
 | client → server (`/game/ws`) | `chat_message` | `{text}` at top level | Player sends a room message during discussion |
 | server → client | `pong` | `null` | Reply to ping |
 | server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
@@ -232,6 +232,9 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `game_message` | `{id, participant_id, display_label, text}` | Room message from a player or a bot |
 | server → client | `game_phase_voting` | `{room_id, state: "voting", phase_ends_at}` | Discussion ended |
 | server → client | `game_phase_finished` | `{room_id}` | Voting ended, results ready |
+
+- **Unread counts in `conversation_updated`**: For the reader who emitted the read receipt, `unread_count` is their updated **total unread messages count** across all conversations (matching `GET /conversations/unread`), allowing the client to update global navigation badges directly while setting that specific conversation row's unread counter to 0. For other participants in the room, `unread_count` is `null`.
+- **Receipt envelopes**: Client-sent `delivered` and `read` frames are accepted both at top level (`{"type": "delivered", "message_id": 6}`) and inside a `payload` dictionary (`{"type": "delivered", "payload": {"message_id": 6}}`).
 
 **Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
 
