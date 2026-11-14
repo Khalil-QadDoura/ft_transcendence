@@ -56,6 +56,18 @@ class Settings(BaseSettings):
     # the API serves a plain grey picture; a full address (https://...) works too.
     default_avatar_url: str = "/api/media/avatar/default.svg"
 
+    # Turing Duel matchmaking & room timings (BE-27). Defaults follow DOC-08; tests override
+    # these cleanly to exercise fast timers, deterministic bot probabilities, and races.
+    game_bot_probability: float = Field(default=0.7, ge=0.0, le=1.0)
+    game_bot_min_delay_sec: float = Field(default=10.0, ge=0.0)
+    game_bot_max_delay_sec: float = Field(default=30.0, ge=0.0)
+    game_wait_timeout_sec: float = Field(default=180.0, gt=0.0)
+    game_discussion_sec: float = Field(default=120.0, gt=0.0)
+    game_voting_sec: float = Field(default=45.0, gt=0.0)
+    game_tick_interval_sec: float = Field(default=0.5, gt=0.0)
+    game_bot_chat_min_delay_sec: float = Field(default=4.0, ge=0.0)
+    game_bot_chat_max_delay_sec: float = Field(default=15.0, ge=0.0)
+
 
 @lru_cache
 def get_settings() -> Settings:

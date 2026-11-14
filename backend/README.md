@@ -26,16 +26,17 @@ app/
   friends/       friend requests, single-query friends list, /users/{id}/profile with
                  avatar_url and online status (BE-22)
   jobs/          CRUD, /jobs/mine counters, draft vs open visibility (BE-25)
-  realtime/      POST /api/ws/ticket and the WebSocket at /ws (BE-06): one-time tickets,
+  realtime/      POST /api/ws/ticket and the WebSocket at /ws (BE-06, BE-24): one-time tickets,
                  authenticate_ws(), send_to_user() through Redis pub/sub, presence in Redis,
-                 plus constants (ticket lifetime, presence TTL); connection_manager.py is
-                 BE-23's manager.send_to_user(), publishing on the same per-user channel
+                 delivered / read frames, plus constants (ticket lifetime, presence TTL)
   media/         /api/media: intro video upload-url, confirm, mine, post, unpost, delete,
                  feed (BE-07); avatar and company logo upload-url and confirm, the default
                  avatar picture (BE-08); plus constants (video and picture limits, link lifetimes)
   worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
-  conversations/ applications/ game/
-                 only models.py so far (BE-02); each feature card adds its other four files
+  conversations/ direct chats, participants, idempotent messages, edits/deletes, read state (BE-23, BE-24)
+  game/          /api/game: Redis-locked matchmaking queue, waiting room lifecycle, start now,
+                 hidden random bot plan, staggered joins, template bot chat and server phases (BE-27)
+  applications/  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
     schemas.py     Pydantic request / response shapes
