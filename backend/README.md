@@ -22,6 +22,8 @@ app/
   users/         /api/users/me: read, partial update, soft delete (BE-05), avatar_url (BE-08),
                  plus constants (minimum age, field lengths)
   companies/     CRUD, /companies/me returns 200 null for job seekers (BE-21)
+  friends/       friend requests, single-query friends list, /users/{id}/profile with
+                 avatar_url and online status (BE-22)
   jobs/          CRUD, /jobs/mine counters, draft vs open visibility (BE-25)
   realtime/      POST /api/ws/ticket and the WebSocket at /ws (BE-06): one-time tickets,
                  authenticate_ws(), send_to_user() through Redis pub/sub, presence in Redis,
@@ -33,7 +35,7 @@ app/
   worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
   game/          /api/game: Redis-locked matchmaking queue, waiting room lifecycle, start now,
                  hidden random bot plan, staggered joins, template bot chat and server phases (BE-27)
-  friends/ conversations/ applications/
+  conversations/ applications/
                  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables

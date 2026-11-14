@@ -21,6 +21,7 @@ from app.core.redis_client import setup_redis
 from app.core.request_id import request_id_middleware
 from app.core.storage import Storage
 from app.db.session import setup_database
+from app.friends import routes as friends
 from app.game import routes as game
 from app.game import service as game_service
 from app.health import routes as health
@@ -77,6 +78,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(health.router)
     api.include_router(auth.router)
     api.include_router(users.router)
+    api.include_router(friends.router)
+    api.include_router(friends.users_router)
     api.include_router(companies.router)
     api.include_router(conversations.router)
     api.include_router(jobs.router)
