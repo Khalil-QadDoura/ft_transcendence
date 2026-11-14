@@ -156,7 +156,7 @@ test.each(["remove", "accept", "decline", "cancel"] as const)(
       last_name: null,
       position: null,
       bio: null,
-      avatar_url: null,
+      avatar_url: "/avatar.png",
       is_online: false,
       friendship_status: changed
         ? null
