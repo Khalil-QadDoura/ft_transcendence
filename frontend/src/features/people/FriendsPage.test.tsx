@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { FriendsPage } from "./FriendsPage";
 import { friendsApi } from "./friends";
+import { ApiError } from "../../api/client";
 import { peopleApi } from "./api";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 afterEach(() => vi.restoreAllMocks());
@@ -46,6 +47,12 @@ test("failed accept rolls back the optimistic request removal", async () => {
           .click(),
       );
     await click("Requests");
+    expect(
+      div.querySelector('button[aria-label="Accept request from member 42"]'),
+    ).not.toBeNull();
+    expect(
+      div.querySelector('button[aria-label="Decline request from member 42"]'),
+    ).not.toBeNull();
     await click("Accept");
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -136,3 +143,71 @@ test("failed removal stays in the dialog, restores the friend, and can be retrie
     div.remove();
   }
 });
+
+test.each([404, 409])(
+  "stale removal %s closes the dialog and reconciles the list",
+  async (status) => {
+    const friend = {
+      user_id: 42,
+      friendship_id: 81,
+      first_name: "Ada",
+      last_name: "Lovelace",
+      position: null,
+      avatar_url: "/avatar.png",
+      is_online: false,
+    };
+    let removed = false;
+    vi.spyOn(friendsApi, "list").mockImplementation(async () =>
+      removed ? [] : [friend],
+    );
+    vi.spyOn(friendsApi, "requests").mockResolvedValue([]);
+    const remove = vi
+      .spyOn(peopleApi, "remove")
+      .mockImplementation(async () => {
+        removed = true;
+        throw new ApiError(status, "changed", "Relationship changed");
+      });
+    const div = document.createElement("div");
+    document.body.append(div);
+    const root = createRoot(div);
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const settle = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      });
+    const removeButton = (scope: Element) =>
+      Array.from(scope.querySelectorAll("button")).find(
+        (button) => button.textContent === "Remove friend",
+      )!;
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={cache}>
+            <MemoryRouter>
+              <FriendsPage />
+            </MemoryRouter>
+          </QueryClientProvider>,
+        ),
+      );
+      await settle();
+      await act(async () => removeButton(div).click());
+      expect(remove).not.toHaveBeenCalled();
+      const dialog = div.querySelector('[role="dialog"]')!;
+      await act(async () => removeButton(dialog).click());
+      await settle();
+      expect(div.querySelector('[role="dialog"]')).toBeNull();
+      expect(div.querySelector('[role="alert"]')?.textContent).toContain(
+        "connection changed",
+      );
+      expect(div.textContent).not.toContain("Ada Lovelace");
+      expect(div.textContent).toContain("Open someone's profile");
+      expect(remove.mock.calls).toEqual([[81]]);
+    } finally {
+      await act(() => root.unmount());
+      cache.clear();
+      div.remove();
+    }
+  },
+);

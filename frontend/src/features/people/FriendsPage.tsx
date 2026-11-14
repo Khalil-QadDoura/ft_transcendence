@@ -7,6 +7,7 @@ import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import { Avatar } from "../../components/Avatar";
 import { Modal } from "../../components/Modal";
+import { ApiError } from "../../api/client";
 import { peopleApi, userId } from "./api";
 import { friendsApi, type Friend, type FriendRequest } from "./friends";
 import "./people.css";
@@ -50,9 +51,12 @@ export function FriendsPage() {
     try {
       await action();
       setTarget(null);
-    } catch {
+    } catch (cause) {
       cache.setQueryData(key, before);
-      setError(t("actionError"));
+      const changed =
+        cause instanceof ApiError && [404, 409].includes(cause.status);
+      if (changed) setTarget(null);
+      setError(t(changed ? "changed" : "actionError"));
     } finally {
       await cache.invalidateQueries({ queryKey: ["friends"] });
       await cache.invalidateQueries({ queryKey: ["people"] });
@@ -91,10 +95,15 @@ export function FriendsPage() {
         role="group"
         aria-label={t("friendsTitle")}
       >
-        <Button aria-pressed={tab === "list"} onClick={() => setTab("list")}>
+        <Button
+          variant={tab === "list" ? "primary" : "outline"}
+          aria-pressed={tab === "list"}
+          onClick={() => setTab("list")}
+        >
           {t("friendsTab")}
         </Button>
         <Button
+          variant={tab === "requests" ? "primary" : "outline"}
           aria-pressed={tab === "requests"}
           onClick={() => setTab("requests")}
         >
@@ -166,6 +175,9 @@ export function FriendsPage() {
                     </h2>
                     <div className="people-actions">
                       <Button
+                        aria-label={t("acceptRequest", {
+                          id: request.requester_id,
+                        })}
                         disabled={busy}
                         onClick={() =>
                           void change("requests", request.id, () =>
@@ -176,6 +188,9 @@ export function FriendsPage() {
                         {t("accept")}
                       </Button>
                       <Button
+                        aria-label={t("declineRequest", {
+                          id: request.requester_id,
+                        })}
                         disabled={busy}
                         variant="outline"
                         onClick={() =>

@@ -32,5 +32,7 @@
   "noFriends": "Your circle starts with a hello.",
   "noRequests": "You�re all caught up.",
   "emptyHint": "Open someone�s profile to make a new connection.",
+  "acceptRequest": "Accept request from member {{id}}",
+  "declineRequest": "Decline request from member {{id}}",
   "requestFrom": "Request from member {{id}}"
 }
