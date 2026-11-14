@@ -42,7 +42,14 @@ def test_route_mailer_records_email_without_network():
 async def test_async_client_reaches_health_endpoint(async_client):
     response = await async_client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["components"] == {
+        "db": "ok",
+        "redis": "ok",
+        "minio": "ok",
+        "worker": "ok",
+    }
     assert len(response.headers["x-request-id"]) == 32
 
 
@@ -101,7 +108,7 @@ async def test_async_db_client_registers_inside_the_test_transaction(async_db_cl
 
 
 def test_sync_client_coexists_with_async_infrastructure(client):
-    assert client.get("/api/health").json() == {"status": "ok"}
+    assert client.get("/api/health").json()["status"] == "ok"
 
 
 def test_build_app_isolates_test_mailbox_per_instance():

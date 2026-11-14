@@ -37,6 +37,8 @@ from sqlalchemy.pool import NullPool
 from app.core.config import Settings
 from app.core.limiter import limiter
 from app.core.mailer import get_mailer
+from app.core.queue import get_queue
+from app.core.redis_client import get_redis
 from app.db.session import get_session
 from app.main import create_app
 
@@ -147,6 +149,62 @@ def sql(statement: str, **params) -> list:
     return asyncio.run(run())
 
 
+class FakeHealthSession:
+    """Stands in for an active database session for tests that don't need real PostgreSQL."""
+
+    async def execute(self, statement, *args, **kwargs):
+        return None
+
+    async def commit(self) -> None:
+        pass
+
+    async def rollback(self) -> None:
+        pass
+
+    async def refresh(self, instance, *args, **kwargs) -> None:
+        pass
+
+    async def flush(self) -> None:
+        pass
+
+
+class FakeHealthRedis:
+    """Stands in for Redis for non-Redis tests, answering ping and heartbeat."""
+
+    async def ping(self) -> bool:
+        return True
+
+    async def get(self, name: str) -> bytes | None:
+        if name == "worker:heartbeat":
+            return b"1"
+        return None
+
+    async def aclose(self) -> None:
+        pass
+
+
+class FakeHealthQueue:
+    """Celery queue mock answering control inspect ping and tasks."""
+
+    class _Celery:
+        class _Control:
+            class _Inspect:
+                def ping(self):
+                    return {"celery@test": {"ok": "pong"}}
+
+            def inspect(self, timeout=None):
+                return self._Inspect()
+
+        def __init__(self):
+            self.control = self._Control()
+
+    def __init__(self):
+        self.celery = self._Celery()
+
+    def moderate_video(self, video_id: int, object_key: str) -> None:
+        pass
+
+
 def build_app(**overrides: object) -> FastAPI:
     """A fresh app for one test; keyword arguments change its settings, e.g. env="dev".
 
@@ -164,6 +222,16 @@ def build_app(**overrides: object) -> FastAPI:
     mailbox = TestMailbox()
     app.state.test_mailbox = mailbox
     app.dependency_overrides[get_mailer] = lambda: mailbox
+
+    # Default healthy stubs for non-DB / non-infrastructure tests (BE-31)
+    if "database_url" not in overrides:
+        app.dependency_overrides.setdefault(get_session, lambda: FakeHealthSession())
+    if "redis_url" not in overrides:
+        app.dependency_overrides.setdefault(get_redis, lambda: FakeHealthRedis())
+    if "minio_endpoint" not in overrides:
+        app.state.storage.internal.bucket_exists = lambda bucket: True
+    app.dependency_overrides.setdefault(get_queue, lambda: FakeHealthQueue())
+
     return app
 
 
