@@ -98,6 +98,25 @@ def redis_skip_reason() -> str | None:
 REDIS_SKIP_REASON = redis_skip_reason()
 needs_redis = pytest.mark.skipif(REDIS_SKIP_REASON is not None, reason=str(REDIS_SKIP_REASON))
 
+TEST_MINIO_ENDPOINT = os.environ.get("TEST_MINIO_ENDPOINT", "")
+
+
+def minio_skip_reason() -> str | None:
+    """Why the MinIO tests cannot run here, or None when they can."""
+    if not TEST_MINIO_ENDPOINT:
+        return "TEST_MINIO_ENDPOINT is not set"
+    try:
+        parts = TEST_MINIO_ENDPOINT.split(":", 1)
+        host = parts[0]
+        port = int(parts[1]) if len(parts) > 1 else 9000
+        socket.create_connection((host, port), timeout=2).close()
+    except (OSError, ValueError):
+        return f"no MinIO answers at {TEST_MINIO_ENDPOINT}"
+    return None
+
+
+MINIO_SKIP_REASON = minio_skip_reason()
+
 
 @contextmanager
 def running_server(app: FastAPI) -> Iterator[str]:
@@ -223,14 +242,14 @@ def build_app(**overrides: object) -> FastAPI:
     app.state.test_mailbox = mailbox
     app.dependency_overrides[get_mailer] = lambda: mailbox
 
-    # Default healthy stubs for non-DB / non-infrastructure tests (BE-31)
-    if "database_url" not in overrides:
+    # Default healthy stubs when running without real background services (BE-31)
+    if DATABASE_SKIP_REASON is not None and "database_url" not in overrides:
         app.dependency_overrides.setdefault(get_session, lambda: FakeHealthSession())
-    if "redis_url" not in overrides:
+    if REDIS_SKIP_REASON is not None and "redis_url" not in overrides:
         app.dependency_overrides.setdefault(get_redis, lambda: FakeHealthRedis())
-    if "minio_endpoint" not in overrides:
+        app.dependency_overrides.setdefault(get_queue, lambda: FakeHealthQueue())
+    if MINIO_SKIP_REASON is not None and "minio_endpoint" not in overrides:
         app.state.storage.internal.bucket_exists = lambda bucket: True
-    app.dependency_overrides.setdefault(get_queue, lambda: FakeHealthQueue())
 
     return app
 

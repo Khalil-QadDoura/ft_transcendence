@@ -134,6 +134,12 @@ class MockQueue:
 
 def test_health_all_components_ok_returns_200(client):
     """When DB, Redis, MinIO, and Celery worker are all up, overall status is 'ok' (HTTP 200)."""
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=b"1")
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
+    client.app.dependency_overrides[get_queue] = lambda: MockQueue(
+        ping_res={"worker": {"ok": "pong"}}
+    )
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {
@@ -149,8 +155,10 @@ def test_health_all_components_ok_returns_200(client):
 
 def test_health_auxiliary_worker_down_returns_200_degraded(client):
     """When worker is down but core (db, redis) and minio are up: status 'degraded' (HTTP 200)."""
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
     client.app.dependency_overrides[get_queue] = lambda: MockQueue(ping_res=None)
-    client.app.dependency_overrides[get_redis] = lambda: MockRedis(heartbeat=None)
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=None)
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {
@@ -166,7 +174,12 @@ def test_health_auxiliary_worker_down_returns_200_degraded(client):
 
 def test_health_auxiliary_minio_down_returns_200_degraded(client):
     """When minio is down but core (db, redis) and worker are up: status 'degraded' (HTTP 200)."""
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=b"1")
     client.app.dependency_overrides[get_storage] = lambda: MockStorage(raises=True)
+    client.app.dependency_overrides[get_queue] = lambda: MockQueue(
+        ping_res={"worker": {"ok": "pong"}}
+    )
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {
@@ -182,7 +195,12 @@ def test_health_auxiliary_minio_down_returns_200_degraded(client):
 
 def test_health_core_redis_down_returns_503_down(client):
     """When Redis is down: status 'down' (HTTP 503)."""
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
     client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=False)
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
+    client.app.dependency_overrides[get_queue] = lambda: MockQueue(
+        ping_res={"worker": {"ok": "pong"}}
+    )
     response = client.get("/api/health")
     assert response.status_code == 503
     payload = response.json()
@@ -193,6 +211,11 @@ def test_health_core_redis_down_returns_503_down(client):
 def test_health_core_db_down_returns_503_down(client):
     """When PostgreSQL is down: status 'down' (HTTP 503)."""
     client.app.dependency_overrides[get_session] = lambda: MockSession(fails=True)
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=b"1")
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
+    client.app.dependency_overrides[get_queue] = lambda: MockQueue(
+        ping_res={"worker": {"ok": "pong"}}
+    )
     response = client.get("/api/health")
     assert response.status_code == 503
     payload = response.json()
@@ -203,8 +226,9 @@ def test_health_core_db_down_returns_503_down(client):
 def test_health_multiple_components_down_returns_503_down(client):
     """When both core (db) and auxiliary (worker) are down: status 'down' (HTTP 503)."""
     client.app.dependency_overrides[get_session] = lambda: MockSession(fails=True)
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=None)
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
     client.app.dependency_overrides[get_queue] = lambda: MockQueue(ping_res=None)
-    client.app.dependency_overrides[get_redis] = lambda: MockRedis(heartbeat=None)
     response = client.get("/api/health")
     assert response.status_code == 503
     assert response.json() == {
@@ -221,6 +245,11 @@ def test_health_multiple_components_down_returns_503_down(client):
 def test_health_probe_timeout_bounded(client):
     """Slow component probes timeout within 1.0s and overall check finishes promptly."""
     client.app.dependency_overrides[get_session] = lambda: MockSession(delay=1.5)
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=b"1")
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
+    client.app.dependency_overrides[get_queue] = lambda: MockQueue(
+        ping_res={"worker": {"ok": "pong"}}
+    )
     start = time.perf_counter()
     response = client.get("/api/health")
     duration = time.perf_counter() - start
@@ -234,10 +263,12 @@ def test_health_no_leaked_secrets_or_hostnames(client):
     """Ensure hostnames, worker node ids, and internal credentials are never exposed."""
     secret_host = "worker-node-42.internal.cluster.priv"
     secret_token = "ultra-secret-key-xyz"
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=None)
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
     client.app.dependency_overrides[get_queue] = lambda: MockQueue(
         ping_res={f"celery@{secret_host}": {"ok": secret_token}}
     )
-    client.app.dependency_overrides[get_redis] = lambda: MockRedis(heartbeat=None)
 
     response = client.get("/api/health")
     assert response.status_code == 200
@@ -248,9 +279,13 @@ def test_health_no_leaked_secrets_or_hostnames(client):
 
 def test_health_worker_heartbeat_fast_path(client):
     """Worker heartbeat in Redis marks worker ok without calling Celery inspect."""
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
     # Mock inspect raises RuntimeError, proving it was never called
     client.app.dependency_overrides[get_queue] = lambda: MockQueue(raises=True)
-    client.app.dependency_overrides[get_redis] = lambda: MockRedis(heartbeat=b"active")
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(
+        ping_ok=True, heartbeat=b"active"
+    )
 
     response = client.get("/api/health")
     assert response.status_code == 200
@@ -259,10 +294,12 @@ def test_health_worker_heartbeat_fast_path(client):
 
 def test_health_worker_celery_inspect_fallback(client):
     """When heartbeat key is absent, Celery inspect ping is used as fallback."""
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
     client.app.dependency_overrides[get_queue] = lambda: MockQueue(
         ping_res={"celery@worker": {"ok": "pong"}}
     )
-    client.app.dependency_overrides[get_redis] = lambda: MockRedis(heartbeat=None)
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=None)
 
     response = client.get("/api/health")
     assert response.status_code == 200
@@ -271,8 +308,10 @@ def test_health_worker_celery_inspect_fallback(client):
 
 def test_health_worker_both_fail(client):
     """When both heartbeat and Celery inspect fail, worker is down."""
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=True)
     client.app.dependency_overrides[get_queue] = lambda: MockQueue(raises=True)
-    client.app.dependency_overrides[get_redis] = lambda: MockRedis(heartbeat=None)
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=None)
 
     response = client.get("/api/health")
     assert response.status_code == 200
