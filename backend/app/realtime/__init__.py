@@ -1,5 +1,1 @@
-"""Realtime WebSocket and pub/sub package."""
-
-from app.realtime.connection_manager import manager
-
-__all__ = ["manager"]
+"""Realtime WebSocket and Redis pub/sub package (BE-06 / BE-24)."""
