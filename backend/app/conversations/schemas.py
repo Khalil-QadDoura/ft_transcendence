@@ -80,7 +80,7 @@ class EditMessageRequest(BaseModel):
 
 
 class ReadRequest(BaseModel):
-    last_message_id: int
+    last_message_id: int = Field(gt=0)
 
 
 class AddParticipantRequest(BaseModel):

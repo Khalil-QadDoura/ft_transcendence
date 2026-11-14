@@ -84,9 +84,9 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | DELETE | `/conversations/{id}/participants/{uid}` | Bearer | — | 204 | 403 |
 | GET | `/conversations/{id}/messages` | Bearer | query `before_id`, `limit` | 200 `{items: MessageOut[] oldest→newest, prev_before_id}` | 403, 404 |
 | POST | `/conversations/{id}/messages` | Bearer | `{content 1–4000, reply_to_id?, idempotency_key? ≤ 64}` | 200 `{items: [MessageOut]}` + WS push | 403, 404 |
-| PATCH | `/conversations/{id}/messages/{mid}` | Bearer | `{content}` | 200 `MessageOut` | 403 not yours, 409 after 15 min |
-| DELETE | `/conversations/{id}/messages/{mid}` | Bearer | — | 204 (soft) | 403 not yours |
-| POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403 |
+| PATCH | `/conversations/{id}/messages/{mid}` | Bearer | `{content}` | 200 `MessageOut` + WS `message_updated` | 403 not yours, 404, 409 after 15 min |
+| DELETE | `/conversations/{id}/messages/{mid}` | Bearer | — | 204 (soft) + WS `message_deleted` | 403 not yours, 404 |
+| POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403, 404 |
 
 - `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`; `friendship_id`: `int | null` pointing to the friendship row when a relationship exists.
 - `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at}`.
@@ -219,6 +219,8 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `pong` | `null` | Reply to ping |
 | server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
 | server → client | `message` | `MessageOut` | New message in any of my conversations (mine too) |
+| server → client | `message_updated` | `MessageOut` | Author edited a message within 15 min (BE-24) |
+| server → client | `message_deleted` | `{id, conversation_id}` | Author soft-deleted a message (BE-24) |
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
 | server → client | `game_room_formed` | `{room_id}` | Matchmaking put me in a room |
