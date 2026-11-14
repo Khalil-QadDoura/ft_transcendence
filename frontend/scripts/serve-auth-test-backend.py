@@ -52,6 +52,20 @@ def main():
 
     app.dependency_overrides[get_mailer] = CapturedMail
 
+    class StubRedis:
+        async def ping(self):
+            return True
+
+        async def get(self, *a, **kw):
+            return None
+
+        async def aclose(self):
+            pass
+
+    from app.core.redis_client import get_redis
+
+    app.dependency_overrides[get_redis] = StubRedis
+
     def link(message):
         return re.search(re.escape(frontend.rstrip("/")) + r"/(?:verify-email|reset-password)\?token=\S+", message["body"])[0]
 
