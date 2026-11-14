@@ -234,8 +234,17 @@ def build_app(**overrides: object) -> FastAPI:
         "env": "prod",
         "internal_api_key": INTERNAL_KEY,
         "frontend_base_url": "https://localhost",
-        **overrides,
     }
+    if "redis_url" not in overrides and TEST_REDIS_URL and REDIS_SKIP_REASON is None:
+        settings["redis_url"] = TEST_REDIS_URL
+    if (
+        "minio_internal_endpoint" not in overrides
+        and TEST_MINIO_ENDPOINT
+        and MINIO_SKIP_REASON is None
+    ):
+        settings["minio_internal_endpoint"] = TEST_MINIO_ENDPOINT
+    settings.update(overrides)
+
     app = create_app(Settings(**settings))
     # Real SMTP/Brevo tests instantiate Mailer directly. Route tests never send mail.
     mailbox = TestMailbox()
@@ -245,10 +254,12 @@ def build_app(**overrides: object) -> FastAPI:
     # Default healthy stubs when running without real background services (BE-31)
     if DATABASE_SKIP_REASON is not None and "database_url" not in overrides:
         app.dependency_overrides.setdefault(get_session, lambda: FakeHealthSession())
-    if REDIS_SKIP_REASON is not None and "redis_url" not in overrides:
+    if (REDIS_SKIP_REASON is not None or not TEST_REDIS_URL) and "redis_url" not in overrides:
         app.dependency_overrides.setdefault(get_redis, lambda: FakeHealthRedis())
         app.dependency_overrides.setdefault(get_queue, lambda: FakeHealthQueue())
-    if MINIO_SKIP_REASON is not None and "minio_endpoint" not in overrides:
+    if (
+        MINIO_SKIP_REASON is not None or not TEST_MINIO_ENDPOINT
+    ) and "minio_endpoint" not in overrides:
         app.state.storage.internal.bucket_exists = lambda bucket: True
 
     return app
