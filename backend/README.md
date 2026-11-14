@@ -33,8 +33,9 @@ app/
                  avatar picture (BE-08); plus constants (video and picture limits, link lifetimes)
   worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
   conversations/ direct chats, participants, idempotent messages, edits/deletes, read state (BE-23, BE-24)
-  applications/ game/
-                 only models.py so far (BE-02); each feature card adds its other four files
+  game/          /api/game: Redis-locked matchmaking queue, waiting room lifecycle, start now,
+                 hidden random bot plan, staggered joins, template bot chat and server phases (BE-27)
+  applications/  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
     schemas.py     Pydantic request / response shapes

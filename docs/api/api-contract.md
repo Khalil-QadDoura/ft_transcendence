@@ -170,17 +170,18 @@ Avatars and company logos in the new backend (BE-08):
 
 ## Game
 
-Join the queue over REST, then wait for `game_room_formed` on `/ws`, open `/game/ws` for the room chat, vote over REST, fetch results when the room finishes.
+Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/game` (BE-09) for room chat, vote over REST (BE-10), and fetch results when finished (BE-10).
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued"}` | — |
+| POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued", room_id}` | 409 already in active room |
 | DELETE | `/game/queue/leave` | Bearer | — | 204 | — |
-| GET | `/game/rooms/{id}` | Bearer (participant) | — | 200 `{id, state, target_size, participants: [{id, display_label}]}` | 403, 404 |
+| GET | `/game/rooms/{id}` | Bearer (participant) | — | 200 `{id, state, target_size, participant_count, my_participant_id, room_expires_at, phase_ends_at, participants: [{id, display_label, is_you}]}` | 403, 404 |
+| POST | `/game/rooms/{id}/start` | Bearer (participant) | — | 200 `RoomOut` (starts waiting room at 2–4 participants; idempotent if already `discussion`) | 403, 404, 409 outside 2–4 participants or wrong state |
 | POST | `/game/rooms/{id}/votes` | Bearer (participant) | `{target_participant_id, guess: "bot" or "human"}` | 201 `{message}` | 400 self, 409 not voting phase / already voted, 422 |
 | GET | `/game/rooms/{id}/results` | Bearer (participant) | — | 200 `{room_id, state, participants: [{participant_id, display_label, is_bot, score (humans), deception_rate (bots)}]}` | 409 not finished |
 
-Room states: `waiting → discussion (120 s) → voting (45 s) → finished`. The server moves the phases; today the phase events carry only the room id, so the client cannot show an exact countdown (planned change: send phase\_ends\_at).
+Room states (BE-27): `waiting (180 s max) → discussion (120 s) → voting (45 s) → finished`, or `closed` if timer expires with 1 participant or the last human leaves `waiting`. Every participant payload before results exposes only `{id, display_label, is_you}` identically for humans and bots.
 
 ## System
 
@@ -224,8 +225,12 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
 | server → client | `game_room_formed` | `{room_id}` | Matchmaking put me in a room |
+| server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room |
+| server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room |
+| server → client | `game_started` | `{room_id, state: "discussion", phase_ends_at}` | Waiting room transitioned to discussion |
+| server → client | `game_room_closed` | `{room_id}` | Waiting room expired with 1 participant |
 | server → client | `game_message` | `{id, participant_id, display_label, text}` | Room message from a player or a bot |
-| server → client | `game_phase_voting` | `{room_id}` | Discussion ended |
+| server → client | `game_phase_voting` | `{room_id, state: "voting", phase_ends_at}` | Discussion ended |
 | server → client | `game_phase_finished` | `{room_id}` | Voting ended, results ready |
 
 **Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
