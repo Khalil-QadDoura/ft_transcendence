@@ -74,13 +74,10 @@ function PersonView({ id }: { id: number }) {
       await action();
       setConfirm(false);
     } catch (cause) {
-      setError(
-        t(
-          cause instanceof ApiError && cause.status === 409
-            ? "changed"
-            : "actionError",
-        ),
-      );
+      const changed =
+        cause instanceof ApiError && [404, 409].includes(cause.status);
+      if (changed) setConfirm(false);
+      setError(t(changed ? "changed" : "actionError"));
     } finally {
       // Another tab may have changed the relationship, or the response may have
       // been lost after the server committed. Reconcile even after a failed request.
@@ -117,7 +114,16 @@ function PersonView({ id }: { id: number }) {
             </Button>
           )}
           {person.friendship_status === "pending_sent" && (
-            <p role="status">{t("sent")}</p>
+            <>
+              <p role="status">{t("sent")}</p>
+              <Button
+                variant="outline"
+                disabled={busy || !relation}
+                onClick={() => void perform(() => peopleApi.remove(relation!))}
+              >
+                {t("cancelRequest")}
+              </Button>
+            </>
           )}
           {person.friendship_status === "pending_received" && (
             <>

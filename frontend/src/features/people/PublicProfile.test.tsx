@@ -142,3 +142,89 @@ test("a conflicting friend request refreshes the relationship before another act
     div.remove();
   }
 });
+
+test.each(["remove", "accept", "decline", "cancel"] as const)(
+  "reconciles a stale %s action after 404 and closes confirmation",
+  async (action) => {
+    vi.spyOn(profileApi, "get").mockResolvedValue({ id: 1 } as Awaited<
+      ReturnType<typeof profileApi.get>
+    >);
+    let changed = false;
+    vi.spyOn(peopleApi, "profile").mockImplementation(async () => ({
+      id: 2,
+      first_name: "Ada",
+      last_name: null,
+      position: null,
+      bio: null,
+      avatar_url: null,
+      is_online: false,
+      friendship_status: changed
+        ? null
+        : action === "remove"
+          ? "accepted"
+          : action === "cancel"
+            ? "pending_sent"
+            : "pending_received",
+      friendship_id: changed ? null : 81,
+    }));
+    const call = vi
+      .spyOn(peopleApi, action === "cancel" ? "remove" : action)
+      .mockImplementation(async () => {
+        changed = true;
+        throw new ApiError(404, "missing", "Relationship no longer exists");
+      });
+    const div = document.createElement("div");
+    document.body.append(div);
+    const root = createRoot(div);
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const settle = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      });
+    const click = (label: string, scope: Element = div) =>
+      act(async () => {
+        Array.from(scope.querySelectorAll("button"))
+          .find((b) => b.textContent === label)!
+          .click();
+      });
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={cache}>
+            <MemoryRouter initialEntries={["/users/2"]}>
+              <Routes>
+                <Route path="/users/:id" element={<PublicProfile />} />
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>,
+        ),
+      );
+      await settle();
+      await settle();
+      const label =
+        action === "remove"
+          ? "Remove friend"
+          : action === "cancel"
+            ? "Cancel request"
+            : action === "accept"
+              ? "Accept"
+              : "Decline";
+      await click(label);
+      if (action === "remove")
+        await click(label, div.querySelector('[role="dialog"]')!);
+      await settle();
+      expect(div.querySelector('[role="dialog"]')).toBeNull();
+      expect(div.textContent).toContain("Add friend");
+      expect(div.querySelector('[role="alert"]')?.textContent).toContain(
+        "connection changed",
+      );
+      expect(call.mock.calls).toEqual([[81]]);
+    } finally {
+      await act(() => root.unmount());
+      cache.clear();
+      div.remove();
+    }
+  },
+);
