@@ -280,7 +280,33 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # Monitoring (INF-08, module M12). Prometheus pulls /metrics from the api and the exporters
+  # every 15 s (infra/prometheus/prometheus.yml). No host port, no proxy route: only the
+  # Docker network reaches it (Grafana, INF-09). It needs no other service to start; a
+  # target that is not up yet shows as down until the next scrape.
+  # Retention (PO decision 2026-11-12): metrics are kept at most 30 days and the TSDB is
+  # capped at 1 GB, whichever comes first (the Privacy Policy still says 15 days: open
+  # question in docs/infra/infrastructure.md, M12). The command replaces the image's
+  # default arguments, so the config and data paths are repeated.
+  # Health: the server's own readiness endpoint, with the busybox wget the image ships.
+  prometheus:
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=1GB
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+    restart: unless-stopped
+    logging: *logging
+
 volumes:
   db-data:
   redis-data:
   minio-data:
+  prometheus-data:
