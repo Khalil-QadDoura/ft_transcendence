@@ -510,6 +510,11 @@ async def run_scheduler(app: FastAPI) -> None:
             log.warning("game scheduler tick skipped", exc_info=True)
         except Exception:
             log.exception("game scheduler tick failed")
+        # A cancel request can be used up inside a library without a CancelledError reaching
+        # here (seen in redis-py while it opens a new connection). Stop on the request itself,
+        # or the loop goes on and the lifespan shutdown waits for this task forever.
+        if asyncio.current_task().cancelling():
+            return
         with suppress(asyncio.CancelledError):
             await asyncio.sleep(interval)
             continue
