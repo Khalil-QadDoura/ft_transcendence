@@ -285,10 +285,9 @@ services:
   # Docker network reaches it (Grafana, INF-09). It needs no other service to start; a
   # target that is not up yet shows as down until the next scrape.
   # Retention (PO decision 2026-11-12): metrics are kept at most 30 days and the TSDB is
-  # capped at 1 GB, whichever comes first. The Privacy Policy update to at most 30 days
-  # for logs and metrics is in #38 (DOC-01/02 follow-up); until it merges, main still
-  # says 15 days. The command replaces the image's default arguments, so the config and
-  # data paths are repeated.
+  # capped at 1 GB, whichever comes first, as the Privacy Policy says (logs and metrics
+  # kept at most 30 days, since #38). The command replaces the image's default
+  # arguments, so the config and data paths are repeated.
   # Health: the server's own readiness endpoint, with the busybox wget the image ships.
   prometheus:
     image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
