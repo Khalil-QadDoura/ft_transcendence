@@ -213,7 +213,7 @@ Depends on: <CARD-ID>
 
 **Git**
 
-- Merge policy: use a PR with one approving review and passing applicable CI. INF-06 owns enforcement through branch protection; this plan is not proof of the live settings.
+- Merge policy: use a PR with one approving review and a green `ci-ok` check, the gate job of the single CI workflow `ci.yml` (INF-06; jobs and branch protection settings in the Infrastructure doc, section "CI"). Branch protection on `main` enforces both once the repo admin applies it.
 - Branch name: `<type>/<CARD-ID>-<short-name>`, e.g. `feat/BE-07-intro-video`, `fix/BE-10-vote-room-check`.
 - Commit message: `<type>(<scope>): <summary> (<CARD-ID>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (BE-10)`.
 - Small PRs (under \~400 changed lines), one card each. Squash merge keeps one clear commit per card on `main`.
@@ -256,6 +256,7 @@ Depends on: <CARD-ID>
 | 2026-11-08 | Compose and Makefile: `pgsty/minio`, `imresamu/postgis`, worker profile until BE-29, `fclean` keeps `.env`, host ports from `.env` (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-02 PR |
 | 2026-11-09 | File storage at `/files`: `minio-init` on the `pgsty/minio` image, private bucket with anonymous download on `avatars/` and `logos/` only, signing region `us-east-1` (details below) | byul-byul | Decided, except the public prefixes: proposed to Khalil (BE-08) in the INF-04 PR |
 | 2026-11-12 | Every image is pinned by tag and digest; `make images-check` enforces it (INF-07) | byul-byul | Decided |
+| 2026-11-12 | CI is one workflow `ci.yml` with a `ci-ok` gate; `ci-ok` is the only required check on `main` (INF-06) | byul-byul | Decided; branch protection on `main` to be applied by Khalil (repo admin) |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
