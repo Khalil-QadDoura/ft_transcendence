@@ -101,7 +101,7 @@ The runtime image is 70 % smaller than the reference; the slimming came with BE-
 | `api-test` | One-shot: `make test` runs it with `compose run --rm` and removes it |
 | `worker` | Off by default (profile `worker`) because there is no task to run until BE-29 adds the moderation task; the Celery app exists since BE-07 (`backend/app/worker/celery_app.py`), and with `--profile worker` the worker starts on the runtime image as uid 10001 and reaches ready. No health check until it runs by default; then it gets one, e.g. `celery -A app.worker.celery_app inspect ping -d celery@$HOSTNAME` |
 
-**Logs.** Every service logs to stdout / stderr, kept by Docker's `json-file` driver; one compose anchor `x-logging` gives every service the same rotation: `max-size: 10m`, `max-file: 3`, at most 30 MB per container. Docker deletes the oldest file when the third is full, so the caps bound the disk use, not the age: on a quiet stack the files fill slowly and lines can stay longer than 15 days, and they go away only when the container is removed (`make down`, or a `make` that recreates the container). The Privacy Policy's "up to 15 days" for logs is therefore not yet guaranteed by this setting; the retention mechanism is an open PO decision. The proxy access log holds client IP addresses. `docker inspect --format '{{json .HostConfig.LogConfig}}' <container>` shows the caps.
+**Logs.** Every service logs to stdout / stderr, kept by Docker's `json-file` driver; one compose anchor `x-logging` gives every service the same rotation: `max-size: 10m`, `max-file: 3`, at most 30 MB per container. Docker deletes the oldest file when the third is full, so the caps bound the disk use, not the age: on a quiet stack the files fill slowly and lines can stay longer than 30 days, and they go away only when the container is removed (`make down`, or a `make` that recreates the container). The Privacy Policy's "at most 30 days" for logs and metrics (PO decision of 2026-11-13) is therefore not yet guaranteed by this setting; the mechanism that enforces it is still open. The proxy access log holds client IP addresses. `docker inspect --format '{{json .HostConfig.LogConfig}}' <container>` shows the caps.
 
 ## One origin over HTTPS
 
@@ -161,7 +161,7 @@ Option A is implemented in INF-04 (2026-11-09).
 | Client | Built from | Used for |
 | --- | --- | --- |
 | internal | `MINIO_ENDPOINT`, `secure=False` | Everything the server does itself: `stat_object` on `confirm` (real size, file exists), the worker's video download (BE-29; the reference downloads through the external URL, which cannot work from a container), deletes |
-| external | `MINIO_EXTERNAL_ENDPOINT` + `MINIO_REGION`, `secure=True` | Signing only: `presigned_put_object` (15 min), `presigned_get_object` (5 min). It never sends a request |
+| external | `MINIO_EXTERNAL_ENDPOINT` + `MINIO_REGION`, `secure=True` | Signing only: `presigned_put_object` (15 min by default, at most 1 h), `presigned_get_object` (5 min by default, at most 1 h; `MAX_URL_EXPIRES_SEC` in `backend/app/media/constants.py`). It never sends a request |
 
 **Bucket init.** The one-shot `minio-init` service runs `infra/minio/init-bucket.sh` on every `make`:
 
@@ -178,7 +178,7 @@ Option A is implemented in INF-04 (2026-11-09).
 | Keys | Anonymous access | How the frontend reads them |
 | --- | --- | --- |
 | `avatars/*`, `logos/*` | Download only: no listing, no upload | Stable URL `https://<host>/files/avatars/<uid>/<uuid>.jpg` in `avatar_url` / `logo_url` |
-| Everything else, e.g. `users/<uid>/intro/<uuid>.mp4` | None | Presigned GET from the API, 5 min |
+| Everything else, e.g. `users/<uid>/intro/<uuid>.mp4` | None | Presigned GET from the API, 5 min by default, at most 1 h (`MAX_URL_EXPIRES_SEC`) |
 | The bucket itself | No listing for anyone (`s3:ListBucket` is not granted) | — |
 
 Every write needs a presigned PUT. Reasons: avatars and logos are shown publicly anyway (profiles, friends lists, job cards); a stable URL lets the browser cache the image and never expires inside an open page; the API does not sign one URL per avatar in every list response. Videos stay private: they are personal data under moderation (privacy policy). The reference already uses the keys `avatars/{uid}/{uuid}.{ext}` and `logos/{cid}/{uuid}.{ext}`, so BE-08 needs no key change; the list is `PUBLIC_PREFIXES` in `init-bucket.sh`. If Khalil prefers signed GETs for avatars too, `PUBLIC_PREFIXES` becomes empty and the bucket is fully private.
