@@ -305,6 +305,76 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # PostgreSQL metrics on postgres-exporter:9187 (pg_up, connections, sizes, locks), for
+  # Prometheus only. It logs in with the app's POSTGRES_* values from .env, passed by compose
+  # interpolation: no new secret and nothing in Git; INF-13 moves them to Vault. Separate
+  # URI, user and password variables, so a password needs no URL encoding.
+  # Health: the exporter's landing page, with the busybox wget the image ships. It shows that
+  # the exporter serves; whether the database answers is pg_up, which `make metrics-check`
+  # requires to be 1.
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e
+    environment:
+      DATA_SOURCE_URI: db:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9187/"]
+    restart: unless-stopped
+    logging: *logging
+
+  # Redis metrics on redis-exporter:9121 (redis_up, memory, clients, commands). The redis
+  # service has no password.
+  # No health check (INF-08 exemption): the image is built FROM scratch and holds only the
+  # exporter binary, with no shell and no HTTP client to run one, and the binary has no
+  # check subcommand. `make metrics-check` covers it instead: the redis target must be up
+  # and redis_up must be 1.
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe77571d455ede0453b084d6840bc62fc105efac001034421cab83b99
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  # Container CPU and memory per compose service on cadvisor:8080, for the INF-09 dashboards.
+  # ghcr.io: Google publishes the v0.56+ releases there only (gcr.io/cadvisor stops at
+  # v0.55.1), for amd64 and arm64.
+  # Read-only mounts, no privileged mode: the Docker socket to list the containers and read
+  # their labels, the containerd socket (cAdvisor's Docker support will not start without
+  # it), /sys for their cgroup counters (CPU, memory), /var/lib/docker for each container's
+  # metadata. On Docker Desktop these paths resolve inside its Linux VM, not on macOS; not
+  # /var/run as a whole, which there is the Mac's own. Not mounted: / and /dev/disk, which
+  # only the disk metrics need (disabled below).
+  # Light flags: Docker containers only; their stats every 30 s instead of every second;
+  # only the cpu and memory metric groups; of all the container labels only the compose
+  # service name, so a series reads container_label_com_docker_compose_service="api".
+  # Health: the same /healthz the image's own check asks, with its busybox wget.
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --enable_metrics=cpu,memory
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.service
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+    restart: unless-stopped
+    logging: *logging
+
 volumes:
   db-data:
   redis-data:
