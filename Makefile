@@ -15,7 +15,8 @@ s ?=
 
 all: env up
 
-# Creates .env with random secrets when it is missing; keeps an existing one.
+# Creates .env with random secrets when it is missing. An existing one keeps every line and
+# gets only the keys .env.example has and it lacks (INF-09); the names are printed, not values.
 env:
 	@./scripts/init-env.sh
 
