@@ -1,6 +1,6 @@
 # ft\_transcendence — Infrastructure
 
-Oct 27, 2026 · updated Nov 12, 2026 · @byul-byul
+Oct 27, 2026 · updated Nov 15, 2026 · @byul-byul
 
 ## TL;DR
 
@@ -10,6 +10,7 @@ Infra owns four mandatory items and five module points. The reference already ha
 - **Modules:** Prometheus + Grafana (Major, 2, core); WAF / ModSecurity + Vault (Major, 2, buffer); health check, status page and backups (Minor, 1, buffer).
 - **Front proxy decided (2026-11-04, INF-01):** nginx + ModSecurity v3 + OWASP Core Rule Set is the only front door instead of Caddy. Configuration: [infra/proxy/](../../infra/proxy/README.md).
 - **File storage decided (2026-11-09, INF-04):** MinIO on the same origin at `/files`, private bucket `files` created by the one-shot `minio-init`, uploads and video reads through presigned URLs; see File storage over HTTPS.
+- **Monitoring (2026-11-15, INF-08):** Prometheus scrapes the API, postgres-exporter, redis-exporter and cAdvisor inside the Docker network; no host port, no proxy route; metrics kept 30 days, at most 1 GB; `make metrics-check`. See M12 under Infra modules.
 - **One origin for everything** (`https://localhost` at the defense): frontend at `/`, API at `/api`, WebSockets at `/ws`, files at `/files`, Grafana at `/grafana`, Mailpit at `/mail`. One certificate warning, no CORS, no mixed content.
 
 ## Front proxy (decided 2026-11-04)
@@ -18,7 +19,7 @@ nginx + ModSecurity v3 + OWASP Core Rule Set (CRS), image `owasp/modsecurity-crs
 
 ## Services
 
-Only the proxy publishes ports to the host; everything else stays on the internal Docker network. All services are in the root `docker-compose.yml` (compose project `wozu`) since INF-02. Every image is pinned by tag and digest and every long-running service has a health check (INF-07, see Images, health checks and logs); digests below are shortened to 12 characters.
+Only the proxy publishes ports to the host; everything else stays on the internal Docker network. All services are in the root `docker-compose.yml` (compose project `wozu`) since INF-02. Every image is pinned by tag and digest and every long-running service has a health check, with the exemptions listed there (INF-07, see Images, health checks and logs); digests below are shortened to 12 characters.
 
 | Service | Image | Purpose | Published | Status |
 | --- | --- | --- | --- | --- |
@@ -33,9 +34,11 @@ Only the proxy publishes ports to the host; everything else stays on the interna
 | `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc` (the official `minio/minio` and `minio/mc` images left Docker Hub on 2025-10-23) | Object storage for videos, avatars, logos | no, console included (proxied at `/files`) | In compose; health check |
 | `minio-init` | Same image as `minio`, which ships `mc` | One-shot: create bucket `files`, set its anonymous policy, exit 0 | no | In compose (INF-04); starts once `minio` is healthy; `api` starts after it completes |
 | `mailpit` | `axllent/mailpit:v1.33.1@sha256:aef2aacc11f0` | Catches all outgoing mail, web inbox | no (proxied at `/mail`) | In compose (INF-02); health check |
-| `prometheus` | `prom/prometheus` | Metrics scraping, alert rules | no | New (module) |
+| `prometheus` | `prom/prometheus:v3.16.0@sha256:e04987641b57` | Metrics scraping (alert rules: INF-10); data in the `prometheus-data` volume, 30 days, at most 1 GB | no, and no proxy route | In compose (INF-08); `/-/ready` health check |
 | `grafana` | `grafana/grafana` | Dashboards, provisioned from files | no (proxied at `/grafana`) | New (module) |
-| exporters | `postgres-exporter`, `redis-exporter`, `cadvisor` or `node-exporter` | DB, Redis, container metrics | no | New (module) |
+| `postgres-exporter` | `prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104f` | PostgreSQL metrics for Prometheus (`pg_up`, connections, sizes) | no | In compose (INF-08); health check; starts once `db` is healthy |
+| `redis-exporter` | `oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe775` | Redis metrics for Prometheus (`redis_up`, memory, clients) | no | In compose (INF-08); no health check (scratch image, see Exemptions); starts once `redis` is healthy |
+| `cadvisor` | `ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144` | CPU and memory of every container, by compose service | no | In compose (INF-08); `/healthz` health check; read-only host mounts, not privileged |
 | `vault` | `hashicorp/vault` (server mode, file storage) | Secrets for API keys and credentials | no | Buffer module |
 | `backup` | small image with `pg_dump` + `mc` + cron | Daily dumps of DB and bucket, 7-day retention | no | Buffer module |
 
@@ -43,7 +46,7 @@ We skip ELK: Elasticsearch is memory-hungry and risky on an evaluation laptop; P
 
 ## Images, health checks and logs (INF-07)
 
-**Pinned images.** Every image is written as `name:tag@sha256:<digest>`: in `docker-compose.yml` and in every Dockerfile `FROM` (build and runtime stages). The tag says which version it is; the digest is what Docker pulls, so a tag that moves (`redis:7-alpine`, `python:3.11-slim`) or is overwritten cannot change the stack before the defense. The digest is the one of the multi-arch index (`docker buildx imagetools inspect <name:tag>`), so Apple Silicon laptops and the amd64 CI runner get the same build. To bump an image, change tag and digest together in one commit. Prometheus, Grafana, the exporters and Vault follow the same rule in their own cards (INF-08, INF-09, INF-12).
+**Pinned images.** Every image is written as `name:tag@sha256:<digest>`: in `docker-compose.yml` and in every Dockerfile `FROM` (build and runtime stages). The tag says which version it is; the digest is what Docker pulls, so a tag that moves (`redis:7-alpine`, `python:3.11-slim`) or is overwritten cannot change the stack before the defense. The digest is the one of the multi-arch index (`docker buildx imagetools inspect <name:tag>`), so Apple Silicon laptops and the amd64 CI runner get the same build. To bump an image, change tag and digest together in one commit. Prometheus and the three exporters are pinned the same way since INF-08 (see M12 under Infra modules); Grafana and Vault follow in their own cards (INF-09, INF-12).
 
 | Image | Before INF-07 | Pinned |
 | --- | --- | --- |
@@ -90,6 +93,9 @@ The runtime image is 70 % smaller than the reference; the slimming came with BE-
 | `redis`, `redis-test` | `redis-cli ping \| grep -qx PONG` | the server answers commands; an error reply such as `LOADING` fails | — |
 | `minio` | `curl -fs http://127.0.0.1:9000/minio/health/live` | the S3 server is up | — |
 | `mailpit` | `/mailpit readyz` (also the image's own check) | SMTP and web UI are ready | — |
+| `prometheus` | `wget -qO- http://127.0.0.1:9090/-/ready` (busybox wget in the image) | the server has loaded its config and TSDB and serves queries | — (a target that is not up yet only shows as down) |
+| `postgres-exporter` | `wget -q -O /dev/null http://127.0.0.1:9187/` (its landing page) | the exporter serves; whether it reaches the database is `pg_up`, checked by `make metrics-check` | `db`: healthy |
+| `cadvisor` | `wget -q -O /dev/null http://127.0.0.1:8080/healthz` (what the image's own check asks) | cAdvisor runs and serves | — |
 
 `depends_on` with `condition: service_healthy` is used where the order matters: the api runs its migrations at start and needs the database and Redis; `minio-init` needs a live MinIO; the proxy could start without its upstreams (it resolves them per request) but then answers 502 until they are up, so it waits and the site works as soon as `make` returns. `service_completed_successfully` is for the one-shot `minio-init`: the api hands out URLs for the bucket it creates, and `docker compose up --wait` accepts an exited container only when another service waits for it this way. `make up` runs `docker compose up -d --build --wait --wait-timeout 300`, so `make` fails if a service is not healthy within 5 minutes or exits.
 
@@ -99,6 +105,7 @@ The runtime image is 70 % smaller than the reference; the slimming came with BE-
 | --- | --- |
 | `minio-init` | One-shot job: exits 0 after creating the bucket; the api waits for that exit code instead |
 | `api-test` | One-shot: `make test` runs it with `compose run --rm` and removes it |
+| `redis-exporter` | The image is built `FROM scratch`: only the exporter binary, no shell and no HTTP client, and the binary has no check subcommand; nothing is added to it (INF-08). `make metrics-check` covers it: the `redis` target must be up and `redis_up` must be 1. It starts once `redis` is healthy |
 | `worker` | Off by default (profile `worker`) because there is no task to run until BE-29 adds the moderation task; the Celery app exists since BE-07 (`backend/app/worker/celery_app.py`), and with `--profile worker` the worker starts on the runtime image as uid 10001 and reaches ready. No health check until it runs by default; then it gets one, e.g. `celery -A app.worker.celery_app inspect ping -d celery@$HOSTNAME` |
 
 **Logs.** Every service logs to stdout / stderr, kept by Docker's `json-file` driver; one compose anchor `x-logging` gives every service the same rotation: `max-size: 10m`, `max-file: 3`, at most 30 MB per container. Docker deletes the oldest file when the third is full, so the caps bound the disk use, not the age: on a quiet stack the files fill slowly and lines can stay longer than 30 days, and they go away only when the container is removed (`make down`, or a `make` that recreates the container). The Privacy Policy's "at most 30 days" for logs and metrics (PO decision of 2026-11-13) is therefore not yet guaranteed by this setting; the mechanism that enforces it is still open. The proxy access log holds client IP addresses. `docker inspect --format '{{json .HostConfig.LogConfig}}' <container>` shows the caps.
@@ -226,6 +233,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `make images-check` | fails when a compose image, a Dockerfile `FROM` or a workflow image (`.github/workflows/`) is not pinned as `name:tag@sha256:…` or uses `latest`, naming each one; needs no running stack (see Images, health checks and logs) |
 | `make files-check` | smoke test of `/files` against the running stack, ends with a Chrome console snippet (see File storage over HTTPS) |
 | `make mail-check` | sign-up email end to end through the proxy against the running stack (see Email without a paid service) |
+| `make metrics-check` | every Prometheus target up, one real series per source, retention 30d and 1GB, against the running stack (see M12 under Infra modules) |
 | `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
 | `make re` | `fclean` + `all` |
 
@@ -269,11 +277,55 @@ Each checklist mirrors the subject's bullets for that module; every box must be 
 
 **M12 — Monitoring with Prometheus + Grafana (Major, 2, core)**
 
-- [ ] Prometheus scrapes the API `/metrics` (via `prometheus-fastapi-instrumentator`; backend card BE-30), Postgres, Redis and container exporters
-- [ ] Exporters and integrations configured in `prometheus.yml`, committed
+- [x] Prometheus scrapes the API `/metrics` (via `prometheus-fastapi-instrumentator`; backend card BE-30), Postgres, Redis and container exporters (INF-08)
+- [x] Exporters and integrations configured in `prometheus.yml`, committed (`infra/prometheus/prometheus.yml`, INF-08)
 - [ ] Custom Grafana dashboards provisioned from JSON files: API request rate, error rate, p95 latency, WebSocket connections, DB connections, Redis memory, container CPU / RAM
 - [ ] Alerting rules: target down, API 5xx rate above a threshold, p95 latency above a threshold, disk almost full; show one alert firing live (stop a container)
 - [ ] Grafana secured: admin password from `.env`, anonymous access off, served only over HTTPS at `/grafana`
+
+**Prometheus and exporters (INF-08, 2026-11-15).** Prometheus works by pull: every 15 s (`scrape_interval`, `evaluation_interval` 15 s for the INF-10 rules) it sends `GET /metrics` to each target listed in `infra/prometheus/prometheus.yml` and stores the answer in its time-series database. Nothing pushes to it. An exporter is a small server that reads a system which has no `/metrics` of its own (PostgreSQL, Redis, the container runtime) and serves the figures in the Prometheus text format.
+
+| Job | Target (inside the Docker network) | Source | Example series |
+| --- | --- | --- | --- |
+| `prometheus` | `localhost:9090` | Prometheus itself | `prometheus_tsdb_head_series` |
+| `api` | `api:8000/metrics` | FastAPI, `prometheus-fastapi-instrumentator` (BE-30, `backend/app/core/metrics.py`); at the root of the app, no key | `http_requests_total`, `http_request_duration_seconds`, `ws_connections` |
+| `postgres` | `postgres-exporter:9187` | `prometheuscommunity/postgres-exporter` | `pg_up`, `pg_stat_database_numbackends` |
+| `redis` | `redis-exporter:9121` | `oliver006/redis_exporter` | `redis_up`, `redis_memory_used_bytes` |
+| `cadvisor` | `cadvisor:8080` | cAdvisor | `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, by `container_label_com_docker_compose_service` |
+
+**No exposure.** None of the five publishes a host port and the proxy has no route to them, so Prometheus, the exporters and the API's `/metrics` are reachable only from the Docker network. The proxy keeps answering 404 for `/metrics*` and `/api/metrics*` (One origin over HTTPS); `make https-check` checks it. Grafana (INF-09) will be the only way in, at `/grafana` with a login. For a look at Prometheus before that, query its API from inside the container: `docker compose exec -T prometheus wget -qO- 'http://127.0.0.1:9090/api/v1/query?query=up'`.
+
+**Retention (PO decision 2026-11-12).** Logs and metrics are kept at most 30 days; this replaces the card's "e.g. 7 days". Prometheus runs with `--storage.tsdb.retention.time=30d` and `--storage.tsdb.retention.size=1GB` and deletes the oldest blocks when either limit is reached. Data lives in the named volume `prometheus-data`, so it survives `make down` and goes with `make fclean`. Size: on 2026-11-15 one scrape round is about 4,150 samples (postgres 2,236, prometheus 891, cadvisor 512, redis 373, api 133), about 24 million samples a day; at the usual 1 to 2 bytes per stored sample that is about 35 MB a day, so on a stack that runs day and night the 1 GB cap applies after about four weeks, and on a laptop that runs only part of the day the 30 days apply first. `prometheus_tsdb_storage_blocks_bytes` shows the real figure after a few days. Prometheus flags the retention as decided; the Privacy Policy (`docs/legal/privacy-policy.md`, sections 3 and 6) still says "up to 15 days" for logs and metrics, which is for the PO to reconcile (the legal texts are not changed by INF-08).
+
+**Personal data.** The API's labels are the route template, the method and the status: `handler="/api/jobs/{job_id}"`, never `/api/jobs/987654`; a path that matches no route is counted as `handler="none"` (checked on 2026-11-15). The exporters report counts, sizes and states, no rows or keys. cAdvisor labels a series with the container's name, image and compose service only (`--store_container_labels=false`), so no environment variable reaches a label.
+
+**Credentials.** `postgres-exporter` logs in with the app's `POSTGRES_USER` / `POSTGRES_PASSWORD` from `.env` (compose interpolation into `DATA_SOURCE_URI`, `DATA_SOURCE_USER`, `DATA_SOURCE_PASS`; separate variables, so a password needs no URL encoding). No new secret, nothing in Git. INF-13 moves them to Vault; a dedicated role with `pg_monitor` only would also give the exporter least privilege then. `redis` has no password, so `redis-exporter` needs none.
+
+**cAdvisor.** Not privileged. It runs as root inside its container (the image's default), with these read-only mounts:
+
+| Mount | Why |
+| --- | --- |
+| `/var/run/docker.sock` | Lists the containers and reads their names and labels (the compose service) |
+| `/run/containerd/containerd.sock` | cAdvisor 0.60's Docker support asks containerd for each container's details; without it, "Registration of the docker container factory failed" and no container shows up |
+| `/sys` | The cgroup counters: CPU and memory per container |
+| `/var/lib/docker` | Each container's metadata on disk |
+
+Left out: `/` (as `/rootfs`) and `/dev/disk`, which only the disk metrics need, and those are off. Also left out: `/var/run` as a whole, which upstream examples mount. On Docker Desktop for Mac that path is the Mac's own `/private/var/run` (macOS sockets, no Docker socket), while the four paths above resolve inside Docker Desktop's Linux VM; on the ubuntu CI runner they are the host's own. The socket mounts are `:ro`, but that only stops the file from being replaced: whoever can talk to the Docker or containerd socket controls the host. cAdvisor is therefore on the internal network only, with no port. Flags: `--docker_only=true` (no system cgroups), `--housekeeping_interval=30s` (stats every 30 s instead of every second), `--enable_metrics=cpu,memory` (INF-09 and INF-10 add groups such as network or disk if a panel or rule needs one), `--store_container_labels=false` and `--whitelisted_container_labels=com.docker.compose.service`. Checked on Docker Desktop 28.4 (Apple Silicon); the CI `stack` job checks the ubuntu runner on every run (`make metrics-check`). On Docker Desktop cAdvisor logs, at start, that `/etc/machine-id` and `/dev/kmsg` are missing; both are harmless (no machine ID label, no OOM events).
+
+**Images** (latest stable release of each on 2026-11-15, pinned by the digest of the multi-arch index; `docker buildx imagetools inspect` lists linux/amd64 and linux/arm64 for each; `make images-check` covers them, 14 → 18 images):
+
+| Service | Image |
+| --- | --- |
+| `prometheus` | `prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06` |
+| `postgres-exporter` | `prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e` (same index as on quay.io) |
+| `redis-exporter` | `oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe77571d455ede0453b084d6840bc62fc105efac001034421cab83b99` |
+| `cadvisor` | `ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a`. ghcr.io, not gcr.io: `gcr.io/cadvisor/cadvisor` has no release after v0.55.1, and the v0.56+ releases are published on ghcr.io only |
+
+**Resources** (`docker stats --no-stream`, Docker Desktop on Apple Silicon, 2026-11-15, a few minutes after start, idle stack): prometheus 62 MiB, 1.4 % CPU; postgres-exporter 14 MiB; redis-exporter 17 MiB; cadvisor 20 MiB, 1.6 % CPU. About 115 MiB together; Prometheus grows with the stored data, which the 1 GB cap bounds on disk. Image sizes: prometheus 364 MB, cadvisor 92 MB, postgres-exporter 34 MB, redis-exporter 15 MB.
+
+**Log volume.** The API logs every request, `GET /metrics` included: one line per scrape, 4 a minute (about 1 MB a day), within the 30 MB rotation of `x-logging`. Leaving `/metrics` out of the request log would be a backend change (BE-30 / `app/core/request_id.py`), not part of INF-08.
+
+**Check:** `make metrics-check` (`infra/prometheus/smoke-test.sh`) against the running stack. Prometheus has no host port, so the script queries it inside its container (`docker compose exec -T prometheus wget -qO- http://127.0.0.1:9090/api/v1/...`) and parses the JSON on the host with `python3`. It requires: each of the jobs `prometheus`, `api`, `postgres`, `redis`, `cadvisor` has a target and every active target has health `up`, from a scrape made after the check started (health is the result of the last scrape, up to 15 s old: without this rule a target stopped a few seconds before would still pass; "after" is measured by Prometheus's own `time()`); `pg_up == 1`; `redis_up == 1`; a CPU and a memory series of the `api` container (cAdvisor, selected by the compose service label); `sum(http_requests_total{job="api"}) > 0`; and the retention flags in `/api/v1/status/flags` equal to 30d and 1GB (compared as values: Prometheus prints `1GB` back as `1GiB` and `7d` as `1w`). A fresh stack needs a scrape or two, so it retries for up to 60 s (a healthy stack passes after one scrape interval, about 15–20 s), then prints one `ok` / `FAIL` line per check and exits 1 if one failed. The CI `stack` job runs it after `make images-check`. To see it fail: `docker compose stop redis-exporter` makes `target redis` and `redis_up` FAIL after the 60 s; `docker compose start redis-exporter` brings them back.
 
 **M13 — WAF / ModSecurity (hardened) + HashiCorp Vault (Major, 2, buffer)**
 
@@ -306,7 +358,7 @@ INF-06 (2026-11-12, updated 2026-11-13): one GitHub Actions workflow, `.github/w
 | `backend` | `backend/**`, `.github/workflows/**` | Service containers `imresamu/postgis:15-3.4@sha256:44d4…` and `redis:7.4.12-alpine@sha256:7f7d…` (see Image pins); MinIO (`pgsty/minio`, compose digest) started with `docker run`; `pip install -r requirements-dev.txt`, `ruff check`, `ruff format --check`, `pytest` with a JUnit report, a step that fails on any skipped test, `docker build --target runtime` (the stage compose ships for `api` and `worker`, not the `test` stage) | Lint, format and every backend test against real PostgreSQL + PostGIS, Redis and MinIO; the shipped image builds |
 | `frontend` | `frontend/**`, `docs/legal/**` (`legal:check`), `.github/workflows/**` | `npm ci`, `npm run lint`, `format:check`, `i18n:check`, `legal:check`, `typecheck`, `npm test` (vitest), `npm run build`, `docker build --target preview` (the stage compose ships) | Lint, format, every translation key present in every locale, legal pages in sync with `docs/legal`, types, unit tests, production build |
 | `auth-integration` | whatever runs `backend` or `frontend`: `backend/**`, `frontend/**`, `docs/legal/**`, `.github/workflows/**` | Service container `imresamu/postgis:15-3.4@sha256:44d4…` (database `wozu_auth_test`); `pip install -r backend/requirements-dev.txt`, `npm ci`; starts the real backend with `frontend/scripts/serve-auth-test-backend.py` (the team's app, migrations and auth on `127.0.0.1:8010`, outgoing email captured so the tests can follow the verification link), waits up to 60 s for `/api/health` (prints the backend log if it never answers), then `npx vitest run --config scripts/auth-backend.config.ts`. Timeout 10 min | The frontend's authentication flows work against the real API and database, not only against mocks; a change on either side that breaks the contract turns it red |
-| `stack` | `infra/**`, `docker-compose.yml` and any `compose*.yml`, `Makefile`, `scripts/**`, `.env.example`, `backend/**`, `frontend/**`, `.github/workflows/**` | `make` on the fresh checkout (new `.env` from `.env.example`, new certificate, build, start, `--wait` until healthy), `docker compose config -q`, `make test`, `make files-check`, `make mail-check`, `make https-check`, `make images-check`; service logs on failure; `docker compose down -v` at the end (on the runner, not on a laptop). Timeout 30 min | The evaluator's path: one command from a clean clone to a healthy stack; every variable reference resolves; `/files`, `/mail` and the one HTTPS origin (`/`, `/api`, `/ws`, redirects, hidden internal routes) work through the proxy; every image is pinned |
+| `stack` | `infra/**`, `docker-compose.yml` and any `compose*.yml`, `Makefile`, `scripts/**`, `.env.example`, `backend/**`, `frontend/**`, `.github/workflows/**` | `make` on the fresh checkout (new `.env` from `.env.example`, new certificate, build, start, `--wait` until healthy), `docker compose config -q`, `make test`, `make files-check`, `make mail-check`, `make https-check`, `make images-check`, `make metrics-check`; service logs on failure; `docker compose down -v` at the end (on the runner, not on a laptop). Timeout 30 min | The evaluator's path: one command from a clean clone to a healthy stack; every variable reference resolves; `/files`, `/mail` and the one HTTPS origin (`/`, `/api`, `/ws`, redirects, hidden internal routes) work through the proxy; every image is pinned; every Prometheus target is up, cAdvisor sees the api container on the ubuntu runner, retention is as decided |
 | `ci-ok` | always (`if: always()`) | `needs` all five jobs; fails when one of them ended `failure` or `cancelled`; `skipped` counts as passed | The single required check |
 
 **Path rules.** Three dots (`base...head`): the files the branch changed since it left its base, not what the base gained meanwhile. `--no-renames`: a moved file is listed under its old and its new path; with rename detection only the new path showed, so moving `infra/db/create-test-db.sh` into `docs/` ran no job although it breaks `make test` (now `stack` runs). `core.quotePath=false`: Git prints non-ASCII names as they are instead of quoting them (`"backend/tests/t\303\251st.py"`), so `^backend/` still matches (now `backend` runs). Khalil reported both in his #39 review; the same ranges from our history give the same jobs as before. A base sha missing from the clone fails `changes`, and `ci-ok` goes red.
@@ -344,7 +396,7 @@ gh api repos/Khalil-QadDoura/ft_transcendence/branches/main/protection --jq '{ch
 
 Expected: `{"admins":true,"checks":[{"app_id":15368,"context":"ci-ok"}],"force":false,"reviews":1}`.
 
-**How to read a red CI.** The PR's checks list shows which job failed; `ci-ok` is red whenever one of the others is, so open the other red job. In the job log, the red step names the command (the same as the local one: `ruff check`, `pytest`, `npm run lint`, `npm run i18n:check`, `make test`, …). The `changes` job's summary lists the changed files and which jobs ran. For `auth-integration`, a backend that never answers `/api/health` prints its log in the same step. For `stack`, the "Service logs" step prints `docker compose ps -a` and the last 300 lines of every service. A `skipped` job is not a failure: the PR does not touch its paths. To reproduce locally: `make test` runs the lint, format, type and test commands of the `backend` and `frontend` jobs and fails on any skipped backend test, as the `backend` job does; `npm run i18n:check` and `npm run legal:check` in `frontend/` are the two frontend checks `make test` leaves out; the `stack` job is `make`, `make test`, `make files-check`, `make mail-check`, `make https-check`, `make images-check`. `auth-integration` has no make target: it needs a loopback PostgreSQL test database in `TEST_DATABASE_URL` and runs the commands of its step.
+**How to read a red CI.** The PR's checks list shows which job failed; `ci-ok` is red whenever one of the others is, so open the other red job. In the job log, the red step names the command (the same as the local one: `ruff check`, `pytest`, `npm run lint`, `npm run i18n:check`, `make test`, …). The `changes` job's summary lists the changed files and which jobs ran. For `auth-integration`, a backend that never answers `/api/health` prints its log in the same step. For `stack`, the "Service logs" step prints `docker compose ps -a` and the last 300 lines of every service. A `skipped` job is not a failure: the PR does not touch its paths. To reproduce locally: `make test` runs the lint, format, type and test commands of the `backend` and `frontend` jobs and fails on any skipped backend test, as the `backend` job does; `npm run i18n:check` and `npm run legal:check` in `frontend/` are the two frontend checks `make test` leaves out; the `stack` job is `make`, `make test`, `make files-check`, `make mail-check`, `make https-check`, `make images-check`, `make metrics-check`. `auth-integration` has no make target: it needs a loopback PostgreSQL test database in `TEST_DATABASE_URL` and runs the commands of its step.
 
 ## Infra cards
 

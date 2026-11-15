@@ -259,6 +259,7 @@ Depends on: <CARD-ID>
 | 2026-11-12 | Every image is pinned by tag and digest; `make images-check` enforces it (INF-07) | byul-byul | Decided |
 | 2026-11-12 | CI is one workflow `ci.yml` with a `ci-ok` gate; `ci-ok` is the only required check on `main` (INF-06) | byul-byul | Decided; branch protection on `main` to be applied by Khalil (repo admin) |
 | 2026-11-13 | Logs and metrics kept for at most 30 days (was 15): server logs, including IP addresses in the proxy access logs, and service metrics; Privacy Policy sections 2 and 6 | byul-byul | Decided; the enforcing mechanism is open (infrastructure doc, "Logs") |
+| 2026-11-15 | Monitoring (INF-08): Prometheus scrapes the API, postgres-exporter, redis-exporter and cAdvisor (from ghcr.io) every 15 s inside the Docker network; no host port, no proxy route; metrics kept 30 days, at most 1 GB (PO decision of 2026-11-12: logs and metrics at most 30 days, replacing the card's "e.g. 7 days"); `make metrics-check` runs in CI | byul-byul | Decided; review in the INF-08 PR. The Privacy Policy still says 15 days for logs and metrics, to be reconciled by the PO |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
