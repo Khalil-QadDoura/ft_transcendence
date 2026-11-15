@@ -36,12 +36,14 @@ log = structlog.get_logger("app")
 SCHEDULER_STOP_TIMEOUT_SEC = 5.0
 
 
-async def stop_scheduler(task: asyncio.Task) -> None:
+async def stop_scheduler(task: asyncio.Task | None) -> None:
     """Cancel the game scheduler and wait for it, but never longer than the time limit.
 
     Not asyncio.wait_for: on a timeout it cancels the task again and waits for it again, with
     no limit, so a task that ignores the cancel would block the shutdown the same way.
     """
+    if task is None:  # game_scheduler_enabled=False: nothing was started
+        return
     task.cancel()
     done, _ = await asyncio.wait({task}, timeout=SCHEDULER_STOP_TIMEOUT_SEC)
     if not done:
@@ -56,7 +58,9 @@ async def stop_scheduler(task: asyncio.Task) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Code before `yield` runs once at start-up, code after it once at shutdown."""
     log.info("startup", env=app.state.settings.env)
-    scheduler_task = asyncio.create_task(game_service.run_scheduler(app))
+    scheduler_task = None
+    if app.state.settings.game_scheduler_enabled:
+        scheduler_task = asyncio.create_task(game_service.run_scheduler(app))
     try:
         yield
     finally:
