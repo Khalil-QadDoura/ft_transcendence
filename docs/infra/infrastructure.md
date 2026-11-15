@@ -355,9 +355,9 @@ Grafana stores the password in its database when the `grafana-data` volume is ne
 | `GF_ANALYTICS_REPORTING_ENABLED`, `GF_ANALYTICS_CHECK_FOR_UPDATES`, `GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES`, `GF_NEWS_NEWS_FEED_ENABLED` | `false` | No usage reports, update checks or news feed from the defense machine |
 | `GF_PLUGINS_PREINSTALL_DISABLED` | `true` | Grafana 13 otherwise downloads about ten plugins from grafana.com at first start. The built-in Prometheus datasource is all the dashboards need, so `/var/lib/grafana/plugins` stays empty |
 | `GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED`, `GF_PLUGINS_PLUGIN_ADMIN_ENABLED` | `true`, `false` | The plugin signing key is not fetched from grafana.com (Grafana uses its built-in one), and the plugin catalogue page is off |
-| brute-force protection | on (the default, not disabled) | 5 failed logins for one user within 5 minutes lock that user for 5 minutes |
+| brute-force protection | on (the default, not disabled) | 5 failed logins for one username within 5 minutes lock that username for 5 minutes |
 
-**Lockout behaviour.** A locked login answers exactly like a wrong password: 401 "Invalid username or password". A successful login does not reset the count. `make grafana-check` sends one wrong password on purpose (its last check), so more than 4 runs within 5 minutes lock `admin`, in the browser too. To unlock, wait 5 minutes.
+**Lockout behaviour.** Grafana counts failed logins per username; its per-IP protection is off by default (`disable_ip_address_login_protection = true`). A locked login answers exactly like a wrong password: 401 "Invalid username or password". A successful login does not reset the count. To unlock, wait 5 minutes. `make grafana-check` sends its wrong password for a user that does not exist (`grafana-check-nobody`), never for `admin`, so any number of runs leaves `admin` unlocked. Six runs in a row followed by an `admin` login were tested on 2026-11-15.
 
 **Provisioning.** Nothing is clicked together in the UI. Three read-only mounts from `infra/grafana/`:
 
@@ -407,7 +407,7 @@ cAdvisor sees every container on the Docker host. The CPU and memory panels grou
 5. Each dashboard is in folder `WOZU` and provisioned, and every panel query returns data (`/api/ds/query`).
 6. `DELETE` of a dashboard is refused and the dashboard is still there.
 7. Grafana Live: the WebSocket handshake through the proxy answers 101.
-8. Last, a wrong password is refused with 401.
+8. Last, a wrong password is refused with 401, for the non-existent user `grafana-check-nobody` so that `admin` is never locked.
 
 A fresh stack needs a scrape or two before every panel has data, so it retries every 5 s for up to 60 s (`GRAFANA_CHECK_WAIT` changes the limit). It exits 1 if a check failed. The CI `stack` job runs it after `make metrics-check`.
 

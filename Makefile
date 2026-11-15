@@ -106,8 +106,9 @@ metrics-check:
 # the login on the public origin, health 200, no anonymous access or sign-up, the security
 # settings as decided, the Prometheus datasource healthy, both dashboards in the folder WOZU
 # with every panel query returning data, deletion refused, Grafana Live (WebSocket) 101 and a
-# wrong password 401. Logs in as admin with the password from the grafana container, never
-# printed; retries for up to 60 s (INF-09).
+# wrong password 401 (for the non-existent user grafana-check-nobody, so admin is never
+# locked, however often it runs). Logs in as admin with the password from the grafana
+# container, never printed; retries for up to 60 s (INF-09).
 grafana-check:
 	@./infra/grafana/smoke-test.sh
 

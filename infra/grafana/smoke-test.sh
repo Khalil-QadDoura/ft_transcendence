@@ -15,14 +15,15 @@
 #   (sent through Grafana's /api/ds/query, as the browser does), and Grafana refuses to
 #   delete them;
 # - Grafana Live (WebSocket) answers 101 through the proxy at /grafana/api/live/ws;
-# - a wrong password for admin is refused (401).
+# - a login with a wrong password is refused (401).
 # Logs in as admin with Basic auth. The password is read from the running container
 # (`docker compose exec -T grafana printenv GF_SECURITY_ADMIN_PASSWORD`) into a file only
 # this user can read, deleted at the end; it is never printed or put on a command line.
-# Brute-force protection: Grafana locks a user for 5 minutes after 5 failed logins within
-# 5 minutes, and a later good login does not reset the count. The wrong-password check is
-# one failed login per run and runs last, so a run never locks itself out; more than 4 runs
-# within 5 minutes lock admin (in the browser too) until the oldest failure is 5 minutes old.
+# Brute-force protection: Grafana counts failed logins per username and locks that name
+# for 5 minutes after 5 failures within 5 minutes; a later good login does not reset the
+# count (the per-IP protection is off by default). The wrong-password check therefore logs
+# in as a user that does not exist (grafana-check-nobody), never as admin: any number of
+# runs leaves admin's count at zero, so neither the check nor the browser gets locked.
 # Retries for up to 60 s (GRAFANA_CHECK_WAIT overrides it), then prints one ok / FAIL line
 # per check and exits 1 when one failed.
 # Needs the stack up (`make`). Run it with `make grafana-check`. Works with bash 3.2
@@ -337,12 +338,12 @@ while True:
           flush=True)
     time.sleep(retry_sec)
 
-# One failed login per run, after everything else (see the brute-force note at the top).
+# A wrong password for a user that does not exist, so admin's failed-login count stays at
+# zero (see the brute-force note at the top). Runs last.
+NOBODY = "grafana-check-nobody"
 wrong = "not-the-password-" + os.urandom(6).hex()
-if wrong == password:
-    wrong += "x"
-status, _, _ = http("GET", "/api/user", auth=basic("admin", wrong))
-results.append((status == 401, f"GET /grafana/api/user as admin with a wrong password: {status} (expected 401)"))
+status, _, _ = http("GET", "/api/user", auth=basic(NOBODY, wrong))
+results.append((status == 401, f"GET /grafana/api/user as {NOBODY} with a wrong password: {status} (expected 401)"))
 
 for ok, text in results:
     print(f"  {'ok  ' if ok else 'FAIL'}  {text}")
