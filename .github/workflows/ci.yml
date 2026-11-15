@@ -267,6 +267,10 @@ jobs:
       # of the api container from cAdvisor on the ubuntu runner, the API's request counter,
       # retention 30d and 1GB (INF-08).
       - run: make metrics-check
+      # Dashboards: /grafana/ through the proxy, login and security settings, the Prometheus
+      # datasource healthy, both provisioned dashboards with data in every panel, deletion
+      # refused, Grafana Live over WebSocket (INF-09).
+      - run: make grafana-check
       - name: Service logs
         if: failure()
         run: |
