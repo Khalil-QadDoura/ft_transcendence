@@ -1,0 +1,152 @@
+{
+  "uid": "wozu-api",
+  "title": "WOZU API",
+  "description": "FastAPI request rate, error share, p95 latency and open WebSocket connections (INF-09, module M12). Source: the api job in Prometheus (prometheus-fastapi-instrumentator, BE-30). Provisioned from infra/grafana/dashboards/api.json; edit the file, not the UI.",
+  "tags": ["wozu", "m12", "api"],
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "annotations": { "list": [] },
+  "templating": { "list": [] },
+  "links": [
+    { "title": "WOZU dashboards", "type": "dashboards", "tags": ["wozu"], "asDropdown": false, "includeVars": false, "keepTime": true }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request rate by handler",
+      "description": "Requests per second to each API route, averaged over 5 minutes: rate() of the counter http_requests_total, summed per route template (handler), so /api/users/{user_id} is one line whatever the id. /api/health shows the container health check (one request per 30 s).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 0, "w": 16, "h": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "decimals": 2,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (handler) (rate(http_requests_total{job=\"api\"}[5m]))",
+          "legendFormat": "{{handler}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Open WebSocket connections",
+      "description": "Sockets open on /ws and /ws/game right now: the gauge ws_connections, which the API raises when a socket is accepted and lowers when it closes (BE-30). Opening the site in a logged-in tab adds one.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(ws_connections{job=\"api\"})",
+          "legendFormat": "open sockets",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Error rate (share of requests)",
+      "description": "Share of API answers with a 5xx status (server errors) and with a 4xx status (refused requests: wrong input, no login, not found), over 5 minutes. 0.05 is shown as 5 %. When no error happened there is no 5xx counter yet; `or vector(0)` then gives 0 instead of an empty panel.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 9, "w": 12, "h": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "decimals": 1,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "5xx" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "4xx" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(sum(rate(http_requests_total{job=\"api\", status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_requests_total{job=\"api\"}[5m]))",
+          "legendFormat": "5xx",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(sum(rate(http_requests_total{job=\"api\", status=~\"4..\"}[5m])) or vector(0)) / sum(rate(http_requests_total{job=\"api\"}[5m]))",
+          "legendFormat": "4xx",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "p95 latency by handler",
+      "description": "95 % of the requests to each route were answered faster than this, over 5 minutes: histogram_quantile(0.95) over the buckets of http_request_duration_seconds, per route template. A route with no request in the window has no value (a gap).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 9, "w": 12, "h": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "showPoints": "never", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (handler, le) (rate(http_request_duration_seconds_bucket{job=\"api\"}[5m])))",
+          "legendFormat": "{{handler}}",
+          "range": true
+        }
+      ]
+    }
+  ]
+}
