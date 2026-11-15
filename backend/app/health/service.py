@@ -43,7 +43,7 @@ async def check_minio(storage: Storage) -> Literal["ok", "down"]:
             asyncio.to_thread(storage.internal.bucket_exists, storage.bucket),
             timeout=COMPONENT_TIMEOUT_SEC,
         )
-        return "ok" if exists is not None else "down"
+        return "ok" if exists else "down"
     except Exception as exc:
         log.warning("health: minio check failed", error=repr(exc))
         return "down"

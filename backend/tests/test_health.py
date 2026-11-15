@@ -193,6 +193,27 @@ def test_health_auxiliary_minio_down_returns_200_degraded(client):
     }
 
 
+def test_health_auxiliary_minio_bucket_missing_returns_200_degraded(client):
+    """When configured storage bucket does not exist (bucket_exists -> False): status 'degraded'."""
+    client.app.dependency_overrides[get_session] = lambda: MockSession()
+    client.app.dependency_overrides[get_redis] = lambda: MockRedis(ping_ok=True, heartbeat=b"1")
+    client.app.dependency_overrides[get_storage] = lambda: MockStorage(exists=False)
+    client.app.dependency_overrides[get_queue] = lambda: MockQueue(
+        ping_res={"worker": {"ok": "pong"}}
+    )
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "degraded",
+        "components": {
+            "db": "ok",
+            "redis": "ok",
+            "minio": "down",
+            "worker": "ok",
+        },
+    }
+
+
 def test_health_core_redis_down_returns_503_down(client):
     """When Redis is down: status 'down' (HTTP 503)."""
     client.app.dependency_overrides[get_session] = lambda: MockSession()
