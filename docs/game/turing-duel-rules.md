@@ -55,6 +55,10 @@ Participants chat in the room. Messages show only the sender's label.
 
 Each human marks every other participant as "bot" or "human". A participant cannot mark themselves. Bots do not vote.
 
+- When voting starts, every other participant is already marked "human".
+- A human switches any mark between "human" and "bot" as often as they like until the 45 seconds end.
+- The marks at the end of the voting phase are the ones that count. There is no "no guess": a mark left at "human" counts like any other.
+
 ## 6. Scoring and outcome
 
 ### Points per guess
@@ -63,9 +67,8 @@ Each human marks every other participant as "bot" or "human". A participant cann
 | --- | --- |
 | Correct (a bot marked bot, a human marked human) | +1 |
 | Wrong (a bot marked human, a human marked bot) | −1 |
-| No guess | 0 |
 
-A human's score is the sum over all their guesses. Marking a human as human earns a point; it is not worth 0.
+A human's score is the sum over all their guesses: one mark for each other participant, as it stands when voting ends, each worth +1 or −1. Marking a human as human earns a point; it is not worth 0.
 
 ### Who wins
 
@@ -76,7 +79,7 @@ A human's score is the sum over all their guesses. Marking a human as human earn
 
 ### If a player disconnects
 
-Guesses made before the disconnect count. Every guess that was not made scores 0.
+A player who disconnects keeps the marks they had at that moment, including the ones still at "human", and those marks count when voting ends. A player who disconnects before voting starts keeps every mark at "human".
 
 ### Worked example A: 3 humans and 2 bots
 
@@ -126,7 +129,7 @@ Results appear only after the game has ended. They show:
 | Room timer | 3 minutes from room creation, never restarts |
 | Discussion phase | 120 seconds |
 | Voting phase | 45 seconds |
-| Points per guess | +1 correct, −1 wrong, 0 no guess |
+| Points per guess | +1 correct, −1 wrong; every mark starts at "human" and counts |
 | Bot join delay | random, for example 10 to 30 seconds, configurable |
 
 ## 9. No bot leak (for implementers)
@@ -137,6 +140,8 @@ Rules for implementers (BE-27, BE-10, BE-09, FE-31, FE-32):
 
 - **Participant objects** have the same fields, with the same types, for bots and humans in every REST response and WebSocket event before the results. No `is_bot`, no null `user_id`, no extra or missing fields, no different id format. The result payload may carry `is_bot` only once the room is finished.
 - **Labels** are drawn from the same random pool for bots and humans. Label order never follows join order or the bot / human split.
+- **Identity before results**: clients know a participant only by its label number ("Player N", 1 to 5, stable for the room), never by the database participant id. This holds in the room state, chat messages, votes and every WebSocket event. A vote names its target by label number, and a chat message names its author by label number. Database ids may appear only in the results.
+- **Default marks**: when voting starts, every other participant is marked "human" for each human voter, bots and humans alike. The server does not need to store this default: a target without a stored mark counts as "human". Nothing sent during voting differs between a bot target and a human target.
 - **Join events** for bots and humans are the same event with the same shape. Bots join at random delays interleaved with humans; no bot joins in a burst or at a fixed offset from room creation.
 - **Counts** shown to players (participants present, "Start now" visibility, start conditions) always include bots. A count of humans only is never exposed.
 - **The last human leaves**: when the last human leaves the waiting room, the room just closes. Nothing sent to any client reveals whether the room had bots or planned any.
@@ -144,3 +149,11 @@ Rules for implementers (BE-27, BE-10, BE-09, FE-31, FE-32):
 - **Timing and behaviour**: bot chat messages go through the same event and the same fields as human messages, with typing delays and message rates in the range of human behaviour. Bots have no profile, so no profile link or avatar exists for any participant.
 - **Waiting room and phase events** carry the same data in every room, whether or not it has bots.
 - **Result fields**: on a draw `winner_participant_ids` is empty and `is_draw` is true; each human participant carries its own `outcome` (win, draw or loss).
+
+## Changes
+
+**2026-11-15**, decided by byul-byul (PO); answers Khalil-QadDoura's questions of 2026-11-08 on the DOC-08 card:
+
+1. **Changing a mark**: a human may change any mark any number of times until the voting phase ends; the marks at the end count (section 5).
+2. **Default marks, no "no guess"**: every other participant starts marked "human", and every mark counts, +1 or −1. The "no guess = 0" rule is removed. A player who disconnects keeps the marks they had at that moment instead of scoring 0 for missing guesses (sections 5, 6 and 8).
+3. **Identity**: before the results, clients see participants only by label number, never by database participant id; votes name their target by label number (section 9).
