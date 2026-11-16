@@ -260,6 +260,7 @@ Depends on: <CARD-ID>
 | 2026-11-12 | CI is one workflow `ci.yml` with a `ci-ok` gate; `ci-ok` is the only required check on `main` (INF-06) | byul-byul | Decided; branch protection on `main` to be applied by Khalil (repo admin) |
 | 2026-11-13 | Logs and metrics kept for at most 30 days (was 15): server logs, including IP addresses in the proxy access logs, and service metrics; Privacy Policy sections 2 and 6 | byul-byul | Decided; the enforcing mechanism is open (infrastructure doc, "Logs") |
 | 2026-11-15 | Turing Duel voting: marks preset to human, changeable until voting ends; no 'no guess'; disconnected players keep their marks; label numbers only before results (DOC-08 follow-up) | byul-byul | Decided |
+| 2026-11-16 | Turing Duel: a disconnected player still counts as a human for the winner and gets a score and an outcome; a player who comes back before voting ends can change marks; the deception rate counts preset marks and divides by all humans in the game (DOC-08 follow-up, PR #60) | byul-byul | Decided |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
