@@ -1,7 +1,7 @@
 {
   "uid": "wozu-api",
   "title": "WOZU API",
-  "description": "FastAPI request rate, error share, p95 latency and open WebSocket connections (INF-09, module M12). Source: the api job in Prometheus (prometheus-fastapi-instrumentator, BE-30). Provisioned from infra/grafana/dashboards/api.json; edit the file, not the UI.",
+  "description": "FastAPI request rate, error share, p95 latency of all routes, mean latency per route and open WebSocket connections (INF-09, module M12). Source: the api job in Prometheus (prometheus-fastapi-instrumentator, BE-30). Provisioned from infra/grafana/dashboards/api.json; edit the file, not the UI.",
   "tags": ["wozu", "m12", "api"],
   "editable": false,
   "graphTooltip": 1,
@@ -122,8 +122,8 @@
     {
       "id": 4,
       "type": "timeseries",
-      "title": "p95 latency by handler",
-      "description": "95 % of the requests to each route were answered faster than this, over 5 minutes: histogram_quantile(0.95) over the buckets of http_request_duration_seconds, per route template. A route with no request in the window has no value (a gap).",
+      "title": "p95 latency (all routes)",
+      "description": "95 % of all API requests together were answered faster than this, over 5 minutes: histogram_quantile(0.95) over http_request_duration_highr_seconds, whose buckets start at 10 ms (10, 25, 50, 75, 100, 250 ms, ...). The value is interpolated inside a bucket, so it is a few ms accurate, not exact. Not per route: that histogram has no route label, and the one per route (http_request_duration_seconds) has only the default buckets 100 ms, 500 ms and 1 s, so its p95 would read 95 ms for every route faster than 100 ms. The mean per route is the panel below.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "x": 12, "y": 9, "w": 12, "h": 9 },
       "fieldConfig": {
@@ -142,7 +142,36 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (handler, le) (rate(http_request_duration_seconds_bucket{job=\"api\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_highr_seconds_bucket{job=\"api\"}[5m])))",
+          "legendFormat": "p95",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Mean latency by handler",
+      "description": "Average time to answer a request to each route, over 5 minutes: the total seconds spent (http_request_duration_seconds_sum) divided by the number of requests (_count), per route template. Exact, whatever the buckets. A mean hides slow outliers, so it is shown next to the p95 of all routes above, not instead of it. A route with no request in the window has no value (a gap).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 18, "w": 24, "h": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "showPoints": "never", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (handler) (rate(http_request_duration_seconds_sum{job=\"api\"}[5m])) / sum by (handler) (rate(http_request_duration_seconds_count{job=\"api\"}[5m]))",
           "legendFormat": "{{handler}}",
           "range": true
         }
