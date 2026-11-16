@@ -14,18 +14,21 @@ import type {
 } from "./types";
 
 export interface ConversationListProps {
+  currentUserId?: number;
   selectedId?: number | null;
   onSelectConversation: (conv: ConversationItem) => void;
   className?: string;
 }
 
 export const ConversationList: React.FC<ConversationListProps> = ({
+  currentUserId,
   selectedId,
   onSelectConversation,
   className = "",
 }) => {
   const { t } = useText();
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [totalUnread, setTotalUnread] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -36,6 +39,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       setError(null);
       const data = await listConversations();
       setConversations(data);
+      setTotalUnread(null);
     } catch (err: unknown) {
       const e = err as { message?: string };
       setError(e.message || t("chat.failedToLoad"));
@@ -55,12 +59,20 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   useWsEvent<WsMessagePayload>("message", (payload) => {
     if (!payload || !payload.conversation_id) return;
 
+    const isMyMessage = Boolean(
+      currentUserId && payload.author_id === currentUserId,
+    );
+    const isCurrentlyOpen = selectedId === payload.conversation_id;
+
+    if (!isMyMessage && !isCurrentlyOpen) {
+      setTotalUnread((prev) => (prev !== null ? prev + 1 : null));
+    }
+
     setConversations((prevList) => {
       const index = prevList.findIndex((c) => c.id === payload.conversation_id);
 
       if (index >= 0) {
         const target = prevList[index];
-        const isCurrentlyOpen = selectedId === payload.conversation_id;
 
         const updatedTarget: ConversationItem = {
           ...target,
@@ -68,9 +80,10 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           last_message_id: payload.id,
           last_message_author_id: payload.author_id,
           updated_at: payload.created_at || new Date().toISOString(),
-          unread_count: isCurrentlyOpen
-            ? target.unread_count
-            : (target.unread_count || 0) + 1,
+          unread_count:
+            isCurrentlyOpen || isMyMessage
+              ? target.unread_count
+              : (target.unread_count || 0) + 1,
         };
 
         // Bump updated conversation to the top
@@ -99,26 +112,24 @@ export const ConversationList: React.FC<ConversationListProps> = ({
 
   /**
    * Real-time WebSocket listener: Unread count reset or conversation metadata update.
+   * When unread_count is a number, it represents the user's total unread count across all conversations
+   * after reading conversation_id. We reset this specific row to 0, and use payload.unread_count for the header.
    */
   useWsEvent<WsConversationUpdatedPayload>(
     "conversation_updated",
     (payload) => {
       if (!payload || !payload.conversation_id) return;
 
-      setConversations((prevList) => {
-        return prevList.map((conv) => {
-          if (conv.id === payload.conversation_id) {
-            return {
-              ...conv,
-              unread_count:
-                typeof payload.unread_count === "number"
-                  ? payload.unread_count
-                  : conv.unread_count,
-            };
-          }
-          return conv;
-        });
-      });
+      if (typeof payload.unread_count === "number") {
+        setTotalUnread(payload.unread_count);
+        setConversations((prevList) =>
+          prevList.map((conv) =>
+            conv.id === payload.conversation_id
+              ? { ...conv, unread_count: 0 }
+              : conv,
+          ),
+        );
+      }
     },
   );
 
@@ -135,24 +146,27 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     });
   }, [conversations, searchQuery]);
 
+  const totalUnreadCount =
+    totalUnread !== null
+      ? totalUnread
+      : conversations.reduce((acc, c) => acc + (c.unread_count || 0), 0);
+
   return (
     <div
-      className={`flex h-full flex-col bg-white dark:bg-gray-900 ${className}`}
+      className={`flex h-full flex-col bg-surface text-ink ${className}`}
       data-testid="conversation-list"
     >
-      <div className="border-b border-gray-100 p-4 dark:border-gray-800">
+      <div className="border-b border-border p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+          <h2 className="text-xl font-bold tracking-tight text-ink">
             {t("chat.messages")}
           </h2>
-          {conversations.some((c) => c.unread_count > 0) && (
-            <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary-800 dark:bg-primary-950/60 dark:text-primary-300">
-              {t("chat.unreadCount", {
-                count: conversations.reduce(
-                  (acc, c) => acc + (c.unread_count || 0),
-                  0,
-                ),
-              })}
+          {totalUnreadCount > 0 && (
+            <span
+              className="rounded-full bg-lime text-ink px-2.5 py-0.5 text-xs font-semibold"
+              data-testid="header-unread-count"
+            >
+              {t("chat.unreadCount", { count: totalUnreadCount })}
             </span>
           )}
         </div>
