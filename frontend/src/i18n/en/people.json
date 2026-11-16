@@ -20,5 +20,19 @@
   "unavailable": "Friend actions are temporarily unavailable. Please try again later.",
   "removeTitle": "Remove this friend?",
   "removeHint": "You can send a new request later.",
-  "cancel": "Cancel"
+  "cancel": "Cancel",
+  "circle": "Your circle",
+  "friendsTitle": "Good people. New possibilities.",
+  "friendsHint": "Keep in touch with the people you meet.",
+  "invalidId": "Enter a valid profile number.",
+  "profileId": "Profile number",
+  "openProfile": "Open profile",
+  "friendsTab": "Friends",
+  "requestsTab": "Requests",
+  "noFriends": "Your circle starts with a hello.",
+  "noRequests": "You're all caught up.",
+  "emptyHint": "Open someone's profile to make a new connection.",
+  "acceptRequest": "Accept request from member {{id}}",
+  "declineRequest": "Decline request from member {{id}}",
+  "requestFrom": "Request from member {{id}}"
 }
