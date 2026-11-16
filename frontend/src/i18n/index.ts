@@ -1,5 +1,6 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
+import profile from "./en/profile.json";
 import screens from "./en/screens.json";
 import en from "./en/common.json";
 import ar from "./ar/common.json";
@@ -48,14 +49,14 @@ void i18next.init({
   fallbackLng: "en",
   supportedLngs: [...languages],
   resources: {
-    en: { common: en, screens },
+    en: { common: en, screens, profile },
     ar: { common: ar },
     az: { common: az },
     tr: { common: tr },
     ru: { common: ru },
   },
   defaultNS: "common",
-  ns: ["common", "screens"],
+  ns: ["common", "screens", "profile"],
   initAsync: false,
   interpolation: { escapeValue: false },
 });

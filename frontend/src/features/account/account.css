@@ -1,0 +1,96 @@
+@layer base {
+  .account-page {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(2rem, 5vw, 5rem);
+    padding: clamp(1rem, 4vw, 4rem);
+    align-items: start;
+  }
+  .account-heading {
+    padding-block: 2rem;
+  }
+  .account-heading h1 {
+    font-size: clamp(2.6rem, 5vw, 4.7rem);
+    line-height: 1.08;
+    letter-spacing: -0.05em;
+    margin-block: 1rem 1.5rem;
+  }
+  .account-heading p {
+    max-width: 40ch;
+    line-height: 1.7;
+  }
+  .account-heading a {
+    display: inline-block;
+    margin-block-start: 1.5rem;
+    text-decoration: underline;
+  }
+  .account-panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 1.5rem;
+    padding: clamp(1.25rem, 3vw, 2.5rem);
+    display: grid;
+    gap: 1.25rem;
+  }
+  .account-panel h2 {
+    font-size: 1.4rem;
+    margin: 0;
+  }
+  .account-panel p {
+    line-height: 1.65;
+  }
+  .account-panel form {
+    display: grid;
+    gap: 1.25rem;
+  }
+  .account-panel > a {
+    text-decoration: underline;
+    font-size: 0.9rem;
+  }
+  .account-panel [role="alert"] {
+    color: var(--color-danger);
+    font-size: 0.9rem;
+  }
+  .account-danger {
+    border-block-start: 1px solid var(--color-border);
+    padding-block-start: 2rem;
+    margin-block-start: 1rem;
+    display: grid;
+    gap: 1rem;
+  }
+  .account-danger > a {
+    text-decoration: underline;
+  }
+  .account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  @media (max-width: 700px) {
+    .account-page {
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+    .account-heading {
+      padding-block: 1rem;
+    }
+  }
+}
+
+.account-language {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  border-block-end: 1px solid var(--color-border);
+  padding-block-end: 1.5rem;
+  margin-block-end: 1.5rem;
+}
+.account-language h2 {
+  margin-block: 0 0.5rem;
+}
+.account-language .language-picker select {
+  min-block-size: 44px;
+  max-inline-size: 100%;
+}
