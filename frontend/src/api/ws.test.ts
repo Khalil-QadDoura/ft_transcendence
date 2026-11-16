@@ -403,9 +403,9 @@ describe("WebSocketClient (FE-22)", () => {
 
   it("resets backoff ladder upon receiving pong heartbeat", async () => {
     let count = 1;
-    const fetchTicket = vi.fn().mockImplementation(() =>
-      Promise.resolve(`ticket_${count++}`),
-    );
+    const fetchTicket = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(`ticket_${count++}`));
     const client = new WebSocketClient({
       fetchTicket,
       reconnectDelays: [1000, 2000, 5000],
@@ -459,4 +459,3 @@ describe("WebSocketClient (FE-22)", () => {
     });
   });
 });
-

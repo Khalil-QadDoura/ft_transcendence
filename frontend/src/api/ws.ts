@@ -208,10 +208,7 @@ export class WebSocketClient {
     this.connectPromise = (async () => {
       try {
         const ticket = await this.getTicket();
-        if (
-          this.isManuallyClosed ||
-          this.connectionGeneration !== currentGen
-        ) {
+        if (this.isManuallyClosed || this.connectionGeneration !== currentGen) {
           return;
         }
 
@@ -226,10 +223,7 @@ export class WebSocketClient {
         this.socket = ws;
 
         ws.onopen = () => {
-          if (
-            this.socket !== ws ||
-            this.connectionGeneration !== currentGen
-          ) {
+          if (this.socket !== ws || this.connectionGeneration !== currentGen) {
             ws.close();
             return;
           }
