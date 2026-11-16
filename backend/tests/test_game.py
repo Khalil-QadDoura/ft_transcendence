@@ -56,6 +56,7 @@ def new_game_app(**overrides: object):
     defaults = {
         "database_url": TEST_DATABASE_URL,
         "redis_url": TEST_REDIS_URL,
+        "game_scheduler_enabled": True,  # these tests rely on the server's ticks
         "game_bot_probability": 0.0,
         "game_bot_min_delay_sec": 0.05,
         "game_bot_max_delay_sec": 0.12,
