@@ -144,6 +144,11 @@
     "submitApplication": "Submit Application",
     "cancel": "Cancel",
     "jobNotFound": "Job not found",
-    "backToJobs": "Back to jobs"
+    "backToJobs": "Back to jobs",
+    "geoNotSupported": "Geolocation is not supported by your browser",
+    "locationPermissionDenied": "Location permission was denied",
+    "locationUnavailable": "Unable to retrieve your current location",
+    "failedToLoadJobs": "Failed to load open jobs. Please try again.",
+    "failedToLoadMore": "Failed to load more jobs."
   }
 }
