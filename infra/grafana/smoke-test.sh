@@ -16,7 +16,8 @@
 #   query of every panel returns at least one series with data over the last 15 minutes
 #   (sent through Grafana's /api/ds/query, as the browser does, with each dashboard
 #   variable such as $project replaced by its current value from the dashboard JSON, the
-#   value the browser opens with), and Grafana refuses to delete them;
+#   value the browser opens with; that value must be one the variable's own query offers,
+#   or the browser would show another), and Grafana refuses to delete them;
 # - Grafana Live (WebSocket) answers 101 through the proxy at /grafana/api/live/ws;
 # - a login with a wrong password is refused (401).
 # Logs in as admin with Basic auth. The password is read from the running container
@@ -280,6 +281,26 @@ def dashboard_variables(dashboard):
     return values
 
 
+LABEL_VALUES = re.compile(r"^\s*label_values\(\s*(?:([^,()]+?)\s*,\s*)?(\w+)\s*\)\s*$")
+
+
+def variable_options(variable):
+    """Values a label_values() query variable offers over the last 15 minutes, as the
+    browser's dropdown fetches them (Grafana's datasource resource API); None for any
+    other kind of variable."""
+    match = LABEL_VALUES.match(variable.get("definition") or "")
+    if variable.get("type") != "query" or not match:
+        return None
+    metric, label = match.groups()
+    now = int(time.time())
+    params = {"start": now - 900, "end": now}
+    if metric:
+        params["match[]"] = metric
+    status, _, text = http("GET", f"/api/datasources/uid/{DATASOURCE['uid']}/resources/api/v1/label/{label}/values?"
+                           + urllib.parse.urlencode(params), auth=ADMIN)
+    return (as_json(text) or {}).get("data") or [] if status == 200 else []
+
+
 def substitute(expr, values):
     """expr with $name, ${name} and [[name]] replaced by the current value; others kept."""
     def value(match):
@@ -301,11 +322,15 @@ def check_dashboards():
         results.append((bool(ok), f"dashboard {uid} \"{dashboard.get('title')}\": folder {meta.get('folderTitle')},"
                                   f" provisioned {bool(meta.get('provisioned'))}"))
         variables = dashboard_variables(dashboard)
-        unset = sorted(name for name, value in variables.items() if not value)
-        if variables:
-            results.append((not unset, f"dashboard {uid} variables: "
-                                       + ", ".join(f"{name}={value or '(no current value)'}"
-                                                   for name, value in sorted(variables.items()))))
+        # The browser refreshes a query variable when the dashboard opens and, when the saved
+        # value is not among the answers, shows the first answer instead: so the saved value
+        # must be one of them for the panels below to be what the browser shows.
+        for variable in dashboard.get("templating", {}).get("list", []):
+            name, value = variable.get("name"), variables.get(variable.get("name"))
+            options = variable_options(variable)
+            ok = bool(value) and (options is None or value in options)
+            results.append((ok, f"dashboard {uid} variable {name}: current {value or '(none)'}"
+                                + ("" if options is None else f", offered {', '.join(options) or '(nothing)'}")))
         for panel in dashboard.get("panels", []):
             for target in panel.get("targets", []):
                 ref = target.get("refId", "A")
