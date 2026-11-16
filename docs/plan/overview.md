@@ -147,10 +147,10 @@ Decided by byul-byul on 2026-11-04. These rules are the input for card DOC-08, w
 
 **Scoring**
 
-- Each human marks every other participant as bot or human: +1 correct, −1 wrong, 0 no guess.
+- Each human marks every other participant as bot or human: every mark starts at "human" and can be changed until voting ends; +1 correct, −1 wrong, and a mark left at "human" counts (no "no guess" since 2026-11-15).
 - Highest score wins; a shared top score is a draw.
 - Room with a single human (1 human + bots): score above 0 is a win, 0 a draw, below 0 a loss.
-- A disconnected player scores 0 for the guesses they did not make.
+- A disconnected player keeps the marks they had, still counts as one of the humans for who wins, and gets a score and an outcome. Full rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md).
 
 ## Work split
 
@@ -260,6 +260,8 @@ Depends on: <CARD-ID>
 | 2026-11-12 | CI is one workflow `ci.yml` with a `ci-ok` gate; `ci-ok` is the only required check on `main` (INF-06) | byul-byul | Decided; branch protection on `main` to be applied by Khalil (repo admin) |
 | 2026-11-13 | Logs and metrics kept for at most 30 days (was 15): server logs, including IP addresses in the proxy access logs, and service metrics; Privacy Policy sections 2 and 6 | byul-byul | Decided; the enforcing mechanism is open (infrastructure doc, "Logs") |
 | 2026-11-15 | Monitoring (INF-08): Prometheus scrapes the API, postgres-exporter, redis-exporter and cAdvisor (from ghcr.io) every 15 s inside the Docker network; no host port, no proxy route; metrics kept 30 days, at most 1 GB (PO decision of 2026-11-12: logs and metrics at most 30 days, replacing the card's "e.g. 7 days"); `make metrics-check` runs in CI | byul-byul | Decided; review in the INF-08 PR. The Privacy Policy says at most 30 days for logs and metrics since #38 (DOC-01/02 follow-up). |
+| 2026-11-15 | Turing Duel voting: marks preset to human, changeable until voting ends; no 'no guess'; disconnected players keep their marks; label numbers only before results (DOC-08 follow-up) | byul-byul | Decided |
+| 2026-11-16 | Turing Duel: a disconnected player still counts as a human for the winner and gets a score and an outcome; a player who comes back before voting ends can change marks; the deception rate counts preset marks and divides by all humans in the game (DOC-08 follow-up, PR #60) | byul-byul | Decided |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
