@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client";
+import { SessionContext } from "../../app/session";
 import * as api from "./api";
 import { JobDetailPage } from "./JobDetailPage";
 import type { Job } from "./types";
@@ -92,6 +93,39 @@ describe("JobDetailPage (FE-24)", () => {
     expect(viewSpy).toHaveBeenCalledWith("42");
   });
 
+  it("redirects unauthenticated user to /login?next=... when clicking apply", async () => {
+    vi.spyOn(api, "fetchJobDetail").mockResolvedValue(mockJob);
+    vi.spyOn(api, "recordJobView").mockResolvedValue();
+
+    const router = createMemoryRouter(
+      [
+        { path: "/jobs/:id", element: <JobDetailPage /> },
+        { path: "/login", element: <div>Login Page</div> },
+      ],
+      { initialEntries: ["/jobs/42"] },
+    );
+
+    await act(async () => {
+      root.render(
+        <SessionContext value="anonymous">
+          <RouterProvider router={router} />
+        </SessionContext>,
+      );
+    });
+
+    const applyButton = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Apply with Video"),
+    );
+    expect(applyButton).toBeDefined();
+
+    await act(async () => {
+      applyButton?.click();
+    });
+
+    expect(router.state.location.pathname).toBe("/login");
+    expect(router.state.location.search).toBe("?next=%2Fjobs%2F42");
+  });
+
   it("opens apply modal and submits cover note successfully", async () => {
     vi.spyOn(api, "fetchJobDetail").mockResolvedValue(mockJob);
     vi.spyOn(api, "recordJobView").mockResolvedValue();
@@ -105,7 +139,11 @@ describe("JobDetailPage (FE-24)", () => {
     );
 
     await act(async () => {
-      root.render(<RouterProvider router={router} />);
+      root.render(
+        <SessionContext value="authenticated">
+          <RouterProvider router={router} />
+        </SessionContext>,
+      );
     });
 
     // Click Apply button
@@ -147,8 +185,8 @@ describe("JobDetailPage (FE-24)", () => {
     vi.spyOn(api, "fetchJobDetail").mockResolvedValue(mockJob);
     vi.spyOn(api, "recordJobView").mockResolvedValue();
 
-    // 422 error with next_step: profile
-    const guardError = new ApiError(422, "profile_incomplete", {
+    // Real backend error envelope: status 422, code "422", detail { code: "profile_incomplete", next_step: "profile" }
+    const guardError = new ApiError(422, "422", {
       code: "profile_incomplete",
       next_step: "profile",
     });
@@ -160,7 +198,11 @@ describe("JobDetailPage (FE-24)", () => {
     );
 
     await act(async () => {
-      root.render(<RouterProvider router={router} />);
+      root.render(
+        <SessionContext value="authenticated">
+          <RouterProvider router={router} />
+        </SessionContext>,
+      );
     });
 
     const applyButton = Array.from(container.querySelectorAll("button")).find(
@@ -187,10 +229,10 @@ describe("JobDetailPage (FE-24)", () => {
     vi.spyOn(api, "fetchJobDetail").mockResolvedValue(mockJob);
     vi.spyOn(api, "recordJobView").mockResolvedValue();
 
-    // 422 error with next_step: videos
-    const guardError = new ApiError(422, "no_video", {
+    // Real backend error envelope: status 422, code "422", detail { code: "no_video", next_step: "video" }
+    const guardError = new ApiError(422, "422", {
       code: "no_video",
-      next_step: "videos",
+      next_step: "video",
     });
     vi.spyOn(api, "applyToJob").mockRejectedValue(guardError);
 
@@ -200,7 +242,11 @@ describe("JobDetailPage (FE-24)", () => {
     );
 
     await act(async () => {
-      root.render(<RouterProvider router={router} />);
+      root.render(
+        <SessionContext value="authenticated">
+          <RouterProvider router={router} />
+        </SessionContext>,
+      );
     });
 
     const applyButton = Array.from(container.querySelectorAll("button")).find(

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ApiError } from "../../api/client";
+import { useContext, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { ApiError, getAccessToken } from "../../api/client";
+import { SessionContext } from "../../app/session";
 import { Avatar } from "../../components/Avatar";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
@@ -20,6 +21,8 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
   const { t } = useText();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const session = useContext(SessionContext);
 
   const [job, setJob] = useState<Job | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -72,6 +75,14 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
   );
 
   const handleOpenApply = () => {
+    const isAuthenticated =
+      session === "authenticated" || Boolean(getAccessToken());
+    if (!isAuthenticated) {
+      navigate(
+        `/login?next=${encodeURIComponent(location.pathname + location.search)}`,
+      );
+      return;
+    }
     setIsApplyOpen(true);
     setApplyError(null);
   };
@@ -97,13 +108,29 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
       }
     } catch (err) {
       if (err instanceof ApiError) {
+        const detailCode =
+          typeof err.detail === "object" &&
+          err.detail !== null &&
+          "code" in err.detail
+            ? String((err.detail as { code?: unknown }).code)
+            : undefined;
+
         // Handle apply guards: profile_incomplete or no_video
-        if (err.nextStep === "profile") {
+        if (
+          err.nextStep === "profile" ||
+          detailCode === "profile_incomplete" ||
+          err.code === "profile_incomplete"
+        ) {
           setApplyError({
             message: t("jobs.profileIncomplete"),
             nextStep: "/profile",
           });
-        } else if (err.nextStep === "videos" || err.code === "no_video") {
+        } else if (
+          err.nextStep === "video" ||
+          err.nextStep === "videos" ||
+          detailCode === "no_video" ||
+          err.code === "no_video"
+        ) {
           setApplyError({
             message: t("jobs.videoRequired"),
             nextStep: "/videos",
@@ -152,8 +179,11 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
         <p className="text-sm text-ink-muted leading-relaxed">
           {error || t("jobs.jobNotFoundDesc")}
         </p>
-        <Link to="/jobs">
-          <Button variant="secondary">{t("jobs.backToJobs")}</Button>
+        <Link
+          to="/jobs"
+          className="inline-flex items-center justify-center font-medium transition-colors select-none rounded-md text-sm px-4 py-2 gap-2 bg-paper-subtle text-ink hover:bg-border active:bg-border/90 border border-border"
+        >
+          {t("jobs.backToJobs")}
         </Link>
       </div>
     );
@@ -239,12 +269,13 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
           {/* Action Button: Apply or Manage Applications */}
           <div className="shrink-0 pt-2 sm:pt-0">
             {isOwnJob ? (
-              <Link to={`/employer/jobs/${job.id}/applications`}>
-                <Button variant="secondary" size="md">
-                  {t("jobs.viewApplications", {
-                    count: job.applications_count,
-                  })}
-                </Button>
+              <Link
+                to={`/employer/jobs/${job.id}/applications`}
+                className="inline-flex items-center justify-center font-medium transition-colors select-none rounded-md text-sm px-4 py-2 gap-2 bg-paper-subtle text-ink hover:bg-border active:bg-border/90 border border-border"
+              >
+                {t("jobs.viewApplications", {
+                  count: job.applications_count,
+                })}
               </Link>
             ) : applySuccess ? (
               <Button variant="secondary" size="md" disabled>
