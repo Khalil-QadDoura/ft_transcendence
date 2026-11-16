@@ -150,11 +150,21 @@ async def read_frames(websocket: WebSocket, redis: Redis, user_id: int, socket_i
 async def handle_receipt_frame(
     app: FastAPI, redis: Redis, user_id: int, kind: str, frame: dict[str, Any]
 ) -> None:
-    """Process client-sent delivered/read WS frames using the same rules as REST (BE-24)."""
+    """Process client-sent delivered/read WS frames using the same rules as REST (BE-24).
+
+    Accepts parameters both at top level (contract) and inside a `payload` dict (client wrapper).
+    """
     from app.conversations import service as conversations_service
 
+    payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else frame
+
     if kind == "delivered":
-        message_id = _positive_int(frame.get("message_id"))
+        raw_mid = (
+            payload.get("message_id")
+            if payload.get("message_id") is not None
+            else frame.get("message_id")
+        )
+        message_id = _positive_int(raw_mid)
         if message_id is None:
             return
         async with app.state.session_factory() as session:
@@ -163,8 +173,18 @@ async def handle_receipt_frame(
             )
         return
 
-    conv_id = _positive_int(frame.get("conversation_id"))
-    last_message_id = _positive_int(frame.get("last_message_id"))
+    raw_cid = (
+        payload.get("conversation_id")
+        if payload.get("conversation_id") is not None
+        else frame.get("conversation_id")
+    )
+    raw_lmid = (
+        payload.get("last_message_id")
+        if payload.get("last_message_id") is not None
+        else frame.get("last_message_id")
+    )
+    conv_id = _positive_int(raw_cid)
+    last_message_id = _positive_int(raw_lmid)
     if conv_id is None or last_message_id is None:
         return
     try:

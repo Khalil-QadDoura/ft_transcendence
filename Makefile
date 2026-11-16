@@ -1,6 +1,8 @@
 # One command from a fresh clone to a running site: `make`.
 # Everything runs in containers; the host needs Docker Engine 25+ (health checks use
 # start_interval, which Engine 24 refuses) with compose v2, make, bash and openssl.
+# The checks against the running stack (https-check, files-check, mail-check, metrics-check)
+# also use curl, and metrics-check python3 (macOS command line tools; the ubuntu runner).
 
 COMPOSE := docker compose
 # Every profile, so down and fclean also reach services that are off by default (worker).
@@ -8,7 +10,8 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
 
-.PHONY: all env certs up down logs test https-check images-check files-check mail-check fclean re
+.PHONY: all env certs up down logs test https-check images-check files-check mail-check metrics-check \
+	fclean re
 
 all: env up
 
@@ -88,6 +91,14 @@ files-check:
 # its link to the frontend, verify, login; deletes the message afterwards (INF-05).
 mail-check:
 	@./infra/mailpit/smoke-test.sh
+
+# Monitoring against the running stack: every Prometheus target up (prometheus, api,
+# postgres, redis, cadvisor), one real series per source (pg_up, redis_up, the api
+# container's CPU and memory, the API's request counter) and the retention decided for
+# metrics (30d, 1GB). Queries Prometheus inside its container, which has no host port;
+# retries for up to 60 s (INF-08).
+metrics-check:
+	@./infra/prometheus/smoke-test.sh
 
 # Removes containers, volumes (database, files), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.

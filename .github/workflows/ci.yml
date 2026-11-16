@@ -263,6 +263,10 @@ jobs:
       # Every compose image, Dockerfile FROM and workflow image: pinned by tag and digest
       # (INF-07).
       - run: make images-check
+      # Monitoring: every Prometheus target up, pg_up and redis_up 1, CPU and memory series
+      # of the api container from cAdvisor on the ubuntu runner, the API's request counter,
+      # retention 30d and 1GB (INF-08).
+      - run: make metrics-check
       - name: Service logs
         if: failure()
         run: |
