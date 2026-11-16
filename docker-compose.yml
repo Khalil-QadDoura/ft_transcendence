@@ -356,7 +356,11 @@ services:
   # only the disk metrics need (disabled below).
   # Light flags: Docker containers only; their stats every 30 s instead of every second;
   # only the cpu and memory metric groups; of all the container labels only the compose
-  # service name, so a series reads container_label_com_docker_compose_service="api".
+  # project and service names, so a series reads
+  # container_label_com_docker_compose_project="wozu" and
+  # container_label_com_docker_compose_service="api". cAdvisor sees every container on the
+  # Docker host, other compose projects too (a second clone, another team's stack); the
+  # INF-09 container panels keep this project's by filtering on the project label.
   # Health: the same /healthz the image's own check asks, with its busybox wget.
   cadvisor:
     image: ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
@@ -365,7 +369,7 @@ services:
       - --housekeeping_interval=30s
       - --enable_metrics=cpu,memory
       - --store_container_labels=false
-      - --whitelisted_container_labels=com.docker.compose.service
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro

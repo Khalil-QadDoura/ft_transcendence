@@ -12,8 +12,9 @@
 #   read-only) and its health check reaches Prometheus;
 # - the dashboards uid wozu-api and wozu-infra are provisioned in the folder WOZU, every
 #   query of every panel returns at least one series with data over the last 15 minutes
-#   (sent through Grafana's /api/ds/query, as the browser does), and Grafana refuses to
-#   delete them;
+#   (sent through Grafana's /api/ds/query, as the browser does, with each dashboard
+#   variable such as $project replaced by its current value from the dashboard JSON, the
+#   value the browser opens with), and Grafana refuses to delete them;
 # - Grafana Live (WebSocket) answers 101 through the proxy at /grafana/api/live/ws;
 # - a login with a wrong password is refused (401).
 # Logs in as admin with Basic auth. The password is read from the running container
@@ -72,6 +73,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import socket
 import ssl
 import sys
@@ -242,6 +244,28 @@ def series_count(answer, ref):
     return count
 
 
+VARIABLE = re.compile(r"\$\{(\w+)(?::\w+)?\}|\[\[(\w+)\]\]|\$(\w+)")
+
+
+def dashboard_variables(dashboard):
+    """{name: current value} of the dashboard's variables, as the browser opens it."""
+    values = {}
+    for variable in dashboard.get("templating", {}).get("list", []):
+        current = (variable.get("current") or {}).get("value")
+        if isinstance(current, list):
+            current = "|".join(current)
+        values[variable.get("name")] = current
+    return values
+
+
+def substitute(expr, values):
+    """expr with $name, ${name} and [[name]] replaced by the current value; others kept."""
+    def value(match):
+        name = next(group for group in match.groups() if group)
+        return values[name] if values.get(name) is not None else match.group(0)
+    return VARIABLE.sub(value, expr)
+
+
 def check_dashboards():
     results = []
     for uid, title in DASHBOARDS.items():
@@ -254,12 +278,18 @@ def check_dashboards():
         ok = meta.get("folderTitle") == FOLDER and meta.get("provisioned") and dashboard.get("title") == title
         results.append((bool(ok), f"dashboard {uid} \"{dashboard.get('title')}\": folder {meta.get('folderTitle')},"
                                   f" provisioned {bool(meta.get('provisioned'))}"))
+        variables = dashboard_variables(dashboard)
+        unset = sorted(name for name, value in variables.items() if not value)
+        if variables:
+            results.append((not unset, f"dashboard {uid} variables: "
+                                       + ", ".join(f"{name}={value or '(no current value)'}"
+                                                   for name, value in sorted(variables.items()))))
         for panel in dashboard.get("panels", []):
             for target in panel.get("targets", []):
                 ref = target.get("refId", "A")
                 ds_uid = (target.get("datasource") or panel.get("datasource") or {}).get("uid")
                 query = {"refId": ref, "datasource": {"type": "prometheus", "uid": ds_uid},
-                         "expr": target.get("expr", ""), "range": True, "instant": False,
+                         "expr": substitute(target.get("expr", ""), variables), "range": True, "instant": False,
                          "intervalMs": 15000, "maxDataPoints": 100}
                 status, _, text = http("POST", "/api/ds/query", auth=ADMIN,
                                        body={"queries": [query], "from": "now-15m", "to": "now"})
@@ -267,6 +297,10 @@ def check_dashboards():
                 error = answer.get("results", {}).get(ref, {}).get("error") or answer.get("message")
                 count = series_count(answer, ref) if status == 200 else 0
                 label = f"{uid} / {panel.get('title')} / {ref}"
+                used = sorted(name for name in variables if re.search(
+                    r"\$\{%s[:}]|\[\[%s\]\]|\$%s\b" % ((re.escape(name),) * 3), target.get("expr", "")))
+                if used:
+                    label += " (" + ", ".join(f"{name}={variables[name]}" for name in used) + ")"
                 if ds_uid != DATASOURCE["uid"]:
                     results.append((False, f"{label}: datasource uid {ds_uid}, expected {DATASOURCE['uid']}"))
                 else:
