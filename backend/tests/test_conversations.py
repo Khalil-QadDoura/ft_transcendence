@@ -302,7 +302,7 @@ def test_create_ai_conversation(client):
 
 
 def test_list_conversations(client):
-    """Lists conversations for user with limit and unread counts."""
+    """Lists conversations for user with limit, unread counts, and optional peer info."""
     client.app.dependency_overrides[get_current_user] = lambda: USER_A
     now = datetime.now(UTC)
 
@@ -318,7 +318,27 @@ def test_list_conversations(client):
             "last_message_author_id": 20,
             "unread_count": 3,
             "updated_at": now,
-        }
+            "peer_id": 20,
+            "peer_first_name": "Bob",
+            "peer_last_name": "Smith",
+            "peer_avatar_key": "avatars/20/avatar.png",
+        },
+        {
+            "id": 2,
+            "type": "ai",
+            "title": "Assistant Chat",
+            "job_id": None,
+            "job_title": None,
+            "last_message_id": None,
+            "last_message_content": None,
+            "last_message_author_id": None,
+            "unread_count": 0,
+            "updated_at": now,
+            "peer_id": None,
+            "peer_first_name": None,
+            "peer_last_name": None,
+            "peer_avatar_key": None,
+        },
     ]
 
     with patch(
@@ -329,10 +349,19 @@ def test_list_conversations(client):
 
     assert resp.status_code == 200
     items = resp.json()
-    assert len(items) == 1
+    assert len(items) == 2
     assert items[0]["id"] == 1
     assert items[0]["job_title"] == "Senior Python Engineer"
     assert items[0]["unread_count"] == 3
+    assert items[0]["peer"] == {
+        "id": 20,
+        "first_name": "Bob",
+        "last_name": "Smith",
+        "display_name": "Bob Smith",
+        "avatar_url": "https://localhost/files/avatars/20/avatar.png",
+    }
+    assert items[1]["id"] == 2
+    assert items[1]["peer"] is None
 
 
 def test_get_unread_total(client):
@@ -861,7 +890,7 @@ def test_ws_receipt_frames_handle_delivered_read_and_invalid_inputs():
             patch(
                 "app.conversations.repo.mark_delivered",
                 new_callable=AsyncMock,
-                side_effect=[delivered_msg, None],
+                side_effect=[delivered_msg, None, delivered_msg],
             ),
             patch(
                 "app.conversations.repo.get_active_participant_ids",
@@ -870,6 +899,7 @@ def test_ws_receipt_frames_handle_delivered_read_and_invalid_inputs():
             ),
             patch("app.realtime.service.send_to_user", new_callable=AsyncMock) as m_ws,
         ):
+            # Top-level frame format
             await realtime_service.handle_receipt_frame(
                 fake_app, mock_redis, 20, "delivered", {"type": "delivered", "message_id": 100}
             )
@@ -886,19 +916,44 @@ def test_ws_receipt_frames_handle_delivered_read_and_invalid_inputs():
             )
             assert m_ws.await_count == 0
 
+            # Payload envelope format: {type: "delivered", payload: {message_id: 100}}
+            m_ws.reset_mock()
+            await realtime_service.handle_receipt_frame(
+                fake_app,
+                mock_redis,
+                20,
+                "delivered",
+                {"type": "delivered", "payload": {"message_id": 100}},
+            )
+            assert m_ws.await_count == 2
+            assert m_ws.await_args_list[0].args[3] == {
+                "message_id": 100,
+                "status": "delivered",
+            }
+
         with (
             patch(
                 "app.conversations.service.mark_read_and_broadcast",
                 new_callable=AsyncMock,
-                side_effect=[None, PermissionError("forbidden")],
+                side_effect=[None, None, PermissionError("forbidden")],
             ) as m_read,
         ):
+            # Top-level read frame
             await realtime_service.handle_receipt_frame(
                 fake_app,
                 mock_redis,
                 20,
                 "read",
                 {"type": "read", "conversation_id": 1, "last_message_id": 100},
+            )
+            # Payload envelope format:
+            # {"type": "read", "payload": {"conversation_id": 1, "last_message_id": 100}}
+            await realtime_service.handle_receipt_frame(
+                fake_app,
+                mock_redis,
+                20,
+                "read",
+                {"type": "read", "payload": {"conversation_id": 1, "last_message_id": 100}},
             )
             # PermissionError / LookupError on outsider read receipt is swallowed cleanly
             await realtime_service.handle_receipt_frame(
@@ -908,7 +963,7 @@ def test_ws_receipt_frames_handle_delivered_read_and_invalid_inputs():
                 "read",
                 {"type": "read", "conversation_id": 999, "last_message_id": 100},
             )
-            assert m_read.await_count == 2
+            assert m_read.await_count == 3
 
     asyncio.run(run())
 
@@ -1054,6 +1109,8 @@ def test_conversations_real_database_lifecycle():
         assert r_conv.json()["type"] == "direct"
         assert r_conv.json()["job_id"] == job_id
         assert r_conv.json()["job_title"] == "Senior Python Engineer"
+        assert r_conv.json()["peer"]["id"] == bob_id
+        assert "display_name" in r_conv.json()["peer"]
 
         # 6. Idempotency of get-or-create direct:
         # Bob calls create conversation with Alice -> 201 (returns existing conversation)
@@ -1064,6 +1121,16 @@ def test_conversations_real_database_lifecycle():
         )
         assert r_conv_exist.status_code == 201
         assert r_conv_exist.json()["id"] == conv_id
+        assert r_conv_exist.json()["peer"]["id"] == alice_id
+
+        # Direct listing includes peer information for both sides
+        r_alice_list = test_client.get("/api/conversations", headers=alice_h)
+        assert r_alice_list.status_code == 200
+        assert r_alice_list.json()[0]["peer"]["id"] == bob_id
+
+        r_bob_list = test_client.get("/api/conversations", headers=bob_h)
+        assert r_bob_list.status_code == 200
+        assert r_bob_list.json()[0]["peer"]["id"] == alice_id
 
         # 7. List participants
         r_parts = test_client.get(f"/api/conversations/{conv_id}/participants", headers=alice_h)
