@@ -8,8 +8,9 @@
 # - access: no anonymous access (/api/search without login is 401), sign-up is refused,
 #   and the security settings as Grafana reads them (no anonymous access, sign-up or org
 #   creation, Secure cookie, brute-force protection on, no usage reports or update checks,
-#   public dashboards and external snapshots off); the public-dashboard API answers 404
-#   and the snapshot sharing options offer no external publish;
+#   public dashboards and snapshots, local and external, off); the public-dashboard API
+#   answers 404, creating a snapshot is refused (403) and the snapshot sharing options
+#   offer no external publish;
 # - the datasource uid prometheus is provisioned (http://prometheus:9090, default,
 #   read-only) and its health check reaches Prometheus;
 # - the dashboards uid wozu-api and wozu-infra are provisioned in the folder WOZU, every
@@ -109,6 +110,7 @@ SETTINGS = [
     ("news", "news_feed_enabled", "false"),
     ("plugins", "preinstall_disabled", "true"),
     ("public_dashboards", "enabled", "false"),
+    ("snapshots", "enabled", "false"),
     ("snapshots", "external_enabled", "false"),
 ]
 TLS = ssl.create_default_context(cafile=ca)
@@ -212,7 +214,7 @@ def check_access():
     results.append((not wrong, "security settings: " + ("; ".join(wrong) if wrong else
                                                        f"{len(SETTINGS)} as decided (anonymous, sign-up, "
                                                        "org create, Secure cookie, brute-force, analytics, news, plugins, "
-                                                       "public dashboards, external snapshots)")))
+                                                       "public dashboards, snapshots, external snapshots)")))
     # Public dashboards off: the API that gives a dashboard a public link is not there (404).
     # Were it there, the link just made is removed again at once.
     uid = next(iter(DASHBOARDS))
@@ -225,6 +227,20 @@ def check_access():
                                    + ("(refused, public dashboards are off)" if status == 404 else
                                       f"(expected 404; public link {made} made and removed again)" if made else
                                       f"(expected 404) {(as_json(text) or {}).get('message')}")))
+    # Snapshots off: creating one from a real dashboard (so it would succeed were they on)
+    # is refused with 403. Were it accepted, the snapshot is removed again with its deleteKey.
+    status, _, text = http("GET", f"/api/dashboards/uid/{uid}", auth=ADMIN)
+    dashboard = (as_json(text) or {}).get("dashboard") or {"title": "grafana-check"}
+    status, _, text = http("POST", "/api/snapshots", auth=ADMIN,
+                           body={"dashboard": dashboard, "name": "grafana-check", "expires": 60})
+    answer = as_json(text) or {}
+    made = answer.get("key") if status == 200 else None
+    if made:
+        http("GET", f"/api/snapshots-delete/{answer.get('deleteKey')}", auth=ADMIN)
+    results.append((status == 403, f"POST /grafana/api/snapshots: {status} "
+                                   + ("(refused, snapshots are off)" if status == 403 else
+                                      f"(expected 403; snapshot {made} made and deleted again)" if made else
+                                      f"(expected 403) {answer.get('message')}")))
     status, _, text = http("GET", "/api/snapshot/shared-options", auth=ADMIN)
     options = as_json(text) or {}
     results.append((status == 200 and options.get("externalEnabled") is False,
