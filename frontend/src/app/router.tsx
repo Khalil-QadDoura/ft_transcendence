@@ -1,3 +1,4 @@
+import { PublicProfile } from "../features/people/PublicProfile";
 import { ProfilePage } from "../features/profile/ProfilePage";
 import { useText } from "../i18n/useText";
 import {
@@ -63,7 +64,6 @@ export const routes: RouteObject[] = [
       ...pages([
         ["jobs", "routes.jobs"],
         ["jobs/:id", "routes.job"],
-        ["users/:id", "routes.person"],
         ["game/rules", "routes.rules"],
         ["status", "routes.status"],
       ]),
@@ -85,6 +85,7 @@ export const routes: RouteObject[] = [
         children: [
           { path: "settings", element: <AccountSettings /> },
           { path: "profile", element: <ProfilePage /> },
+          { path: "users/:id", element: <PublicProfile /> },
           ...pages([
             ["friends", "routes.friends"],
             ["chat", "routes.chat"],
