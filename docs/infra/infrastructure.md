@@ -11,7 +11,7 @@ Infra owns four mandatory items and five module points. The reference already ha
 - **Front proxy decided (2026-11-04, INF-01):** nginx + ModSecurity v3 + OWASP Core Rule Set is the only front door instead of Caddy. Configuration: [infra/proxy/](../../infra/proxy/README.md).
 - **File storage decided (2026-11-09, INF-04):** MinIO on the same origin at `/files`, private bucket `files` created by the one-shot `minio-init`, uploads and video reads through presigned URLs; see File storage over HTTPS.
 - **Monitoring (2026-11-15, INF-08):** Prometheus scrapes the API, postgres-exporter, redis-exporter and cAdvisor inside the Docker network; no host port, no proxy route; metrics kept 30 days, at most 1 GB; `make metrics-check`. See M12 under Infra modules.
-- **Dashboards (2026-11-15, INF-09):** Grafana at `/grafana/` behind the proxy, login `admin` with the generated `GRAFANA_ADMIN_PASSWORD`, no anonymous access, no sign-up, no public dashboards, no plugins and no calls to grafana.com; datasource and two dashboards (WOZU API, WOZU Infrastructure) provisioned read-only from `infra/grafana/`; `make grafana-check`. See M12 under Infra modules.
+- **Dashboards (2026-11-15, INF-09):** Grafana at `/grafana/` behind the proxy, login `admin` with the generated `GRAFANA_ADMIN_PASSWORD`, no anonymous access, no sign-up, no public dashboards or snapshots, no plugins and no calls to grafana.com; datasource and two dashboards (WOZU API, WOZU Infrastructure) provisioned read-only from `infra/grafana/`; `make grafana-check`. See M12 under Infra modules.
 - **One origin for everything** (`https://localhost` at the defense): frontend at `/`, API at `/api`, WebSockets at `/ws`, files at `/files`, Grafana at `/grafana`, Mailpit at `/mail`. One certificate warning, no CORS, no mixed content.
 
 ## Front proxy (decided 2026-11-04)
@@ -236,7 +236,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `make files-check` | smoke test of `/files` against the running stack, ends with a Chrome console snippet (see File storage over HTTPS) |
 | `make mail-check` | sign-up email end to end through the proxy against the running stack (see Email without a paid service) |
 | `make metrics-check` | every Prometheus target up, one real series per source, retention 30d and 1GB, against the running stack (see M12 under Infra modules) |
-| `make grafana-check` | Grafana through the proxy: login, security settings (public dashboards and external snapshots off among them), the Prometheus datasource healthy, both dashboards provisioned with data in every panel (dashboard variables at their saved value), deletion refused, Grafana Live over WebSocket, against the running stack (see M12 under Infra modules) |
+| `make grafana-check` | Grafana through the proxy: login, security settings (public dashboards and snapshots off among them), the Prometheus datasource healthy, both dashboards provisioned with data in every panel (dashboard variables at their saved value), deletion refused, Grafana Live over WebSocket, against the running stack (see M12 under Infra modules) |
 | `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
 | `make re` | `fclean` + `all` |
 
@@ -356,10 +356,11 @@ Grafana stores the password in its database when the `grafana-data` volume is ne
 | `GF_PLUGINS_PREINSTALL_DISABLED` | `true` | Grafana 13 otherwise downloads about ten plugins from grafana.com at first start. The built-in Prometheus datasource is all the dashboards need, so `/var/lib/grafana/plugins` stays empty |
 | `GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED`, `GF_PLUGINS_PLUGIN_ADMIN_ENABLED` | `true`, `false` | The plugin signing key is not fetched from grafana.com (Grafana uses its built-in one), and the plugin catalogue page is off |
 | `GF_PUBLIC_DASHBOARDS_ENABLED` | `false` | Admin cannot give a dashboard a public link that works without a login; the API for it answers 404 (since the INF-09 review) |
+| `GF_SNAPSHOTS_ENABLED` | `false` | No snapshots at all; creating one answers 403 "Dashboard Snapshots are disabled" (PO decision, byul-byul, 2026-11-16; see below) |
 | `GF_SNAPSHOTS_EXTERNAL_ENABLED` | `false` | The share option "Publish to snapshots.raintank.io" is gone, the last way the UI could send data out to grafana.com (since the INF-09 review) |
 | brute-force protection | on (the default, not disabled) | 5 failed logins for one username within 5 minutes lock that username for 5 minutes |
 
-**Local snapshots** stay on (`[snapshots] enabled`, Grafana's default). A snapshot is a copy of a dashboard with its data, stored in Grafana's own database. Whoever has its link (a random 32-character key) can open it without a login: tested on 2026-11-16, `GET /grafana/api/snapshots/<key>` answered 200 without a session, although `[snapshots] public_mode` is `false`. Only admin can make one, and none exists unless admin makes it. `GF_SNAPSHOTS_ENABLED: "false"` would turn snapshots off as well; that is a PO question, not part of INF-09.
+**Snapshots** are off, local ones too (PO decision, byul-byul, 2026-11-16). A snapshot is a copy of a dashboard with its data, stored in Grafana's own database. Whoever has its link (a random 32-character key) can open it without a login: tested on 2026-11-16 with snapshots still on, `GET /grafana/api/snapshots/<key>` and the snapshot page answered 200 without a session, although `[snapshots] public_mode` is `false`. The project does not need snapshots, so `GF_SNAPSHOTS_ENABLED: "false"` removes them: `POST /grafana/api/snapshots` answers 403 "Dashboard Snapshots are disabled".
 
 **Lockout behaviour.** Grafana counts failed logins per username; its per-IP protection is off by default (`disable_ip_address_login_protection = true`). A locked login answers exactly like a wrong password: 401 "Invalid username or password". A successful login does not reset the count. To unlock, wait 5 minutes. `make grafana-check` sends its wrong password for a user that does not exist (`grafana-check-nobody`), never for `admin`, so any number of runs leaves `admin` unlocked. Six runs in a row followed by an `admin` login were tested on 2026-11-15.
 
@@ -398,6 +399,8 @@ The description of each panel (the ⓘ next to its title) explains the query in 
 
 **Compose project variable.** The infrastructure dashboard has one variable, `project` (label "Compose project", the dropdown at the top). Its values are `label_values(container_memory_working_set_bytes, container_label_com_docker_compose_project)`, every compose project cAdvisor sees. Its default is `wozu` (`name: wozu` at the top of `docker-compose.yml`). Both container panels filter on `container_label_com_docker_compose_project="$project"`. Without the filter, another compose project on the same Docker host adds its containers to the same lines. Tested on 2026-11-16 with a throwaway container labelled `com.docker.compose.project=inf09-other`, `com.docker.compose.service=db`: the old memory query's `db` line summed both containers, the new one only this stack's `db`. CI and a clean defense machine have one project only, so they never showed it.
 
+The default is fixed in the dashboard JSON, so it only matches a stack started under the name from `docker-compose.yml`. A stack started under another project name (`COMPOSE_PROJECT_NAME=… make`, or `docker compose -p …`) gets container labels with that name. In the browser, the dropdown then falls back to the first project Prometheus offers. Whoever runs such a stack picks their own project in the dropdown. `make grafana-check` FAILs on it by design ("variable project: current wozu, offered …", and both container panels with 0 series): the check tests what the browser opens with, and that would be another project, or none.
+
 **Check:** `make grafana-check` (`infra/grafana/smoke-test.sh`) runs against the running stack, over HTTPS from the host through the proxy, with the proxy certificate as the trusted CA. It reads the root URL and the admin password from the `grafana` container (`docker compose exec -T grafana printenv`) into a private temporary file; the password is never printed or put on a command line. Then it checks, with one `ok` / `FAIL` line each:
 
 1. Entry and login:
@@ -408,8 +411,9 @@ The description of each panel (the ⓘ next to its title) explains the query in 
 3. Access and settings:
    - anonymous API access gets 401;
    - sign-up is disabled;
-   - the 13 settings of the table above are read back from `/api/admin/settings` (`public_dashboards.enabled` and `snapshots.external_enabled` among them);
+   - the 14 settings of the table above are read back from `/api/admin/settings` (`public_dashboards.enabled`, `snapshots.enabled` and `snapshots.external_enabled` among them);
    - the public-dashboard API (`POST /api/dashboards/uid/wozu-api/public-dashboards`) answers 404; if it ever makes a public link, the check removes it again at once and fails;
+   - `POST /api/snapshots` with a real dashboard answers 403; if it ever makes a snapshot, the check deletes it again with its `deleteKey` and fails;
    - `/api/snapshot/shared-options` reports `externalEnabled: false`;
    - the plugins directory is empty.
 4. The datasource has uid `prometheus`, type, URL, default and read-only as provisioned, and its health check passes.
@@ -425,6 +429,7 @@ To see it fail:
 - `url: http://prometheus:9999` in `provisioning/datasources/prometheus.yml` plus `docker compose restart grafana` makes the datasource and every panel FAIL ("connection refused").
 - `GF_AUTH_ANONYMOUS_ENABLED: "true"` in compose plus `docker compose up -d grafana` makes the login redirect, anonymous access and the setting FAIL.
 - `GF_PUBLIC_DASHBOARDS_ENABLED: "true"` in compose plus `docker compose up -d grafana` makes the settings line and the public-dashboard line FAIL (the public link the check makes is removed again).
+- `GF_SNAPSHOTS_ENABLED: "true"` in compose plus `docker compose up -d grafana` makes the settings line and the snapshot line FAIL (the snapshot the check makes is deleted again).
 - `"current": { "text": "nobody", "value": "nobody" }` for the `project` variable in `dashboards/infrastructure.json` (no restart, Grafana rescans in 10 s) makes the variable line and both container panels FAIL.
 
 Undo each with `git checkout` and the same command.
