@@ -11,7 +11,7 @@ Infra owns four mandatory items and five module points. The reference already ha
 - **Front proxy decided (2026-11-04, INF-01):** nginx + ModSecurity v3 + OWASP Core Rule Set is the only front door instead of Caddy. Configuration: [infra/proxy/](../../infra/proxy/README.md).
 - **File storage decided (2026-11-09, INF-04):** MinIO on the same origin at `/files`, private bucket `files` created by the one-shot `minio-init`, uploads and video reads through presigned URLs; see File storage over HTTPS.
 - **Monitoring (2026-11-15, INF-08):** Prometheus scrapes the API, postgres-exporter, redis-exporter and cAdvisor inside the Docker network; no host port, no proxy route; metrics kept 30 days, at most 1 GB; `make metrics-check`. See M12 under Infra modules.
-- **Dashboards (2026-11-15, INF-09):** Grafana at `/grafana/` behind the proxy, login `admin` with the generated `GRAFANA_ADMIN_PASSWORD`, no anonymous access, no sign-up, no plugins and no calls to grafana.com; datasource and two dashboards (WOZU API, WOZU Infrastructure) provisioned read-only from `infra/grafana/`; `make grafana-check`. See M12 under Infra modules.
+- **Dashboards (2026-11-15, INF-09):** Grafana at `/grafana/` behind the proxy, login `admin` with the generated `GRAFANA_ADMIN_PASSWORD`, no anonymous access, no sign-up, no public dashboards, no plugins and no calls to grafana.com; datasource and two dashboards (WOZU API, WOZU Infrastructure) provisioned read-only from `infra/grafana/`; `make grafana-check`. See M12 under Infra modules.
 - **One origin for everything** (`https://localhost` at the defense): frontend at `/`, API at `/api`, WebSockets at `/ws`, files at `/files`, Grafana at `/grafana`, Mailpit at `/mail`. One certificate warning, no CORS, no mixed content.
 
 ## Front proxy (decided 2026-11-04)
@@ -226,7 +226,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | Target | What it does |
 | --- | --- |
 | `make` (`all`) | `env` + `up` |
-| `make env` | `scripts/init-env.sh`: when `.env` is missing, copies `.env.example` and fills the empty secrets (`JWT_SECRET`, `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) with `openssl rand -hex 32`. When `.env` exists, it appends each key of `.env.example` that `.env` lacks: a generated value for those five secrets, the example value for the rest (an existing `.env` from before INF-09 thus gets `GRAFANA_ADMIN_PASSWORD`). It never changes a value already in `.env` and prints key names only, never values |
+| `make env` | `scripts/init-env.sh`: when `.env` is missing, copies `.env.example` and fills the empty secrets (`JWT_SECRET`, `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) with `openssl rand -hex 32`. When `.env` exists, it appends each key of `.env.example` that `.env` lacks: a generated value for those five secrets, the example value for the rest (an existing `.env` from before INF-09 thus gets `GRAFANA_ADMIN_PASSWORD`). It never changes a value already in `.env` and prints key names only, never values. A key counts as present also when its line is indented or written `export KEY=…` (compose reads both forms), so such a line gets no second copy (since the INF-09 review) |
 | `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait`, which returns once every long-running service is healthy and `minio-init` has exited 0 (see Images, health checks and logs) |
 | `make down` | stops and removes the containers, keeps volumes |
 | `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
@@ -236,7 +236,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `make files-check` | smoke test of `/files` against the running stack, ends with a Chrome console snippet (see File storage over HTTPS) |
 | `make mail-check` | sign-up email end to end through the proxy against the running stack (see Email without a paid service) |
 | `make metrics-check` | every Prometheus target up, one real series per source, retention 30d and 1GB, against the running stack (see M12 under Infra modules) |
-| `make grafana-check` | Grafana through the proxy: login, security settings, the Prometheus datasource healthy, both dashboards provisioned with data in every panel, deletion refused, Grafana Live over WebSocket, against the running stack (see M12 under Infra modules) |
+| `make grafana-check` | Grafana through the proxy: login, security settings (public dashboards and external snapshots off among them), the Prometheus datasource healthy, both dashboards provisioned with data in every panel (dashboard variables at their saved value), deletion refused, Grafana Live over WebSocket, against the running stack (see M12 under Infra modules) |
 | `make fclean` | removes containers, volumes, the images built here and the certificate; **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
 | `make re` | `fclean` + `all` |
 
@@ -282,7 +282,7 @@ Each checklist mirrors the subject's bullets for that module; every box must be 
 
 - [x] Prometheus scrapes the API `/metrics` (via `prometheus-fastapi-instrumentator`; backend card BE-30), Postgres, Redis and container exporters (INF-08)
 - [x] Exporters and integrations configured in `prometheus.yml`, committed (`infra/prometheus/prometheus.yml`, INF-08)
-- [x] Custom Grafana dashboards provisioned from JSON files: API request rate, error rate, p95 latency, WebSocket connections, DB connections, Redis memory, container CPU / RAM (`infra/grafana/dashboards/`, INF-09)
+- [x] Custom Grafana dashboards provisioned from JSON files: API request rate, error rate, p95 latency (all routes) and mean latency per route, WebSocket connections, DB connections, Redis memory, container CPU / RAM of this compose project (`infra/grafana/dashboards/`, INF-09)
 - [ ] Alerting rules: target down, API 5xx rate above a threshold, p95 latency above a threshold, disk almost full; show one alert firing live (stop a container)
 - [x] Grafana secured: admin password from `.env`, anonymous access off, served only over HTTPS at `/grafana` (INF-09)
 
@@ -291,16 +291,16 @@ Each checklist mirrors the subject's bullets for that module; every box must be 
 | Job | Target (inside the Docker network) | Source | Example series |
 | --- | --- | --- | --- |
 | `prometheus` | `localhost:9090` | Prometheus itself | `prometheus_tsdb_head_series` |
-| `api` | `api:8000/metrics` | FastAPI, `prometheus-fastapi-instrumentator` (BE-30, `backend/app/core/metrics.py`); at the root of the app, no key | `http_requests_total`, `http_request_duration_seconds`, `ws_connections` |
+| `api` | `api:8000/metrics` | FastAPI, `prometheus-fastapi-instrumentator` (BE-30, `backend/app/core/metrics.py`); at the root of the app, no key | `http_requests_total`, `http_request_duration_seconds` (per route, buckets 0.1 / 0.5 / 1 s), `http_request_duration_highr_seconds` (all routes, buckets from 10 ms), `ws_connections` |
 | `postgres` | `postgres-exporter:9187` | `prometheuscommunity/postgres-exporter` | `pg_up`, `pg_stat_database_numbackends` |
 | `redis` | `redis-exporter:9121` | `oliver006/redis_exporter` | `redis_up`, `redis_memory_used_bytes` |
-| `cadvisor` | `cadvisor:8080` | cAdvisor | `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, by `container_label_com_docker_compose_service` |
+| `cadvisor` | `cadvisor:8080` | cAdvisor | `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, by `container_label_com_docker_compose_project` and `container_label_com_docker_compose_service` |
 
 **No exposure.** None of the five publishes a host port and the proxy has no route to them, so Prometheus, the exporters and the API's `/metrics` are reachable only from the Docker network. The proxy keeps answering 404 for `/metrics*` and `/api/metrics*` (One origin over HTTPS); `make https-check` checks it. Grafana (INF-09) is the only way in, at `/grafana` with a login. For a raw query without Grafana, ask the API from inside the container: `docker compose exec -T prometheus wget -qO- 'http://127.0.0.1:9090/api/v1/query?query=up'`.
 
 **Retention (PO decision 2026-11-12).** Logs and metrics are kept at most 30 days; this replaces the card's "e.g. 7 days". Prometheus runs with `--storage.tsdb.retention.time=30d` and `--storage.tsdb.retention.size=1GB` and deletes the oldest blocks when either limit is reached. Data lives in the named volume `prometheus-data`, so it survives `make down` and goes with `make fclean`. Size: on 2026-11-15 one scrape round is about 4,150 samples (postgres 2,236, prometheus 891, cadvisor 512, redis 373, api 133), about 24 million samples a day; at the usual 1 to 2 bytes per stored sample that is about 35 MB a day, so on a stack that runs day and night the 1 GB cap applies after about four weeks, and on a laptop that runs only part of the day the 30 days apply first. `prometheus_tsdb_storage_blocks_bytes` shows the real figure after a few days. Prometheus flags the retention as decided. The Privacy Policy says the same since #38 (DOC-01/02 follow-up): server logs and service metrics are kept at most 30 days (sections 2 and 6). INF-08 does not change the legal texts.
 
-**Personal data.** The API's labels are the route template, the method and the status: `handler="/api/jobs/{job_id}"`, never `/api/jobs/987654`; a path that matches no route is counted as `handler="none"` (checked on 2026-11-15). The exporters report counts, sizes and states, no rows or keys. cAdvisor labels a series with the container's name, image and compose service only (`--store_container_labels=false`), so no environment variable reaches a label.
+**Personal data.** The API's labels are the route template, the method and the status: `handler="/api/jobs/{job_id}"`, never `/api/jobs/987654`; a path that matches no route is counted as `handler="none"` (checked on 2026-11-15). The exporters report counts, sizes and states, no rows or keys. cAdvisor labels a series with the container's name, image, compose project and compose service only (`--store_container_labels=false`), so no environment variable reaches a label.
 
 **Credentials.** `postgres-exporter` logs in with the app's `POSTGRES_USER` / `POSTGRES_PASSWORD` from `.env` (compose interpolation into `DATA_SOURCE_URI`, `DATA_SOURCE_USER`, `DATA_SOURCE_PASS`; separate variables, so a password needs no URL encoding). No new secret, nothing in Git. INF-13 moves them to Vault; a dedicated role with `pg_monitor` only would also give the exporter least privilege then. `redis` has no password, so `redis-exporter` needs none.
 
@@ -313,7 +313,7 @@ Each checklist mirrors the subject's bullets for that module; every box must be 
 | `/sys` | The cgroup counters: CPU and memory per container |
 | `/var/lib/docker` | Each container's metadata on disk |
 
-Left out: `/` (as `/rootfs`) and `/dev/disk`, which only the disk metrics need, and those are off. Also left out: `/var/run` as a whole, which upstream examples mount. On Docker Desktop for Mac that path is the Mac's own `/private/var/run` (macOS sockets, no Docker socket), while the four paths above resolve inside Docker Desktop's Linux VM; on the ubuntu CI runner they are the host's own. The socket mounts are `:ro`, but that only stops the file from being replaced: whoever can talk to the Docker or containerd socket controls the host. cAdvisor is therefore on the internal network only, with no port. Flags: `--docker_only=true` (no system cgroups), `--housekeeping_interval=30s` (stats every 30 s instead of every second), `--enable_metrics=cpu,memory` (INF-09 and INF-10 add groups such as network or disk if a panel or rule needs one), `--store_container_labels=false` and `--whitelisted_container_labels=com.docker.compose.service`. Checked on Docker Desktop 28.4 (Apple Silicon); the CI `stack` job checks the ubuntu runner on every run (`make metrics-check`). On Docker Desktop cAdvisor logs, at start, that `/etc/machine-id` and `/dev/kmsg` are missing; both are harmless (no machine ID label, no OOM events).
+Left out: `/` (as `/rootfs`) and `/dev/disk`, which only the disk metrics need, and those are off. Also left out: `/var/run` as a whole, which upstream examples mount. On Docker Desktop for Mac that path is the Mac's own `/private/var/run` (macOS sockets, no Docker socket), while the four paths above resolve inside Docker Desktop's Linux VM; on the ubuntu CI runner they are the host's own. The socket mounts are `:ro`, but that only stops the file from being replaced: whoever can talk to the Docker or containerd socket controls the host. cAdvisor is therefore on the internal network only, with no port. Flags: `--docker_only=true` (no system cgroups), `--housekeeping_interval=30s` (stats every 30 s instead of every second), `--enable_metrics=cpu,memory` (INF-09 and INF-10 add groups such as network or disk if a panel or rule needs one), `--store_container_labels=false` and `--whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service`: of all the container labels, only the compose project and service become Prometheus labels (`container_label_com_docker_compose_project="wozu"`, `container_label_com_docker_compose_service="api"`). The project label came with the INF-09 review: cAdvisor sees every container on the Docker host, other compose projects too (a second clone, another team's stack on the same laptop), and with the service label alone their `db` was added to this stack's `db`. The Grafana container panels filter on the project (see Grafana below). Checked on Docker Desktop 28.4 (Apple Silicon); the CI `stack` job checks the ubuntu runner on every run (`make metrics-check`). On Docker Desktop cAdvisor logs, at start, that `/etc/machine-id` and `/dev/kmsg` are missing; both are harmless (no machine ID label, no OOM events).
 
 **Images** (latest stable release of each on 2026-11-15, pinned by the digest of the multi-arch index; `docker buildx imagetools inspect` lists linux/amd64 and linux/arm64 for each; `make images-check` covers them, 14 → 18 images; 19 with Grafana since INF-09):
 
@@ -355,7 +355,11 @@ Grafana stores the password in its database when the `grafana-data` volume is ne
 | `GF_ANALYTICS_REPORTING_ENABLED`, `GF_ANALYTICS_CHECK_FOR_UPDATES`, `GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES`, `GF_NEWS_NEWS_FEED_ENABLED` | `false` | No usage reports, update checks or news feed from the defense machine |
 | `GF_PLUGINS_PREINSTALL_DISABLED` | `true` | Grafana 13 otherwise downloads about ten plugins from grafana.com at first start. The built-in Prometheus datasource is all the dashboards need, so `/var/lib/grafana/plugins` stays empty |
 | `GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED`, `GF_PLUGINS_PLUGIN_ADMIN_ENABLED` | `true`, `false` | The plugin signing key is not fetched from grafana.com (Grafana uses its built-in one), and the plugin catalogue page is off |
+| `GF_PUBLIC_DASHBOARDS_ENABLED` | `false` | Admin cannot give a dashboard a public link that works without a login; the API for it answers 404 (since the INF-09 review) |
+| `GF_SNAPSHOTS_EXTERNAL_ENABLED` | `false` | The share option "Publish to snapshots.raintank.io" is gone, the last way the UI could send data out to grafana.com (since the INF-09 review) |
 | brute-force protection | on (the default, not disabled) | 5 failed logins for one username within 5 minutes lock that username for 5 minutes |
+
+**Local snapshots** stay on (`[snapshots] enabled`, Grafana's default). A snapshot is a copy of a dashboard with its data, stored in Grafana's own database. Whoever has its link (a random 32-character key) can open it without a login: tested on 2026-11-16, `GET /grafana/api/snapshots/<key>` answered 200 without a session, although `[snapshots] public_mode` is `false`. Only admin can make one, and none exists unless admin makes it. `GF_SNAPSHOTS_ENABLED: "false"` would turn snapshots off as well; that is a PO question, not part of INF-09.
 
 **Lockout behaviour.** Grafana counts failed logins per username; its per-IP protection is off by default (`disable_ip_address_login_protection = true`). A locked login answers exactly like a wrong password: 401 "Invalid username or password". A successful login does not reset the count. To unlock, wait 5 minutes. `make grafana-check` sends its wrong password for a user that does not exist (`grafana-check-nobody`), never for `admin`, so any number of runs leaves `admin` unlocked. Six runs in a row followed by an `admin` login were tested on 2026-11-15.
 
@@ -382,14 +386,17 @@ The description of each panel (the ⓘ next to its title) explains the query in 
 | WOZU API (`wozu-api`) | Request rate by handler | `sum by (handler) (rate(http_requests_total{job="api"}[5m]))` |
 | | Open WebSocket connections | `sum(ws_connections{job="api"})` |
 | | Error rate (share of requests) | 5xx and 4xx share: `(sum(rate(http_requests_total{job="api", status=~"5.."}[5m])) or vector(0)) / sum(rate(http_requests_total{job="api"}[5m]))` and the same for `4..` |
-| | p95 latency by handler | `histogram_quantile(0.95, sum by (handler, le) (rate(http_request_duration_seconds_bucket{job="api"}[5m])))` |
+| | p95 latency (all routes) | `histogram_quantile(0.95, sum by (le) (rate(http_request_duration_highr_seconds_bucket{job="api"}[5m])))` |
+| | Mean latency by handler | `sum by (handler) (rate(http_request_duration_seconds_sum{job="api"}[5m])) / sum by (handler) (rate(http_request_duration_seconds_count{job="api"}[5m]))` |
 | WOZU Infrastructure (`wozu-infra`) | Target health | `up`, one box per scrape job, green UP / red DOWN |
 | | DB connections | `sum(pg_stat_database_numbackends{job="postgres"})` against `pg_settings_max_connections` |
 | | Redis memory | `redis_memory_used_bytes{job="redis"}` |
-| | Container CPU by compose service | `sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service!=""}[5m]))` |
-| | Container memory by compose service | `sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{container_label_com_docker_compose_service!=""})` |
+| | Container CPU by compose service | `sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_project="$project", container_label_com_docker_compose_service!=""}[5m]))` |
+| | Container memory by compose service | `sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{container_label_com_docker_compose_project="$project", container_label_com_docker_compose_service!=""})` |
 
-cAdvisor sees every container on the Docker host. The CPU and memory panels group by the compose service label, so a second compose project on the same machine with the same service names (another checkout, for example) adds its containers to the same lines.
+**Latency: why no p95 per route.** The API has two latency histograms (`prometheus-fastapi-instrumentator` defaults, BE-30). `http_request_duration_seconds` has a route label (`handler`) but only the buckets 0.1, 0.5 and 1 s. `histogram_quantile` interpolates inside the bucket where the 95th request falls, so every route faster than 100 ms reads 0.95 × 100 ms = 95 ms. That is what the first "p95 latency by handler" panel showed for every route; Khalil found it in the review. `http_request_duration_highr_seconds` has buckets from 10 ms (10, 25, 50, 75, 100, 250 ms, …) but no route label, so its p95 is for all routes together. Per route, the dashboard shows the mean (`_sum / _count`), which is exact whatever the buckets but hides slow outliers. Measured on 2026-11-16 for `/api/health` (the only route with traffic on an idle stack): old panel 95.0 ms, new p95 of all routes 19 ms, mean 2.5 ms. The p95 lands at 19 ms because about one request in eight took between 10 and 25 ms, and the value is interpolated inside that bucket. A p95 per route would need finer buckets on the per-route histogram in `backend/app/core/metrics.py`, a backend change outside INF-09.
+
+**Compose project variable.** The infrastructure dashboard has one variable, `project` (label "Compose project", the dropdown at the top). Its values are `label_values(container_memory_working_set_bytes, container_label_com_docker_compose_project)`, every compose project cAdvisor sees. Its default is `wozu` (`name: wozu` at the top of `docker-compose.yml`). Both container panels filter on `container_label_com_docker_compose_project="$project"`. Without the filter, another compose project on the same Docker host adds its containers to the same lines. Tested on 2026-11-16 with a throwaway container labelled `com.docker.compose.project=inf09-other`, `com.docker.compose.service=db`: the old memory query's `db` line summed both containers, the new one only this stack's `db`. CI and a clean defense machine have one project only, so they never showed it.
 
 **Check:** `make grafana-check` (`infra/grafana/smoke-test.sh`) runs against the running stack, over HTTPS from the host through the proxy, with the proxy certificate as the trusted CA. It reads the root URL and the admin password from the `grafana` container (`docker compose exec -T grafana printenv`) into a private temporary file; the password is never printed or put on a command line. Then it checks, with one `ok` / `FAIL` line each:
 
@@ -401,10 +408,12 @@ cAdvisor sees every container on the Docker host. The CPU and memory panels grou
 3. Access and settings:
    - anonymous API access gets 401;
    - sign-up is disabled;
-   - the 11 settings of the table above are read back from `/api/admin/settings`;
+   - the 13 settings of the table above are read back from `/api/admin/settings` (`public_dashboards.enabled` and `snapshots.external_enabled` among them);
+   - the public-dashboard API (`POST /api/dashboards/uid/wozu-api/public-dashboards`) answers 404; if it ever makes a public link, the check removes it again at once and fails;
+   - `/api/snapshot/shared-options` reports `externalEnabled: false`;
    - the plugins directory is empty.
 4. The datasource has uid `prometheus`, type, URL, default and read-only as provisioned, and its health check passes.
-5. Each dashboard is in folder `WOZU` and provisioned, and every panel query returns data (`/api/ds/query`).
+5. Each dashboard is in folder `WOZU` and provisioned, and every panel query returns data (`/api/ds/query`). Dashboard variables are replaced by their saved current value first, the value the browser opens with: `$project` becomes `wozu`. That value must be one the variable's own query offers (asked through Grafana's datasource resource API, as the dropdown does). Otherwise the browser would fall back to the first project in the list, and the check would test queries nobody sees.
 6. `DELETE` of a dashboard is refused and the dashboard is still there.
 7. Grafana Live: the WebSocket handshake through the proxy answers 101.
 8. Last, a wrong password is refused with 401, for the non-existent user `grafana-check-nobody` so that `admin` is never locked.
@@ -415,12 +424,16 @@ To see it fail:
 
 - `url: http://prometheus:9999` in `provisioning/datasources/prometheus.yml` plus `docker compose restart grafana` makes the datasource and every panel FAIL ("connection refused").
 - `GF_AUTH_ANONYMOUS_ENABLED: "true"` in compose plus `docker compose up -d grafana` makes the login redirect, anonymous access and the setting FAIL.
+- `GF_PUBLIC_DASHBOARDS_ENABLED: "true"` in compose plus `docker compose up -d grafana` makes the settings line and the public-dashboard line FAIL (the public link the check makes is removed again).
+- `"current": { "text": "nobody", "value": "nobody" }` for the `project` variable in `dashboards/infrastructure.json` (no restart, Grafana rescans in 10 s) makes the variable line and both container panels FAIL.
 
-Undo either with `git checkout` and the same command.
+Undo each with `git checkout` and the same command.
 
 **Image:** `grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf`. It is the OSS image (not `grafana-enterprise`), the latest stable release on 2026-11-15, and its multi-arch index lists linux/amd64 and linux/arm64. Grafana logs at start that `[security] x_xss_protection` is deprecated. Compose does not set it, so the warning comes from Grafana's own defaults; it is harmless.
 
 **Resources** (`docker stats --no-stream`, Docker Desktop on Apple Silicon, 2026-11-15, idle): about 320 MiB of memory and under 1 % CPU. The image takes about 1.9 GB on disk.
+
+For INF-10, from the INF-09 review (Khalil, 2026-11-15): the p95 latency alert must use `http_request_duration_highr_seconds_bucket`, as the "p95 latency (all routes)" panel does. On `http_request_duration_seconds_bucket` the p95 reads 95 ms for any route under 100 ms, so a threshold below 100 ms could never fire, and one above could fire late. See "Latency: why no p95 per route" above.
 
 **M13 — WAF / ModSecurity (hardened) + HashiCorp Vault (Major, 2, buffer)**
 
@@ -431,6 +444,8 @@ Undo either with `git checkout` and the same command.
 - [ ] Policies give each service read access only to its own path
 
 For INF-11, from INF-04: presigned uploads must keep working once `MODSEC_RULE_ENGINE=On`. `PUT` stays in `ALLOWED_METHODS` (CRS rule 911100 scores it otherwise) and the upload content types in `ALLOWED_REQUEST_CONTENT_TYPE` (rule 920420); see "For INF-11" in [infra/proxy/README.md](../../infra/proxy/README.md). `/files` keeps its 60 MB body limit (`client_max_body_size 60m`) and `SecRequestBodyLimitAction ProcessPartial`. `make files-check` and the browser snippet must still pass with blocking on.
+
+For INF-11, from the INF-09 review (Khalil, 2026-11-15, engine still `DetectionOnly`, no 403 in the proxy log): ModSecurity already scores Grafana traffic at the blocking thresholds. Rule 942100 (SQL injection) matches the PromQL of the "Open WebSocket connections" and "DB connections" panels on every refresh. Rule 911100 matches Grafana's `PATCH` calls (user storage, while browsing) and the `DELETE` in `make grafana-check`. Both score 5, the inbound blocking threshold. Rule 953100 scores 4, the outbound threshold, on the uncompressed login page that `make grafana-check` fetches. With blocking on, `/grafana/` needs exclusions, or those panels, the UI's `PATCH` calls and `make grafana-check` break. Audit log volume: about 2.4 kB per open dashboard every 30 s, about 65 kB per `make grafana-check` run. `make grafana-check` must still pass with blocking on.
 
 **M14 — Health checks, status page, backups, disaster recovery (Minor, 1, buffer)**
 

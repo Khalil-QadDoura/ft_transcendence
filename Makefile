@@ -104,8 +104,9 @@ metrics-check:
 
 # Dashboards against the running stack, over HTTPS through the proxy: /grafana/ redirects to
 # the login on the public origin, health 200, no anonymous access or sign-up, the security
-# settings as decided, the Prometheus datasource healthy, both dashboards in the folder WOZU
-# with every panel query returning data, deletion refused, Grafana Live (WebSocket) 101 and a
+# settings as decided (public dashboards and external snapshots off among them), the
+# Prometheus datasource healthy, both dashboards in the folder WOZU with every panel query
+# returning data (dashboard variables at their saved value), deletion refused, Grafana Live (WebSocket) 101 and a
 # wrong password 401 (for the non-existent user grafana-check-nobody, so admin is never
 # locked, however often it runs). Logs in as admin with the password from the grafana
 # container, never printed; retries for up to 60 s (INF-09).
