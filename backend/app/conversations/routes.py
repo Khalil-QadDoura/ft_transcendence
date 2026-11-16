@@ -21,12 +21,14 @@ from app.conversations.schemas import (
     MessageOut,
     MessagesPage,
     ParticipantOut,
+    PeerOut,
     ReadRequest,
     SendMessageRequest,
     SendResponse,
     UnreadOut,
 )
 from app.core.redis_client import get_redis
+from app.core.storage import Storage, get_storage
 from app.db.session import get_session
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -36,8 +38,38 @@ def _msg_out(m: Any) -> MessageOut:
     return MessageOut.model_validate(m)
 
 
-def _conv_out(row: dict[str, Any]) -> ConversationOut:
-    return ConversationOut(**row)
+def _conv_out(row: dict[str, Any], storage: Storage | None = None) -> ConversationOut:
+    peer: PeerOut | None = None
+    peer_id = row.get("peer_id")
+    if peer_id is not None:
+        if storage is None:
+            from app.core.config import settings
+
+            storage = Storage(settings=settings)
+        first_name = row.get("peer_first_name")
+        last_name = row.get("peer_last_name")
+        parts = [p for p in (first_name, last_name) if p]
+        display_name = " ".join(parts) if parts else f"User {peer_id}"
+        peer = PeerOut(
+            id=peer_id,
+            first_name=first_name,
+            last_name=last_name,
+            display_name=display_name,
+            avatar_url=storage.avatar_url(row.get("peer_avatar_key")),
+        )
+    return ConversationOut(
+        id=row["id"],
+        type=row["type"],
+        title=row.get("title"),
+        job_id=row.get("job_id"),
+        job_title=row.get("job_title"),
+        last_message_id=row.get("last_message_id"),
+        last_message_content=row.get("last_message_content"),
+        last_message_author_id=row.get("last_message_author_id"),
+        unread_count=row.get("unread_count", 0),
+        updated_at=row["updated_at"],
+        peer=peer,
+    )
 
 
 async def _require_participant(
@@ -89,6 +121,7 @@ async def _validate_job_owner(session: AsyncSession, job_id: int, user_id: int) 
 async def create_conversation(
     body: ConversationCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[Storage, Depends(get_storage)],
     me: CurrentUser,
 ) -> ConversationOut:
     """Create or retrieve a direct conversation, or create an AI conversation."""
@@ -115,7 +148,7 @@ async def create_conversation(
 
     row = await repo.get_conversation_for_user(session, conv.id, me.id)
     if row:
-        return _conv_out(row)
+        return _conv_out(row, storage)
 
     return ConversationOut(
         id=conv.id,
@@ -128,18 +161,20 @@ async def create_conversation(
         last_message_author_id=None,
         unread_count=0,
         updated_at=conv.updated_at,
+        peer=None,
     )
 
 
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
     session: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[Storage, Depends(get_storage)],
     me: CurrentUser,
     limit: int = Query(50, ge=1, le=100),
 ) -> list[ConversationOut]:
     """List conversations for the current user ordered by updated_at descending."""
     rows = await repo.list_conversations_for_user(session, me.id, limit)
-    return [_conv_out(r) for r in rows]
+    return [_conv_out(r, storage) for r in rows]
 
 
 @router.get("/unread", response_model=UnreadOut)
@@ -155,6 +190,7 @@ async def get_unread(
 async def get_conversation(
     conv_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[Storage, Depends(get_storage)],
     me: CurrentUser,
 ) -> ConversationOut:
     """Get conversation details with unread count for current user."""
@@ -164,7 +200,7 @@ async def get_conversation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="not found or forbidden",
         )
-    return _conv_out(row)
+    return _conv_out(row, storage)
 
 
 @router.delete("/{conv_id}/leave", status_code=status.HTTP_204_NO_CONTENT)

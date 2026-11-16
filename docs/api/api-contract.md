@@ -89,7 +89,7 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403, 404 |
 
 - `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`; `friendship_id`: `int | null` pointing to the friendship row when a relationship exists.
-- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at}`.
+- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at, peer}`. For direct conversations (`type: "direct"`), `peer` is `{id, first_name, last_name, display_name, avatar_url}` representing the other participant; `peer` is `null` for non-direct chats.
 - `MessageOut` = `{id, conversation_id, author_id, content, status (sent / delivered / read), message_type, reply_to_id, idempotency_key, edited_at, deleted_at, created_at}`.
 
 ## Companies, jobs and applications
@@ -189,7 +189,7 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| GET | `/api/health` | — | — | 200 `{status: "ok"}` | — |
+| GET | `/api/health` | — | — | 200 `{status: "ok" \| "degraded", components: {db, redis, minio, worker}}` | 503 `{status: "down", components: {db, redis, minio, worker}}` (core down) |
 | GET | `/api/openapi.json` | — | — | 200 OpenAPI 3.1 spec of every public route | — |
 | GET | `/api/docs` | — | — | 200 Swagger UI, only when `ENV=dev` | 404 otherwise |
 | GET | `/api/docs/oauth2-redirect` | — | — | 200 Swagger UI's OAuth helper page, only when `ENV=dev` | 404 otherwise |
@@ -214,8 +214,8 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | Direction | `type` | Payload | When |
 | --- | --- | --- | --- |
 | client → server | `ping` | — | Keep-alive; send every 25–30 s. It also keeps you online: a socket that has not pinged for 60 s stops counting as online |
-| client → server | `delivered` | `{message_id}` at top level | Message shown on this device |
-| client → server | `read` | `{conversation_id, last_message_id}` at top level | Conversation opened / scrolled to bottom |
+| client → server | `delivered` | `{message_id}` (top-level or inside `payload`) | Message shown on this device |
+| client → server | `read` | `{conversation_id, last_message_id}` (top-level or inside `payload`) | Conversation opened / scrolled to bottom |
 | client → server (`/game/ws`) | `chat_message` | `{text}` at top level | Player sends a room message during discussion |
 | server → client | `pong` | `null` | Reply to ping |
 | server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
@@ -232,6 +232,9 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `game_message` | `{id, participant_id, display_label, text}` | Room message from a player or a bot |
 | server → client | `game_phase_voting` | `{room_id, state: "voting", phase_ends_at}` | Discussion ended |
 | server → client | `game_phase_finished` | `{room_id}` | Voting ended, results ready |
+
+- **Unread counts in `conversation_updated`**: For the reader who emitted the read receipt, `unread_count` is their updated **total unread messages count** across all conversations (matching `GET /conversations/unread`), allowing the client to update global navigation badges directly while setting that specific conversation row's unread counter to 0. For other participants in the room, `unread_count` is `null`.
+- **Receipt envelopes**: Client-sent `delivered` and `read` frames are accepted both at top level (`{"type": "delivered", "message_id": 6}`) and inside a `payload` dictionary (`{"type": "delivered", "payload": {"message_id": 6}}`).
 
 **Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
 
@@ -253,6 +256,8 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` (`presence` is sent since BE-06) | Live edits, online dots, no polling for moderation |
 | \[ \] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
+| \[ \] | Game votes: `POST /game/rooms/{id}/votes` names its target by label number (1–5) instead of `target_participant_id`. A vote request replaces the voter's mark for that target: it is idempotent and allowed any number of times until voting ends, so there is no "already voted" error. A target without a mark counts as `human`. BE-10 owns the final field names and errors. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5, 6 and 9 | Marks preset to human and changeable until voting ends; no database ids before results (DOC-08 follow-up, BE-10) |
+| \[ \] | Game payloads before the results name each participant by its label number (1–5, "Player N"), the same field as in the votes row above, never by the database participant id: `GET /game/rooms/{id}` (`my_participant_id` and `participants[].id`), `game_participant_joined` and `game_participant_left` (`participant.id`), and `game_message` (`participant_id`). `display_label` stays. Database participant ids appear only in `GET /game/rooms/{id}/results`. BE-35 (Nader, new card: hide database participant ids from game payloads before results) owns the REST room state and the room events; BE-09 owns `game_message` on `/ws/game`. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), section 9 | No database ids before results, so ids cannot hint at join order or at bots (DOC-08 follow-up, BE-35, BE-09) |
 | \[ \] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |

@@ -108,10 +108,20 @@ async def list_conversations_for_user(
             (
                 SELECT m2.author_id FROM messages m2
                 WHERE m2.id = c.last_message_id
-            ) AS last_message_author_id
+            ) AS last_message_author_id,
+            peer_u.id AS peer_id,
+            peer_u.first_name AS peer_first_name,
+            peer_u.last_name AS peer_last_name,
+            peer_u.avatar_object_key AS peer_avatar_key
         FROM conversations c
         JOIN conversation_participants cp
           ON cp.conversation_id = c.id AND cp.user_id = :user_id AND cp.left_at IS NULL
+        LEFT JOIN conversation_participants peer_cp
+          ON peer_cp.conversation_id = c.id
+         AND peer_cp.user_id != :user_id
+         AND c.type = 'direct'
+        LEFT JOIN users peer_u
+          ON peer_u.id = peer_cp.user_id
         LEFT JOIN jobs j ON j.id = c.job_id
         ORDER BY c.updated_at DESC
         LIMIT :limit
@@ -143,10 +153,20 @@ async def list_conversations_for_user(
             (
                 SELECT m2.author_id FROM messages m2
                 WHERE m2.id = c.last_message_id
-            ) AS last_message_author_id
+            ) AS last_message_author_id,
+            peer_u.id AS peer_id,
+            peer_u.first_name AS peer_first_name,
+            peer_u.last_name AS peer_last_name,
+            peer_u.avatar_object_key AS peer_avatar_key
         FROM conversations c
         JOIN conversation_participants cp
           ON cp.conversation_id = c.id AND cp.user_id = :user_id AND cp.left_at IS NULL
+        LEFT JOIN conversation_participants peer_cp
+          ON peer_cp.conversation_id = c.id
+         AND peer_cp.user_id != :user_id
+         AND c.type = 'direct'
+        LEFT JOIN users peer_u
+          ON peer_u.id = peer_cp.user_id
         ORDER BY c.updated_at DESC
         LIMIT :limit
     """)
@@ -179,10 +199,20 @@ async def get_conversation_for_user(
             (SELECT m2.content FROM messages m2 WHERE m2.id = c.last_message_id)
                 AS last_message_content,
             (SELECT m2.author_id FROM messages m2 WHERE m2.id = c.last_message_id)
-                AS last_message_author_id
+                AS last_message_author_id,
+            peer_u.id AS peer_id,
+            peer_u.first_name AS peer_first_name,
+            peer_u.last_name AS peer_last_name,
+            peer_u.avatar_object_key AS peer_avatar_key
         FROM conversations c
         JOIN conversation_participants cp
           ON cp.conversation_id = c.id AND cp.user_id = :user_id AND cp.left_at IS NULL
+        LEFT JOIN conversation_participants peer_cp
+          ON peer_cp.conversation_id = c.id
+         AND peer_cp.user_id != :user_id
+         AND c.type = 'direct'
+        LEFT JOIN users peer_u
+          ON peer_u.id = peer_cp.user_id
         LEFT JOIN jobs j ON j.id = c.job_id
         WHERE c.id = :conv_id
     """)
@@ -202,10 +232,20 @@ async def get_conversation_for_user(
             (SELECT m2.content FROM messages m2 WHERE m2.id = c.last_message_id)
                 AS last_message_content,
             (SELECT m2.author_id FROM messages m2 WHERE m2.id = c.last_message_id)
-                AS last_message_author_id
+                AS last_message_author_id,
+            peer_u.id AS peer_id,
+            peer_u.first_name AS peer_first_name,
+            peer_u.last_name AS peer_last_name,
+            peer_u.avatar_object_key AS peer_avatar_key
         FROM conversations c
         JOIN conversation_participants cp
           ON cp.conversation_id = c.id AND cp.user_id = :user_id AND cp.left_at IS NULL
+        LEFT JOIN conversation_participants peer_cp
+          ON peer_cp.conversation_id = c.id
+         AND peer_cp.user_id != :user_id
+         AND c.type = 'direct'
+        LEFT JOIN users peer_u
+          ON peer_u.id = peer_cp.user_id
         WHERE c.id = :conv_id
     """)
 

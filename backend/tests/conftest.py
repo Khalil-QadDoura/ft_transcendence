@@ -37,6 +37,8 @@ from sqlalchemy.pool import NullPool
 from app.core.config import Settings
 from app.core.limiter import limiter
 from app.core.mailer import get_mailer
+from app.core.queue import get_queue
+from app.core.redis_client import get_redis
 from app.db.session import get_session
 from app.main import create_app
 
@@ -96,6 +98,25 @@ def redis_skip_reason() -> str | None:
 REDIS_SKIP_REASON = redis_skip_reason()
 needs_redis = pytest.mark.skipif(REDIS_SKIP_REASON is not None, reason=str(REDIS_SKIP_REASON))
 
+TEST_MINIO_ENDPOINT = os.environ.get("TEST_MINIO_ENDPOINT", "")
+
+
+def minio_skip_reason() -> str | None:
+    """Why the MinIO tests cannot run here, or None when they can."""
+    if not TEST_MINIO_ENDPOINT:
+        return "TEST_MINIO_ENDPOINT is not set"
+    try:
+        parts = TEST_MINIO_ENDPOINT.split(":", 1)
+        host = parts[0]
+        port = int(parts[1]) if len(parts) > 1 else 9000
+        socket.create_connection((host, port), timeout=2).close()
+    except (OSError, ValueError):
+        return f"no MinIO answers at {TEST_MINIO_ENDPOINT}"
+    return None
+
+
+MINIO_SKIP_REASON = minio_skip_reason()
+
 
 @contextmanager
 def running_server(app: FastAPI) -> Iterator[str]:
@@ -147,6 +168,62 @@ def sql(statement: str, **params) -> list:
     return asyncio.run(run())
 
 
+class FakeHealthSession:
+    """Stands in for an active database session for tests that don't need real PostgreSQL."""
+
+    async def execute(self, statement, *args, **kwargs):
+        return None
+
+    async def commit(self) -> None:
+        pass
+
+    async def rollback(self) -> None:
+        pass
+
+    async def refresh(self, instance, *args, **kwargs) -> None:
+        pass
+
+    async def flush(self) -> None:
+        pass
+
+
+class FakeHealthRedis:
+    """Stands in for Redis for non-Redis tests, answering ping and heartbeat."""
+
+    async def ping(self) -> bool:
+        return True
+
+    async def get(self, name: str) -> bytes | None:
+        if name == "worker:heartbeat":
+            return b"1"
+        return None
+
+    async def aclose(self) -> None:
+        pass
+
+
+class FakeHealthQueue:
+    """Celery queue mock answering control inspect ping and tasks."""
+
+    class _Celery:
+        class _Control:
+            class _Inspect:
+                def ping(self):
+                    return {"celery@test": {"ok": "pong"}}
+
+            def inspect(self, timeout=None):
+                return self._Inspect()
+
+        def __init__(self):
+            self.control = self._Control()
+
+    def __init__(self):
+        self.celery = self._Celery()
+
+    def moderate_video(self, video_id: int, object_key: str) -> None:
+        pass
+
+
 def build_app(**overrides: object) -> FastAPI:
     """A fresh app for one test; keyword arguments change its settings, e.g. env="dev".
 
@@ -161,13 +238,34 @@ def build_app(**overrides: object) -> FastAPI:
         "internal_api_key": INTERNAL_KEY,
         "frontend_base_url": "https://localhost",
         "game_scheduler_enabled": False,
-        **overrides,
     }
+    if "redis_url" not in overrides and TEST_REDIS_URL and REDIS_SKIP_REASON is None:
+        settings["redis_url"] = TEST_REDIS_URL
+    if (
+        "minio_internal_endpoint" not in overrides
+        and TEST_MINIO_ENDPOINT
+        and MINIO_SKIP_REASON is None
+    ):
+        settings["minio_internal_endpoint"] = TEST_MINIO_ENDPOINT
+    settings.update(overrides)
+
     app = create_app(Settings(**settings))
     # Real SMTP/Brevo tests instantiate Mailer directly. Route tests never send mail.
     mailbox = TestMailbox()
     app.state.test_mailbox = mailbox
     app.dependency_overrides[get_mailer] = lambda: mailbox
+
+    # Default healthy stubs when running without real background services (BE-31)
+    if DATABASE_SKIP_REASON is not None and "database_url" not in overrides:
+        app.dependency_overrides.setdefault(get_session, lambda: FakeHealthSession())
+    if (REDIS_SKIP_REASON is not None or not TEST_REDIS_URL) and "redis_url" not in overrides:
+        app.dependency_overrides.setdefault(get_redis, lambda: FakeHealthRedis())
+        app.dependency_overrides.setdefault(get_queue, lambda: FakeHealthQueue())
+    if (
+        MINIO_SKIP_REASON is not None or not TEST_MINIO_ENDPOINT
+    ) and "minio_endpoint" not in overrides:
+        app.state.storage.internal.bucket_exists = lambda bucket: True
+
     return app
 
 
