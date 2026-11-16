@@ -3,7 +3,8 @@
 # with a random value. For an existing .env it only appends the keys that .env.example
 # has and .env lacks (a generated value for an empty secret, the example value otherwise,
 # with the key's comment from .env.example); it never changes or removes a line that is
-# already there, so running it again changes nothing.
+# already there, so running it again changes nothing. A key counts as there also when its
+# line is indented or starts with `export ` (docker compose reads both forms).
 # Prints the names of the generated or added keys, never the values. Works with bash 3.2
 # (macOS).
 set -euo pipefail
@@ -15,7 +16,7 @@ EXAMPLE="$ROOT/.env.example"
 SECRETS="JWT_SECRET INTERNAL_API_KEY POSTGRES_PASSWORD MINIO_ROOT_PASSWORD GRAFANA_ADMIN_PASSWORD"
 
 remind_openai() {
-    if grep -q '^OPENAI_API_KEY=$' "$ENV_FILE"; then
+    if grep -Eq '^[[:space:]]*(export[[:space:]]+)?OPENAI_API_KEY=$' "$ENV_FILE"; then
         echo "init-env: OPENAI_API_KEY is empty; add it to .env by hand for video moderation"
     fi
 }
@@ -58,7 +59,7 @@ if [ -f "$ENV_FILE" ]; then
             *) comments=""; continue ;;
         esac
         name="${line%%=*}"
-        if ! grep -q "^$name=" "$ENV_FILE"; then
+        if ! grep -Eq "^[[:space:]]*(export[[:space:]]+)?$name=" "$ENV_FILE"; then
             {
                 printf '\n%s' "$comments"
                 value_line "$line"
