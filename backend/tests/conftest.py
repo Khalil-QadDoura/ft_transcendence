@@ -150,6 +150,9 @@ def sql(statement: str, **params) -> list:
 def build_app(**overrides: object) -> FastAPI:
     """A fresh app for one test; keyword arguments change its settings, e.g. env="dev".
 
+    The game scheduler (BE-27) is off unless a test turns it on (game_scheduler_enabled=True):
+    only the game tests need its ticks, and every other app starts and stops faster without it.
+
     The email links always start with https://localhost here, whatever FRONTEND_BASE_URL the
     environment has (`make test` passes the one from .env, e.g. https://localhost:18443).
     """
@@ -157,6 +160,7 @@ def build_app(**overrides: object) -> FastAPI:
         "env": "prod",
         "internal_api_key": INTERNAL_KEY,
         "frontend_base_url": "https://localhost",
+        "game_scheduler_enabled": False,
         **overrides,
     }
     app = create_app(Settings(**settings))

@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     game_tick_interval_sec: float = Field(default=0.5, gt=0.0)
     game_bot_chat_min_delay_sec: float = Field(default=4.0, ge=0.0)
     game_bot_chat_max_delay_sec: float = Field(default=15.0, ge=0.0)
+    # The server clock of the game rooms (run_scheduler, started in the app's lifespan).
+    # Off in tests that do not exercise game timers.
+    game_scheduler_enabled: bool = True
 
 
 @lru_cache

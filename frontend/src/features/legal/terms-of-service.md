@@ -1,6 +1,6 @@
 # Terms of Service
 
-Last updated: 2026-11-08
+Last updated: 2026-11-13
 
 These terms are the rules for using WOZU Web. Please read them before you create an account. If you do not agree, do not use the service. Questions: burhan.hajili@gmail.com.
 
