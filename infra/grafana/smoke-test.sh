@@ -7,7 +7,9 @@
 # - /grafana/api/health answers 200 with the database ok;
 # - access: no anonymous access (/api/search without login is 401), sign-up is refused,
 #   and the security settings as Grafana reads them (no anonymous access, sign-up or org
-#   creation, Secure cookie, brute-force protection on, no usage reports or update checks);
+#   creation, Secure cookie, brute-force protection on, no usage reports or update checks,
+#   public dashboards and external snapshots off); the public-dashboard API answers 404
+#   and the snapshot sharing options offer no external publish;
 # - the datasource uid prometheus is provisioned (http://prometheus:9090, default,
 #   read-only) and its health check reaches Prometheus;
 # - the dashboards uid wozu-api and wozu-infra are provisioned in the folder WOZU, every
@@ -105,6 +107,8 @@ SETTINGS = [
     ("analytics", "check_for_plugin_updates", "false"),
     ("news", "news_feed_enabled", "false"),
     ("plugins", "preinstall_disabled", "true"),
+    ("public_dashboards", "enabled", "false"),
+    ("snapshots", "external_enabled", "false"),
 ]
 TLS = ssl.create_default_context(cafile=ca)
 
@@ -206,7 +210,25 @@ def check_access():
             wrong.append(f"{section}.{key}={actual} (decided {value})")
     results.append((not wrong, "security settings: " + ("; ".join(wrong) if wrong else
                                                        f"{len(SETTINGS)} as decided (anonymous, sign-up, "
-                                                       "org create, Secure cookie, brute-force, analytics, news, plugins)")))
+                                                       "org create, Secure cookie, brute-force, analytics, news, plugins, "
+                                                       "public dashboards, external snapshots)")))
+    # Public dashboards off: the API that gives a dashboard a public link is not there (404).
+    # Were it there, the link just made is removed again at once.
+    uid = next(iter(DASHBOARDS))
+    status, _, text = http("POST", f"/api/dashboards/uid/{uid}/public-dashboards", auth=ADMIN,
+                           body={"isEnabled": True, "share": "public"})
+    made = (as_json(text) or {}).get("uid") if status == 200 else None
+    if made:
+        http("DELETE", f"/api/dashboards/uid/{uid}/public-dashboards/{made}", auth=ADMIN)
+    results.append((status == 404, f"POST /grafana/api/dashboards/uid/{uid}/public-dashboards: {status} "
+                                   + ("(refused, public dashboards are off)" if status == 404 else
+                                      f"(expected 404; public link {made} made and removed again)" if made else
+                                      f"(expected 404) {(as_json(text) or {}).get('message')}")))
+    status, _, text = http("GET", "/api/snapshot/shared-options", auth=ADMIN)
+    options = as_json(text) or {}
+    results.append((status == 200 and options.get("externalEnabled") is False,
+                    f"GET /grafana/api/snapshot/shared-options: {status}, externalEnabled "
+                    f"{options.get('externalEnabled')} (expected False: no publish to {options.get('externalSnapshotURL')})"))
     # Plugins that come with the image (the Prometheus datasource among them) load from the
     # image; anything installed or downloaded lands in /var/lib/grafana/plugins.
     results.append((installed == "", "plugins installed in /var/lib/grafana/plugins: " + (installed or "none")))

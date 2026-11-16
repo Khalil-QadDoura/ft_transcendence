@@ -396,6 +396,11 @@ services:
   # ten plugins from grafana.com at first start unless preinstall is disabled; the built-in
   # Prometheus datasource is all the dashboards need. The plugin catalogue page is off and
   # the plugin signing key is not fetched from grafana.com (the built-in key is used).
+  # Public (externally shared) dashboards are off, so admin cannot give a live dashboard a
+  # link that works without a login, and the "Publish to snapshots.raintank.io" option is
+  # gone, the last way the UI could send data out to grafana.com. Local snapshots stay on:
+  # stored in Grafana's own database, but readable by anyone who has the snapshot's link
+  # (a random 32-character key), without a login.
   # Health: Grafana's own /api/health (database reachable), with the busybox wget the image
   # ships (it has curl too).
   grafana:
@@ -417,6 +422,8 @@ services:
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
       GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED: "true"
       GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_PUBLIC_DASHBOARDS_ENABLED: "false"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
     volumes:
       - ./infra/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./infra/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
