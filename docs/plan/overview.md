@@ -147,10 +147,10 @@ Decided by byul-byul on 2026-11-04. These rules are the input for card DOC-08, w
 
 **Scoring**
 
-- Each human marks every other participant as bot or human: +1 correct, −1 wrong, 0 no guess.
+- Each human marks every other participant as bot or human: every mark starts at "human" and can be changed until voting ends; +1 correct, −1 wrong, and a mark left at "human" counts (no "no guess" since 2026-11-15).
 - Highest score wins; a shared top score is a draw.
 - Room with a single human (1 human + bots): score above 0 is a win, 0 a draw, below 0 a loss.
-- A disconnected player scores 0 for the guesses they did not make.
+- A disconnected player keeps the marks they had, still counts as one of the humans for who wins, and gets a score and an outcome. Full rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md).
 
 ## Work split
 

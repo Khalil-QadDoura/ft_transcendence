@@ -81,6 +81,8 @@ A human's score is the sum over all their guesses: one mark for each other parti
 
 A player who disconnects keeps the marks they had at that moment, including the ones still at "human", and those marks count when voting ends. A player who disconnects before voting starts keeps every mark at "human".
 
+A player who disconnects still counts as one of the humans when the winner is decided (a room with 2 humans stays a room with 2 humans), and gets a score and an outcome like every other human. A player who comes back before voting ends can still change their marks.
+
 ### Worked example A: 3 humans and 2 bots
 
 Room of 5. Humans are Player 1, Player 2 and Player 4. Bots are Player 3 and Player 5. Each human marks the 4 other participants.
@@ -93,7 +95,7 @@ Room of 5. Humans are Player 1, Player 2 and Player 4. Bots are Player 3 and Pla
 
 Outcome: Player 1 has the highest score (+4) and wins. Player 2 and Player 4 share +2, but that is not the top score, so both lose.
 
-Bot deception rates (humans who marked the bot as human ÷ humans who made a guess about it):
+Bot deception rates (humans whose mark on the bot was "human" when voting ended ÷ humans in the game):
 
 - Player 3: marked by Player 1 as bot, by Player 2 as human, by Player 4 as bot. 1 of 3 → 33%.
 - Player 5: marked as bot by all three. 0 of 3 → 0%.
@@ -118,7 +120,7 @@ Results appear only after the game has ended. They show:
 
 - which labels were bots;
 - every human's score and outcome (win, draw or loss);
-- each bot's deception rate: the number of humans who marked that bot as human, divided by the number of humans who made a guess about that bot, as a percentage. It shows "—" if no human made a guess about that bot.
+- each bot's deception rate: the number of humans whose mark on that bot was "human" when voting ended (a mark left at the preset counts), divided by the number of humans in the game (players who disconnected included, section 6), as a percentage.
 
 ## 8. Summary of the numbers
 
@@ -157,3 +159,8 @@ Rules for implementers (BE-27, BE-10, BE-09, FE-31, FE-32):
 1. **Changing a mark**: a human may change any mark any number of times until the voting phase ends; the marks at the end count (section 5).
 2. **Default marks, no "no guess"**: every other participant starts marked "human", and every mark counts, +1 or −1. The "no guess = 0" rule is removed. A player who disconnects keeps the marks they had at that moment instead of scoring 0 for missing guesses (sections 5, 6 and 8).
 3. **Identity**: before the results, clients see participants only by label number, never by database participant id; votes name their target by label number (section 9).
+
+**2026-11-16**, decided by byul-byul (PO); confirms Khalil-QadDoura's reading on PR #60 and settles his wording question:
+
+4. **Disconnected players**: a player who disconnects still counts as one of the humans when the winner is decided and gets a score and an outcome; a player who comes back before voting ends can still change their marks (section 6).
+5. **Deception rate**: humans whose mark on the bot was "human" when voting ended (preset marks count), divided by all humans in the game. The "—" case is gone: every game has a human, and every human has a mark on every bot (sections 6 and 7).
