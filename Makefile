@@ -1,8 +1,9 @@
 # One command from a fresh clone to a running site: `make`.
 # Everything runs in containers; the host needs Docker Engine 25+ (health checks use
 # start_interval, which Engine 24 refuses) with compose v2, make, bash and openssl.
-# The checks against the running stack (https-check, files-check, mail-check, metrics-check)
-# also use curl, and metrics-check python3 (macOS command line tools; the ubuntu runner).
+# The checks against the running stack (https-check, files-check, mail-check, metrics-check,
+# grafana-check) also use curl, and metrics-check and grafana-check python3 3.9+ (macOS
+# command line tools; the ubuntu runner).
 
 COMPOSE := docker compose
 # Every profile, so down and fclean also reach services that are off by default (worker).
@@ -11,11 +12,12 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 s ?=
 
 .PHONY: all env certs up down logs test https-check images-check files-check mail-check metrics-check \
-	fclean re
+	grafana-check fclean re
 
 all: env up
 
-# Creates .env with random secrets when it is missing; keeps an existing one.
+# Creates .env with random secrets when it is missing. An existing one keeps every line and
+# gets only the keys .env.example has and it lacks (INF-09); the names are printed, not values.
 env:
 	@./scripts/init-env.sh
 
@@ -99,6 +101,17 @@ mail-check:
 # retries for up to 60 s (INF-08).
 metrics-check:
 	@./infra/prometheus/smoke-test.sh
+
+# Dashboards against the running stack, over HTTPS through the proxy: /grafana/ redirects to
+# the login on the public origin, health 200, no anonymous access or sign-up, the security
+# settings as decided (public dashboards and snapshots off among them), the
+# Prometheus datasource healthy, both dashboards in the folder WOZU with every panel query
+# returning data (dashboard variables at their saved value), deletion refused, Grafana Live (WebSocket) 101 and a
+# wrong password 401 (for the non-existent user grafana-check-nobody, so admin is never
+# locked, however often it runs). Logs in as admin with the password from the grafana
+# container, never printed; retries for up to 60 s (INF-09).
+grafana-check:
+	@./infra/grafana/smoke-test.sh
 
 # Removes containers, volumes (database, files), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
