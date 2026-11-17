@@ -1,0 +1,22 @@
+# Grafana dashboard provider (INF-09, module M12): every JSON file in
+# infra/grafana/dashboards/ (mounted read-only at /etc/grafana/dashboards) becomes a
+# dashboard in the folder "WOZU". Grafana scans the folder every 10 s, so an edited file
+# shows up without a restart.
+# disableDeletion: the dashboards cannot be deleted in the UI or through the API.
+# allowUiUpdates: false: a change saved in the UI is refused; the JSON file in Git is the
+# only source. To change a dashboard, edit its file (or export the JSON from the UI and
+# commit it).
+apiVersion: 1
+
+providers:
+  - name: WOZU
+    orgId: 1
+    folder: WOZU
+    folderUid: wozu
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

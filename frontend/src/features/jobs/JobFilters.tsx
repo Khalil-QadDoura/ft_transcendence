@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
@@ -35,6 +35,27 @@ export function JobFilters({
 }: JobFiltersProps) {
   const { t } = useText();
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+  const [keywordInput, setKeywordInput] = useState(filters.keyword || "");
+  const latestFiltersRef = useRef(filters);
+  latestFiltersRef.current = filters;
+  const latestOnChangeRef = useRef(onChange);
+  latestOnChangeRef.current = onChange;
+
+  useEffect(() => {
+    setKeywordInput(filters.keyword || "");
+  }, [filters.keyword]);
+
+  useEffect(() => {
+    if ((latestFiltersRef.current.keyword || "") === keywordInput) return;
+    const timer = setTimeout(() => {
+      latestOnChangeRef.current({
+        ...latestFiltersRef.current,
+        keyword: keywordInput === "" ? undefined : keywordInput,
+        cursor: undefined,
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [keywordInput]);
 
   const handleFieldChange = (key: keyof JobSearchFilters, value: unknown) => {
     onChange({
@@ -101,8 +122,13 @@ export function JobFilters({
             id="job-keyword-filter"
             aria-label={t("jobs.searchJobs")}
             placeholder={t("jobs.searchPlaceholder")}
-            value={filters.keyword || ""}
-            onChange={(e) => handleFieldChange("keyword", e.target.value)}
+            value={keywordInput}
+            onChange={(e) => setKeywordInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleFieldChange("keyword", keywordInput);
+              }
+            }}
             startAddon={<span aria-hidden="true">🔍</span>}
           />
         </div>

@@ -1,0 +1,66 @@
+.people-page {
+  max-width: 60rem;
+  margin-inline: auto;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+.people-cover {
+  height: clamp(7rem, 20vw, 12rem);
+  border-radius: 2rem;
+  background:
+    radial-gradient(ellipse at 80% 20%, #d5ff70 0%, transparent 50%), #37472d;
+}
+.people-card {
+  position: relative;
+  margin: -2.5rem 1rem 0;
+  padding: 2rem;
+  background: var(--color-ivory, #faf8f0);
+  border-radius: 1.5rem;
+  box-shadow: 0 1rem 3rem #26302012;
+}
+.people-card h1 {
+  font-size: clamp(2rem, 6vw, 4rem);
+  letter-spacing: -0.05em;
+  overflow-wrap: anywhere;
+}
+.people-position {
+  font-size: 1.25rem;
+}
+.people-bio {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-block: 1.5rem;
+  max-width: 42rem;
+}
+.people-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.people-presence {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+.online-dot,
+.offline-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: #398343;
+}
+.offline-dot {
+  background: #777;
+}
+.people-skeleton {
+  height: 16rem;
+  border-radius: 1.5rem;
+  background: #e8e8df;
+}
+@media (max-width: 480px) {
+  .people-card {
+    margin-inline: 0;
+    padding: 1.25rem;
+  }
+}

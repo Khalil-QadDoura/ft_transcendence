@@ -23,6 +23,27 @@ vi.stubGlobal(
     return realFetch(url, options);
   },
 );
+async function waitForMail(
+  email: string,
+  path = "/verify-email",
+): Promise<Response> {
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    const response = await realFetch(
+      `${origin}/__review/mail?email=${encodeURIComponent(email)}`,
+    );
+    if (response.ok) {
+      const message = (await response.clone().json()) as { link?: string };
+      if (message.link && new URL(message.link).pathname === path)
+        return response;
+    } else if (response.status !== 404)
+      throw new Error(`Test inbox returned ${response.status}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(
+    "Captured verification email did not arrive within 10 seconds",
+  );
+}
 let activeClient = initialClient;
 afterAll(() => {
   activeClient.clearTokens();
@@ -43,9 +64,7 @@ test("Khalil backend: register, verify, login, bearer profile, reload, concurren
   await expect(gateway.login(credentials)).rejects.toMatchObject({
     status: 403,
   });
-  const mail = await realFetch(
-    `${origin}/__review/mail?email=${encodeURIComponent(credentials.email)}`,
-  );
+  const mail = await waitForMail(credentials.email);
   expect(mail.status).toBe(200);
   const { link } = (await mail.json()) as { link: string };
   const verificationToken = new URL(link).searchParams.get("token")!;
@@ -109,4 +128,114 @@ test("Khalil backend: register, verify, login, bearer profile, reload, concurren
     body: JSON.stringify({ refresh_token: revoked }),
   });
   expect(reuse.status).toBe(401);
+});
+
+test("Khalil backend: recovery, one-use reset, password change and account deletion", async () => {
+  const client = await import("../src/api/client");
+  activeClient = client;
+  const { accountApi } = await import("../src/features/account/api");
+  const gateway = (
+    await import("../src/features/auth/gateway")
+  ).createAuthGateway();
+  const credentials = {
+    email: `fe05-${crypto.randomUUID()}@example.com`,
+    password: `Test-${crypto.randomUUID()}`,
+  };
+  await gateway.register(credentials);
+  const verifyMail = await waitForMail(credentials.email);
+  await gateway.verify(
+    new URL(
+      ((await verifyMail.json()) as { link: string }).link,
+    ).searchParams.get("token")!,
+  );
+  await gateway.login(credentials);
+  const oldAccess = client.getAccessToken()!;
+  const known = await accountApi.forgot(credentials.email);
+  const unknown = await accountApi.forgot(
+    `unknown-${crypto.randomUUID()}@example.com`,
+  );
+  expect(known).toEqual(unknown);
+  const resetMail = await waitForMail(credentials.email, "/reset-password");
+  const resetLink = new URL(
+    ((await resetMail.json()) as { link: string }).link,
+  );
+  expect(resetLink.pathname).toBe("/reset-password");
+  const token = resetLink.searchParams.get("token")!;
+  const resetPassword = `Reset-${crypto.randomUUID()}`;
+  await accountApi.reset(token, resetPassword);
+  expect(client.getAccessToken()).toBeNull();
+  expect(
+    (
+      await realFetch(`${origin}/api/users/me`, {
+        headers: { Authorization: `Bearer ${oldAccess}` },
+      })
+    ).status,
+  ).toBe(401);
+  await expect(accountApi.reset(token, resetPassword)).rejects.toMatchObject({
+    status: 400,
+  });
+  await gateway.login({ ...credentials, password: resetPassword });
+  await expect(
+    accountApi.change("wrong-current-password", "another-password"),
+  ).rejects.toMatchObject({ status: 400 });
+  expect(client.getAccessToken()).not.toBeNull();
+  await accountApi.change(resetPassword, "a-new-password-for-testing");
+  expect(client.getStoredRefreshToken()).toBeNull();
+  await gateway.login({
+    ...credentials,
+    password: "a-new-password-for-testing",
+  });
+  await accountApi.remove();
+  expect(client.getAccessToken()).toBeNull();
+  await expect(
+    gateway.login({ ...credentials, password: "a-new-password-for-testing" }),
+  ).rejects.toMatchObject({ status: 401 });
+});
+
+test("Khalil backend: profile read, changed-fields PATCH, age validation and persisted data", async () => {
+  activeClient = await import("../src/api/client");
+  const { profileApi } = await import("../src/features/profile/api");
+  const gateway = (
+    await import("../src/features/auth/gateway")
+  ).createAuthGateway();
+  const credentials = {
+    email: `fe09-${crypto.randomUUID()}@example.com`,
+    password: `Test-${crypto.randomUUID()}`,
+  };
+  await gateway.register(credentials);
+  const mail = await waitForMail(credentials.email);
+  await gateway.verify(
+    new URL(((await mail.json()) as { link: string }).link).searchParams.get(
+      "token",
+    )!,
+  );
+  await gateway.login(credentials);
+  try {
+    const initial = await profileApi.get();
+    expect(initial.email).toBe(credentials.email);
+    expect(initial.first_name).toBeNull();
+    const saved = await profileApi.patch({
+      first_name: "Profile",
+      last_name: "Review",
+      position: "Engineer",
+      birth_date: "1990-01-02",
+      bio: "Integration test",
+    });
+    expect(saved.position).toBe("Engineer");
+    await profileApi.patch({ bio: "Changed biography only" });
+    const updated = await profileApi.get();
+    expect(updated).toMatchObject({
+      first_name: "Profile",
+      last_name: "Review",
+      position: "Engineer",
+      birth_date: "1990-01-02",
+      bio: "Changed biography only",
+    });
+    await expect(
+      profileApi.patch({ birth_date: `${new Date().getFullYear() - 5}-01-01` }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect((await profileApi.get()).birth_date).toBe("1990-01-02");
+  } finally {
+    await (await import("../src/features/account/api")).accountApi.remove();
+  }
 });

@@ -56,6 +56,7 @@ export function JobsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   // Geolocation state
@@ -89,17 +90,17 @@ export function JobsPage() {
       params.set("sort_by", newFilters.sort_by);
     }
 
-    setSearchParams(params);
+    setSearchParams(params, { replace: true });
   };
 
   const handleResetFilters = () => {
-    setSearchParams(new URLSearchParams());
+    setSearchParams(new URLSearchParams(), { replace: true });
     setLocationError(null);
   };
 
   const handleRequestLocation = () => {
     if (!navigator.geolocation) {
-      setLocationError("Geolocation is not supported by your browser");
+      setLocationError(t("jobs.geoNotSupported"));
       return;
     }
 
@@ -120,9 +121,9 @@ export function JobsPage() {
       (err) => {
         setLocationLoading(false);
         if (err.code === err.PERMISSION_DENIED) {
-          setLocationError("Location permission was denied");
+          setLocationError(t("jobs.locationPermissionDenied"));
         } else {
-          setLocationError("Unable to retrieve your current location");
+          setLocationError(t("jobs.locationUnavailable"));
         }
       },
       { timeout: 10000, enableHighAccuracy: false },
@@ -147,6 +148,7 @@ export function JobsPage() {
     const loadInitialJobs = async () => {
       setIsLoading(true);
       setError(null);
+      setLoadMoreError(null);
 
       try {
         const response = await fetchOpenJobs(filters);
@@ -157,9 +159,7 @@ export function JobsPage() {
       } catch (err) {
         if (!isCancelled) {
           setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load open jobs. Please try again.",
+            err instanceof Error ? err.message : t("jobs.failedToLoadJobs"),
           );
         }
       } finally {
@@ -174,13 +174,14 @@ export function JobsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [filters, reloadKey]);
+  }, [filters, reloadKey, t]);
 
   // Load more cursor pagination
   const handleLoadMore = async () => {
     if (!nextCursor || isLoadingMore) return;
 
     setIsLoadingMore(true);
+    setLoadMoreError(null);
     try {
       const response = await fetchOpenJobs({
         ...filters,
@@ -190,8 +191,8 @@ export function JobsPage() {
       setJobs((prev) => [...prev, ...response.items]);
       setNextCursor(response.next_cursor);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load more jobs.",
+      setLoadMoreError(
+        err instanceof Error ? err.message : t("jobs.failedToLoadMore"),
       );
     } finally {
       setIsLoadingMore(false);
@@ -297,8 +298,27 @@ export function JobsPage() {
         </div>
       )}
 
+      {/* Load More Error Alert */}
+      {loadMoreError && (
+        <div
+          role="alert"
+          className="p-3.5 rounded-lg bg-danger-subtle border border-danger/30 text-danger text-sm flex items-center justify-between gap-3 text-start"
+        >
+          <span>{loadMoreError}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleLoadMore}
+            disabled={isLoadingMore}
+          >
+            {t("jobs.retry")}
+          </Button>
+        </div>
+      )}
+
       {/* Load More Button */}
-      {!isLoading && !error && nextCursor !== null && (
+      {!isLoading && !error && nextCursor !== null && !loadMoreError && (
         <div className="pt-4 pb-8 flex justify-center">
           <Button
             type="button"

@@ -10,7 +10,7 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 
 | Topic | Rule |
 | --- | --- |
-| Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind Caddy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
+| Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind the nginx + ModSecurity front proxy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
 | Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. A missing, invalid or expired token, or one made before a password change (`token_version`), gets 401 with `WWW-Authenticate: Bearer`. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
 | Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
 | Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
@@ -69,11 +69,11 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | --- | --- | --- | --- | --- | --- |
 | POST | `/friends/requests` | Bearer | `{addressee_id}` | 201 `FriendshipOut` | 400 self, 404 user, 409 pending / already friends |
 | GET | `/friends/requests` | Bearer | — | 200 incoming pending `FriendshipOut[]` | — |
-| POST | `/friends/requests/{id}/accept` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 409 not pending |
-| POST | `/friends/requests/{id}/decline` | Bearer | — | 200 `FriendshipOut` | same |
+| POST | `/friends/requests/{id}/accept` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 404, 409 not pending |
+| POST | `/friends/requests/{id}/decline` | Bearer | — | 200 `FriendshipOut` | 403 not addressee, 404, 409 not pending |
 | DELETE | `/friends/{id}` | Bearer | — | 204 | 403, 404 |
-| GET | `/friends` | Bearer | — | 200 `[{user_id, first_name, last_name, position, avatar_object_key, is_online}]` | — |
-| GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, is_online, friendship_status}` | 404 |
+| GET | `/friends` | Bearer | — | 200 `[{friendship_id, user_id, first_name, last_name, position, avatar_object_key, avatar_url, is_online}]` | — |
+| GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, avatar_url, is_online, friendship_status, friendship_id}` | 404 |
 | POST | `/conversations` | Bearer | `{type: "direct", peer_user_id, job_id?}` | 201 `ConversationOut` (existing one if the pair already has a chat) | 400 no peer, 403 job not yours |
 | GET | `/conversations` | Bearer | query `limit` ≤ 100 | 200 `ConversationOut[]`, newest first | — |
 | GET | `/conversations/unread` | Bearer | — | 200 `{total_unread}` | — |
@@ -84,12 +84,12 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | DELETE | `/conversations/{id}/participants/{uid}` | Bearer | — | 204 | 403 |
 | GET | `/conversations/{id}/messages` | Bearer | query `before_id`, `limit` | 200 `{items: MessageOut[] oldest→newest, prev_before_id}` | 403, 404 |
 | POST | `/conversations/{id}/messages` | Bearer | `{content 1–4000, reply_to_id?, idempotency_key? ≤ 64}` | 200 `{items: [MessageOut]}` + WS push | 403, 404 |
-| PATCH | `/conversations/{id}/messages/{mid}` | Bearer | `{content}` | 200 `MessageOut` | 403 not yours, 409 after 15 min |
-| DELETE | `/conversations/{id}/messages/{mid}` | Bearer | — | 204 (soft) | 403 not yours |
-| POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403 |
+| PATCH | `/conversations/{id}/messages/{mid}` | Bearer | `{content}` | 200 `MessageOut` + WS `message_updated` | 403 not yours, 404, 409 after 15 min |
+| DELETE | `/conversations/{id}/messages/{mid}` | Bearer | — | 204 (soft) + WS `message_deleted` | 403 not yours, 404 |
+| POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403, 404 |
 
-- `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`.
-- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at}`.
+- `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`; `friendship_id`: `int | null` pointing to the friendship row when a relationship exists.
+- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at, peer}`. For direct conversations (`type: "direct"`), `peer` is `{id, first_name, last_name, display_name, avatar_url}` representing the other participant; `peer` is `null` for non-direct chats.
 - `MessageOut` = `{id, conversation_id, author_id, content, status (sent / delivered / read), message_type, reply_to_id, idempotency_key, edited_at, deleted_at, created_at}`.
 
 ## Companies, jobs and applications
@@ -166,21 +166,22 @@ Avatars and company logos in the new backend (BE-08):
 - Company logo routes are for employers: a user with a company that is not deleted (404 "You have no company" otherwise).
 - `logo_url` in `CompanyOut` (`GET /companies/me`, `POST /companies`, `PATCH /companies/me`): the logo's public address, or `null` without a logo (there is no default logo). `DELETE /companies` empties the logo with the soft delete and deletes its file at once, as `DELETE /users/me` does for the avatar and the logo.
 - Default avatar: a user with no picture gets `avatar_url` = `DEFAULT_AVATAR_URL`, by default `/api/media/avatar/default.svg` on our own site, a grey picture the API serves itself (no login, cached for a day).
-- Not in BE-08: `avatar_url` in the public profile and in the friends list comes with those endpoints (BE-22), through `Storage.avatar_url`.
+- `avatar_url` in the public profile and in the friends list comes from `Storage.avatar_url` (BE-22): each user's public picture address or `DEFAULT_AVATAR_URL`.
 
 ## Game
 
-Join the queue over REST, then wait for `game_room_formed` on `/ws`, open `/game/ws` for the room chat, vote over REST, fetch results when the room finishes.
+Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/game` (BE-09) for room chat, vote over REST (BE-10), and fetch results when finished (BE-10).
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued"}` | — |
+| POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued", room_id}` | 409 already in active room |
 | DELETE | `/game/queue/leave` | Bearer | — | 204 | — |
-| GET | `/game/rooms/{id}` | Bearer (participant) | — | 200 `{id, state, target_size, participants: [{id, display_label}]}` | 403, 404 |
+| GET | `/game/rooms/{id}` | Bearer (participant) | — | 200 `{id, state, target_size, participant_count, my_participant_id, room_expires_at, phase_ends_at, participants: [{id, display_label, is_you}]}` | 403, 404 |
+| POST | `/game/rooms/{id}/start` | Bearer (participant) | — | 200 `RoomOut` (starts waiting room at 2–4 participants; idempotent if already `discussion`) | 403, 404, 409 outside 2–4 participants or wrong state |
 | POST | `/game/rooms/{id}/votes` | Bearer (participant) | `{target_participant_id, guess: "bot" or "human"}` | 201 `{message}` | 400 self, 409 not voting phase / already voted, 422 |
 | GET | `/game/rooms/{id}/results` | Bearer (participant) | — | 200 `{room_id, state, participants: [{participant_id, display_label, is_bot, score (humans), deception_rate (bots)}]}` | 409 not finished |
 
-Room states: `waiting → discussion (120 s) → voting (45 s) → finished`. The server moves the phases; today the phase events carry only the room id, so the client cannot show an exact countdown (planned change: send phase\_ends\_at).
+Room states (BE-27): `waiting (180 s max) → discussion (120 s) → voting (45 s) → finished`, or `closed` if timer expires with 1 participant or the last human leaves `waiting`. Every participant payload before results exposes only `{id, display_label, is_you}` identically for humans and bots.
 
 ## System
 
@@ -188,7 +189,7 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| GET | `/api/health` | — | — | 200 `{status: "ok"}` | — |
+| GET | `/api/health` | — | — | 200 `{status: "ok" \| "degraded", components: {db, redis, minio, worker}}` | 503 `{status: "down", components: {db, redis, minio, worker}}` (core down) |
 | GET | `/api/openapi.json` | — | — | 200 OpenAPI 3.1 spec of every public route | — |
 | GET | `/api/docs` | — | — | 200 Swagger UI, only when `ENV=dev` | 404 otherwise |
 | GET | `/api/docs/oauth2-redirect` | — | — | 200 Swagger UI's OAuth helper page, only when `ENV=dev` | 404 otherwise |
@@ -213,18 +214,27 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | Direction | `type` | Payload | When |
 | --- | --- | --- | --- |
 | client → server | `ping` | — | Keep-alive; send every 25–30 s. It also keeps you online: a socket that has not pinged for 60 s stops counting as online |
-| client → server | `delivered` | `{message_id}` at top level | Message shown on this device |
-| client → server | `read` | `{conversation_id, last_message_id}` at top level | Conversation opened / scrolled to bottom |
+| client → server | `delivered` | `{message_id}` (top-level or inside `payload`) | Message shown on this device |
+| client → server | `read` | `{conversation_id, last_message_id}` (top-level or inside `payload`) | Conversation opened / scrolled to bottom |
 | client → server (`/game/ws`) | `chat_message` | `{text}` at top level | Player sends a room message during discussion |
 | server → client | `pong` | `null` | Reply to ping |
 | server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
 | server → client | `message` | `MessageOut` | New message in any of my conversations (mine too) |
+| server → client | `message_updated` | `MessageOut` | Author edited a message within 15 min (BE-24) |
+| server → client | `message_deleted` | `{id, conversation_id}` | Author soft-deleted a message (BE-24) |
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
 | server → client | `game_room_formed` | `{room_id}` | Matchmaking put me in a room |
+| server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room |
+| server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room |
+| server → client | `game_started` | `{room_id, state: "discussion", phase_ends_at}` | Waiting room transitioned to discussion |
+| server → client | `game_room_closed` | `{room_id}` | Waiting room expired with 1 participant |
 | server → client | `game_message` | `{id, participant_id, display_label, text}` | Room message from a player or a bot |
-| server → client | `game_phase_voting` | `{room_id}` | Discussion ended |
+| server → client | `game_phase_voting` | `{room_id, state: "voting", phase_ends_at}` | Discussion ended |
 | server → client | `game_phase_finished` | `{room_id}` | Voting ended, results ready |
+
+- **Unread counts in `conversation_updated`**: For the reader who emitted the read receipt, `unread_count` is their updated **total unread messages count** across all conversations (matching `GET /conversations/unread`), allowing the client to update global navigation badges directly while setting that specific conversation row's unread counter to 0. For other participants in the room, `unread_count` is `null`.
+- **Receipt envelopes**: Client-sent `delivered` and `read` frames are accepted both at top level (`{"type": "delivered", "message_id": 6}`) and inside a `payload` dictionary (`{"type": "delivered", "payload": {"message_id": 6}}`).
 
 **Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
 
@@ -236,9 +246,9 @@ The frontend should code against these from day one; the backend Tech Lead confi
 
 | Done | Change | Why |
 | --- | --- | --- |
-| \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through Caddy: no CORS, no mixed content |
+| \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through the nginx + ModSecurity front proxy: no CORS, no mixed content |
 | [x] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
-| \[ \] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
+| [x] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
 | \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
@@ -246,13 +256,15 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` (`presence` is sent since BE-06) | Live edits, online dots, no polling for moderation |
 | \[ \] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
+| \[ \] | Game votes: `POST /game/rooms/{id}/votes` names its target by label number (1–5) instead of `target_participant_id`. A vote request replaces the voter's mark for that target: it is idempotent and allowed any number of times until voting ends, so there is no "already voted" error. A target without a mark counts as `human`. BE-10 owns the final field names and errors. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5, 6 and 9 | Marks preset to human and changeable until voting ends; no database ids before results (DOC-08 follow-up, BE-10) |
+| \[ \] | Game payloads before the results name each participant by its label number (1–5, "Player N"), the same field as in the votes row above, never by the database participant id: `GET /game/rooms/{id}` (`my_participant_id` and `participants[].id`), `game_participant_joined` and `game_participant_left` (`participant.id`), and `game_message` (`participant_id`). `display_label` stays. Database participant ids appear only in `GET /game/rooms/{id}/results`. BE-35 (Nader, new card: hide database participant ids from game payloads before results) owns the REST room state and the room events; BE-09 owns `game_message` on `/ws/game`. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), section 9 | No database ids before results, so ids cannot hint at join order or at bots (DOC-08 follow-up, BE-35, BE-09) |
 | \[ \] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |
 | \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
 | [x] | `GET /metrics` for Prometheus, internal only | Monitoring module |
 
-The `avatar_url` row (BE-08): done for `UserOut` (`avatar_url`, with a public path and a default avatar) and `CompanyOut` (`logo_url`), see Media. It stays unticked until the public profile and the friends list (BE-22) return `avatar_url`, through `Storage.avatar_url`.
+The `avatar_url` row (BE-08 + BE-22): `UserOut` (`avatar_url`), `CompanyOut` (`logo_url`), `GET /api/friends`, and `GET /api/users/{id}/profile` all return public/default image URLs through `Storage.avatar_url` / `Storage.logo_url`.
 
 ## Machine-readable spec
 

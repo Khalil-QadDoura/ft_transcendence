@@ -138,11 +138,64 @@ describe("JobsPage (FE-23)", () => {
       setNativeValue(keywordInput, "Frontend");
       keywordInput.dispatchEvent(new Event("input", { bubbles: true }));
       keywordInput.dispatchEvent(new Event("change", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 350));
     });
 
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.objectContaining({ keyword: "Frontend" }),
     );
+  });
+
+  it("keeps existing jobs visible when Load More fails and allows retry", async () => {
+    const firstPage: JobListResponse = {
+      items: [mockJobs[0]],
+      next_cursor: 2,
+    };
+
+    const fetchSpy = vi
+      .spyOn(api, "fetchOpenJobs")
+      .mockResolvedValueOnce(firstPage)
+      .mockRejectedValueOnce(new Error("Failed to load more jobs."))
+      .mockResolvedValueOnce({ items: [mockJobs[1]], next_cursor: null });
+
+    const router = createMemoryRouter(
+      [{ path: "/jobs", element: <JobsPage /> }],
+      { initialEntries: ["/jobs"] },
+    );
+
+    await act(async () => {
+      root.render(<RouterProvider router={router} />);
+    });
+
+    expect(container.textContent).toContain("Senior Frontend Engineer");
+
+    // Click load more
+    const loadMoreButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((b) => b.textContent?.includes("Load more jobs"));
+    expect(loadMoreButton).toBeDefined();
+
+    await act(async () => {
+      loadMoreButton?.click();
+    });
+
+    // Existing jobs MUST still be visible!
+    expect(container.textContent).toContain("Senior Frontend Engineer");
+    expect(container.textContent).toContain("Failed to load more jobs.");
+
+    // Retry button under the list
+    const retryButton = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Retry"),
+    );
+    expect(retryButton).toBeDefined();
+
+    await act(async () => {
+      retryButton?.click();
+    });
+
+    expect(container.textContent).toContain("Senior Frontend Engineer");
+    expect(container.textContent).toContain("AI Research Intern");
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
   it("filters by schedule dropdown", async () => {
@@ -217,6 +270,7 @@ describe("JobsPage (FE-23)", () => {
     );
     expect(container.textContent).toContain("Senior Frontend Engineer");
     expect(container.textContent).toContain("AI Research Intern");
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("displays empty state when no jobs match search criteria", async () => {
