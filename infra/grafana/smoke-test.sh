@@ -9,8 +9,9 @@
 #   and the security settings as Grafana reads them (no anonymous access, sign-up or org
 #   creation, Secure cookie, brute-force protection on, no usage reports or update checks,
 #   public dashboards and snapshots, local and external, off); the public-dashboard API
-#   answers 404, creating a snapshot is refused (403) and the snapshot sharing options
-#   offer no external publish;
+#   answers Grafana's JSON 404, creating a snapshot is refused by Grafana itself (403 with
+#   "Dashboard Snapshots are disabled"; a 403 without it fails, it may be the WAF's) and
+#   the snapshot sharing options offer no external publish;
 # - the datasource uid prometheus is provisioned (http://prometheus:9090, default,
 #   read-only) and its health check reaches Prometheus;
 # - the dashboards uid wozu-api and wozu-infra are provisioned in the folder WOZU, every
@@ -113,7 +114,10 @@ SETTINGS = [
     ("snapshots", "enabled", "false"),
     ("snapshots", "external_enabled", "false"),
 ]
-TLS = ssl.create_default_context(cafile=ca)
+# Grafana's own JSON answers when snapshots and public dashboards are off (Grafana 13.3.1).
+SNAPSHOTS_REFUSAL = "Dashboard Snapshots are disabled"
+PUBLIC_DASHBOARDS_REFUSAL = "Not found"
+TLS =ssl.create_default_context(cafile=ca)
 
 
 def basic(user, secret):
@@ -216,31 +220,49 @@ def check_access():
                                                        "org create, Secure cookie, brute-force, analytics, news, plugins, "
                                                        "public dashboards, snapshots, external snapshots)")))
     # Public dashboards off: the API that gives a dashboard a public link is not there (404).
-    # Were it there, the link just made is removed again at once.
+    # Were it there, the link just made is removed again at once. Grafana gives no message of
+    # its own for this: the answer is the JSON {"message": "Not found"} of any route it does
+    # not have (the same for /api/dashboards/uid/<uid>/no-such-thing, Grafana 13.3.1). Only
+    # that JSON passes, so a 404 the proxy writes itself (an HTML page) does not.
     uid = next(iter(DASHBOARDS))
     status, _, text = http("POST", f"/api/dashboards/uid/{uid}/public-dashboards", auth=ADMIN,
                            body={"isEnabled": True, "share": "public"})
-    made = (as_json(text) or {}).get("uid") if status == 200 else None
+    answer = as_json(text)
+    answer = answer if isinstance(answer, dict) else {}
+    made = answer.get("uid") if status == 200 else None
     if made:
         http("DELETE", f"/api/dashboards/uid/{uid}/public-dashboards/{made}", auth=ADMIN)
-    results.append((status == 404, f"POST /grafana/api/dashboards/uid/{uid}/public-dashboards: {status} "
-                                   + ("(refused, public dashboards are off)" if status == 404 else
-                                      f"(expected 404; public link {made} made and removed again)" if made else
-                                      f"(expected 404) {(as_json(text) or {}).get('message')}")))
+    refused = status == 404 and answer.get("message") == PUBLIC_DASHBOARDS_REFUSAL
+    results.append((refused, f"POST /grafana/api/dashboards/uid/{uid}/public-dashboards: {status} "
+                             + ("(refused, public dashboards are off)" if refused else
+                                f"(expected 404; public link {made} made and removed again)" if made else
+                                f"(expected 404 with Grafana's {PUBLIC_DASHBOARDS_REFUSAL!r}; got "
+                                f"{answer.get('message')!r}, not Grafana's own answer: the proxy may "
+                                f"have answered)" if status == 404 else
+                                f"(expected 404) {answer.get('message')}")))
     # Snapshots off: creating one from a real dashboard (so it would succeed were they on)
     # is refused with 403. Were it accepted, the snapshot is removed again with its deleteKey.
+    # Only Grafana's own refusal passes: a 403 with its JSON message "Dashboard Snapshots are
+    # disabled". The proxy's WAF can refuse this same POST with a 403 of its own (the
+    # dashboard JSON in the body scores 10 in ModSecurity, rules 942100 and 932235; see the
+    # INF-11 note in docs/infra/infrastructure.md), which would say nothing about snapshots.
     status, _, text = http("GET", f"/api/dashboards/uid/{uid}", auth=ADMIN)
     dashboard = (as_json(text) or {}).get("dashboard") or {"title": "grafana-check"}
     status, _, text = http("POST", "/api/snapshots", auth=ADMIN,
                            body={"dashboard": dashboard, "name": "grafana-check", "expires": 60})
-    answer = as_json(text) or {}
+    answer = as_json(text)
+    answer = answer if isinstance(answer, dict) else {}
     made = answer.get("key") if status == 200 else None
     if made:
         http("GET", f"/api/snapshots-delete/{answer.get('deleteKey')}", auth=ADMIN)
-    results.append((status == 403, f"POST /grafana/api/snapshots: {status} "
-                                   + ("(refused, snapshots are off)" if status == 403 else
-                                      f"(expected 403; snapshot {made} made and deleted again)" if made else
-                                      f"(expected 403) {answer.get('message')}")))
+    refused = status == 403 and answer.get("message") == SNAPSHOTS_REFUSAL
+    results.append((refused, f"POST /grafana/api/snapshots: {status} "
+                             + ("(refused, snapshots are off)" if refused else
+                                f"(expected 403; snapshot {made} made and deleted again)" if made else
+                                f"(expected 403 with Grafana's {SNAPSHOTS_REFUSAL!r}; got "
+                                f"{answer.get('message')!r}: not Grafana's refusal, the WAF "
+                                f"(ModSecurity in the proxy) may have answered)" if status == 403 else
+                                f"(expected 403) {answer.get('message')}")))
     status, _, text = http("GET", "/api/snapshot/shared-options", auth=ADMIN)
     options = as_json(text) or {}
     results.append((status == 200 and options.get("externalEnabled") is False,
