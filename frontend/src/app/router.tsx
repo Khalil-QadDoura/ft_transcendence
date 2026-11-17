@@ -15,6 +15,7 @@ import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
+import { VideoResumePage } from "../features/media/VideoResumePage";
 function ComingSoon({ title }: { title: string }) {
   const { t } = useText();
   return (
@@ -88,9 +89,9 @@ export const routes: RouteObject[] = [
           { path: "settings", element: <AccountSettings /> },
           { path: "profile", element: <ProfilePage /> },
           { path: "users/:id", element: <PublicProfile /> },
+          { path: "videos", element: <VideoResumePage /> },
           ...pages([
             ["friends", "routes.friends"],
-            ["videos", "routes.videos"],
             ["employer/*", "routes.employer"],
             ["game", "routes.game"],
             ["game/rooms/:id", "routes.room"],
