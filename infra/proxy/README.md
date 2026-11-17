@@ -93,8 +93,10 @@ Two traps when testing with stubs:
 Each match goes to the container's stdout as one JSON audit line: `transaction.messages[].details.ruleId`. In DetectionOnly the request still goes through. A SQL injection probe logs rule 942100 and the anomaly total 949110.
 
 ```
-docker logs inf01-proxy 2>&1 | grep '"transaction"'
+docker compose logs --no-log-prefix proxy 2>&1 | grep '"transaction"'
 ```
+
+The audit line has parts `AHZ` only (`MODSEC_AUDIT_LOG_PARTS` in `proxy.env`, PO decision, byul-byul, 2026-11-17): A is the client IP and port, the time, the unique ID and the request line (method, host, URI with query string); H is the matched rules with their scores and the response status; Z ends the entry. It holds no request or response header and no body. `Authorization` and `Cookie` carry passwords, Bearer tokens and session cookies, and the image default `ABIJDEFHZ` wrote them into the log for every audited request. INF-11 may add parts for tuning, never `B` (request headers), `I` or `J` (request bodies) or `E` (response body).
 
 ## For INF-11
 
