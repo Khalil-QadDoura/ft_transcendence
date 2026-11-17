@@ -58,9 +58,10 @@ x-healthcheck: &healthcheck
   start_interval: 2s
 
 # Log rotation for every service (INF-07): Docker's json-file driver keeps at most 3 files of
-# 10 MB per container and deletes the oldest. It rotates by size, not by age, and a
-# container's logs go when the container is removed (`make down`), so these caps alone do
-# not bound how many days the logs cover; see "Logs" in docs/infra/infrastructure.md.
+# 10 MB per container and deletes the oldest. It rotates by size, not by age; a container's
+# logs go when the container is removed (`make down`, `make logs-reset`). The caps bound the
+# size, `make logs-reset` (at least weekly) the age: logs at most 30 days (PO decision
+# 2026-11-13); see "Logs and retention" in docs/infra/infrastructure.md.
 x-logging: &logging
   driver: json-file
   options:
