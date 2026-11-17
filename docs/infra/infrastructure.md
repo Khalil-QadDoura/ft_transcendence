@@ -1,6 +1,6 @@
 # ft\_transcendence — Infrastructure
 
-Oct 27, 2026 · updated Nov 15, 2026 · @byul-byul
+Oct 27, 2026 · updated Nov 17, 2026 · @byul-byul
 
 ## TL;DR
 
@@ -110,7 +110,68 @@ The runtime image is 70 % smaller than the reference; the slimming came with BE-
 | `redis-exporter` | The image is built `FROM scratch`: only the exporter binary, no shell and no HTTP client, and the binary has no check subcommand; nothing is added to it (INF-08). `make metrics-check` covers it: the `redis` target must be up and `redis_up` must be 1. It starts once `redis` is healthy |
 | `worker` | Off by default (profile `worker`) because there is no task to run until BE-29 adds the moderation task; the Celery app exists since BE-07 (`backend/app/worker/celery_app.py`), and with `--profile worker` the worker starts on the runtime image as uid 10001 and reaches ready. No health check until it runs by default; then it gets one, e.g. `celery -A app.worker.celery_app inspect ping -d celery@$HOSTNAME` |
 
-**Logs.** Every service logs to stdout / stderr, kept by Docker's `json-file` driver; one compose anchor `x-logging` gives every service the same rotation: `max-size: 10m`, `max-file: 3`, at most 30 MB per container. Docker deletes the oldest file when the third is full, so the caps bound the disk use, not the age: on a quiet stack the files fill slowly and lines can stay longer than 30 days, and they go away only when the container is removed (`make down`, or a `make` that recreates the container). The Privacy Policy's "at most 30 days" for logs and metrics (PO decision of 2026-11-13) is therefore not yet guaranteed by this setting; the mechanism that enforces it is still open. The proxy access log holds client IP addresses. `docker inspect --format '{{json .HostConfig.LogConfig}}' <container>` shows the caps.
+**Logs.** Every service logs to stdout / stderr, kept by Docker's `json-file` driver; one compose anchor `x-logging` gives every service the same rotation: `max-size: 10m`, `max-file: 3`, at most 30 MB per container. Docker deletes the oldest file when the third is full, so the caps bound the disk use, not the age: on a quiet stack the files fill slowly and lines can stay longer than 30 days. They go away when the container is removed: `make down`, a `make` that recreates the container (only one whose image or configuration changed), or `make logs-reset`, which recreates them all. The Privacy Policy's "at most 30 days" for logs (PO decision of 2026-11-13) is kept by the rotation plus `make logs-reset`, which the operator runs at least weekly (INF-07 follow-up, 2026-11-17); see Logs and retention below. The proxy access log holds client IP addresses. `docker inspect --format '{{json .HostConfig.LogConfig}}' <container>` shows the caps.
+
+**Logs and retention (INF-07 follow-up, 2026-11-17).** Logs and metrics are kept at most 30 days (Privacy Policy sections 2 and 6, PO decision of 2026-11-13). How the stack keeps that:
+
+- **Container logs:** rotation `10m` × 3 per container (above) bounds the size, and `make logs-reset` bounds the age. The operator who runs the stack (on the defense machine, whoever started it) runs `make logs-reset` at least once a week; a line written right after a reset is then at most 7 days old at the next one, and three missed weeks still stay inside 30 days.
+- **Metrics:** Prometheus keeps 30 days, at most 1 GB (`--storage.tsdb.retention.time=30d`, `--storage.tsdb.retention.size=1GB`, INF-08); `make metrics-check` reads both flags back.
+- **No log in a volume.** Every log of the stack is the `json-file` log of a container; the five named volumes hold data, not logs (table below). That is why recreating the containers is enough and no volume is ever removed for it.
+
+**`make logs-reset`** removes the stopped containers of the project (such as the exited one-shot `minio-init`; `docker compose rm --force`, without `-v`) and recreates every running service (`docker compose --profile '*' up -d --force-recreate --wait` with the running services by name). Docker deletes each old container with its log files; the new containers start with empty logs. A stopped dependency is started, as `make` would (`minio-init` runs again as the api's dependency, idempotent). It prints the service names only, for example:
+
+```text
+logs-reset: stopped containers removed: minio-init
+logs-reset: recreated with empty logs: api cadvisor db frontend grafana mailpit minio postgres-exporter prometheus proxy redis redis-exporter redis-test
+```
+
+Side effects: the site is down for about 20–40 s while the containers restart (open `/ws` connections drop and reconnect); the API's in-memory rate-limit counters start from zero; the Mailpit inbox is emptied (it lives inside its container). Not touched: the volumes `db-data`, `redis-data`, `minio-data`, `prometheus-data`, `grafana-data`, so accounts, files, metrics history and Grafana sessions stay. Checked on 2026-11-17: before the reset the proxy's oldest line was from 2026-11-15 (a plain `make` left it there), after it the oldest line was the new container's start; `users` 11, `conversations` 0, `messages` 0, `jobs` 0 and 1 MinIO object before and after; Prometheus's oldest sample still 2026-11-15; `make` and every `make *-check` green afterwards.
+
+**Scheduling, optional and documentation only.** Nothing in the repository installs a schedule on anyone's machine; the operator may add one. Docker must be running when it fires. On macOS, a launchd agent (runs a missed slot when the Mac wakes up), saved as `~/Library/LaunchAgents/local.ft-transcendence.logs-reset.plist`, every Monday at 09:00 local time (Asia/Dubai on the team's machines), with the path of the clone filled in:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.ft-transcendence.logs-reset</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/zsh</string><string>-lc</string><string>cd /path/to/ft_transcendence &amp;&amp; make logs-reset</string></array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/tmp/ft-transcendence-logs-reset.log</string>
+  <key>StandardErrorPath</key><string>/tmp/ft-transcendence-logs-reset.log</string>
+</dict>
+</plist>
+```
+
+Load it with `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.ft-transcendence.logs-reset.plist`, remove it with `launchctl bootout gui/$(id -u)/local.ft-transcendence.logs-reset`. On Linux, a crontab line (`crontab -e`; cron skips a slot while the machine is off, so a laptop needs the weekly run by hand when that happens):
+
+```cron
+0 9 * * 1 cd /path/to/ft_transcendence && PATH=/usr/local/bin:/usr/bin:/bin make logs-reset >> /tmp/ft-transcendence-logs-reset.log 2>&1
+```
+
+**Where the stack keeps logs and request records** (inventory of 2026-11-17, on the running stack):
+
+| Where | What it holds | Personal data | What removes it |
+| --- | --- | --- | --- |
+| `proxy` container log | nginx access log (`/var/log/nginx/access.log` → stdout; format `main`: client IP, time, request line with query string, status, size, referer, user agent, `X-Forwarded-For`), nginx error log (→ stderr), ModSecurity audit log (`SecAuditLog /dev/stdout`, JSON, `Serial`; only transactions with a rule match or a 4xx other than 404 or a 5xx; parts `ABIJDEFHZ`: client IP and port, every request header, response headers and body). `SecAuditLogStorageDir` (`/var/log/modsecurity/audit/`) and `SecDataDir` (`/tmp/modsecurity/data`) are in the container, not in a volume, and empty | Yes: client IP addresses; user agents; request headers as sent, `Authorization` and `Cookie` included; query strings (presigned URL signatures) | Rotation; `make logs-reset`; `make down` |
+| `frontend` container log | nginx start-up notices and the access log (the image's `main` format) of every request the proxy passes to `/` (`/healthz` is not logged) | Yes: the browser's IP in the last field (`X-Forwarded-For`, set by the proxy; the first field is the proxy's container IP); user agents; query strings, such as the email verification token of `/verify-email?token=…` (also in the proxy's access log) | Rotation; `make logs-reset`; `make down` |
+| `api` container log | One JSON line per request: method, path (no query string), status, duration, request ID; start-up, migrations; tracebacks of unhandled errors | Paths can carry numeric IDs (`/api/users/42`); no IP address, no email | Rotation; `make logs-reset`; `make down` |
+| `api` process memory | Rate-limit counters per client IP (`slowapi`, in memory, `backend/app/core/limiter.py`) | Yes: client IP addresses, for the length of the limit window | Every restart or recreate of `api` |
+| `db` container log | PostgreSQL server events (checkpoints, connections); a failed statement with its text and `DETAIL` (for a constraint violation, the values of the failing row) | Can hold the values of a failing row (for example an email on a unique violation); seen so far only from the tests on `wozu_test` | Rotation; `make logs-reset`; `make down` |
+| `redis`, `redis-test` container logs | Server events, RDB saves | No | Rotation; `make logs-reset`; `make down` |
+| `minio` container log | Start-up only; no access or audit log is configured (no `MINIO_AUDIT_*`, no logger webhook) | No | Rotation; `make logs-reset`; `make down` |
+| `minio-init` container log | Bucket and policy set-up, printed policy | No | `make logs-reset` (removes the exited container); `make down` |
+| `mailpit` container log and inbox | Log: start-up, database vacuum. Inbox: every caught email in a SQLite file in the container's `/tmp` (no volume) | Inbox: recipient addresses, names, verification links | Log: rotation. Inbox: `make logs-reset`, `make down` (a new container starts with an empty inbox); `make mail-check` deletes its own message |
+| `prometheus` container log; `prometheus-data` volume | Log: its own events. Volume: the metrics | No: labels are route templates, job and container names (see M12, Personal data) | Log: rotation, `make logs-reset`. Metrics: retention 30 days or 1 GB |
+| `grafana` container log | Console only (the image starts Grafana with `log.mode=console`; `/var/log/grafana` stays empty); a "Request Completed" line for each failed request | Yes: `remote_addr` (client IP) and the username of the request | Rotation; `make logs-reset`; `make down` |
+| `grafana-data` volume (`grafana.db`) | Sessions (`user_auth_token`: client IP and user agent per login) and failed logins (`login_attempt`: username, IP), next to users, dashboards' state and settings | Yes: client IP addresses and user agents of logins | Grafana itself, not `make logs-reset`: a session is deleted once it expires, after 7 days unused or 30 days after the login (`login_maximum_inactive_lifetime_duration` 7d, `login_maximum_lifetime_duration` 30d, Grafana's defaults, read back on 2026-11-17); failed logins after the brute-force window. On 2026-11-17: 62 sessions, all from `make grafana-check` runs, the oldest from 2026-11-15 |
+| `postgres-exporter`, `redis-exporter`, `cadvisor` container logs | Their own events; cAdvisor warnings with container IDs | No | Rotation; `make logs-reset`; `make down` |
+| `api-test`, `wozu-frontend-test` containers | Output of `make test` | No (test data) | Removed after each run (`compose run --rm`, `docker run --rm`) |
+| `db-data`, `redis-data`, `minio-data` volumes | Application data: accounts, chats, jobs, files; Celery queue and `/ws` keys in Redis | Yes, as the Privacy Policy describes; not a log and no request record (no table stores an IP address; Redis has no per-IP key) | Account deletion (BE), `make fclean`; never `make logs-reset` |
+
+The json-file logs themselves live in Docker's data directory (`/var/lib/docker/containers/<id>/<id>-json.log`; on Docker Desktop inside its Linux VM), never in the clone.
 
 ## One origin over HTTPS
 
@@ -230,6 +291,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `make up` | `env`, then `infra/proxy/scripts/gen-cert.sh` (the proxy exits without a certificate), then `docker compose up -d --build --wait`, which returns once every long-running service is healthy and `minio-init` has exited 0 (see Images, health checks and logs) |
 | `make down` | stops and removes the containers, keeps volumes |
 | `make logs` | last 100 lines of every service, then follows; `make logs s=api` for one service |
+| `make logs-reset` | empties every container log: removes the stopped containers and recreates the running services, volumes untouched; the operator runs it at least weekly so that logs stay within 30 days (see Logs and retention) |
 | `make test` | starts `db`, `redis-test` (profile `test`) and `minio` if needed and creates the test database when it is missing (see below); backend `ruff` + `pytest` in a throwaway `api-test` container (the `test` stage of the api image: runtime plus `requirements-dev.txt`, same non-root user; code mounted read-only), with `DATABASE_URL` set to `TEST_DATABASE_URL` as in CI; fails if any backend test is skipped, as CI; frontend lint, format check, type check and `vitest` in the build stage of its image. Leaves `db`, `redis-test` and `minio` running; `make down` and `make fclean` remove `redis-test` too (`--profile '*'`) |
 | `make https-check` | smoke test of the routes of the one HTTPS origin against the running stack (see One origin over HTTPS) |
 | `make images-check` | fails when a compose image, a Dockerfile `FROM` or a workflow image (`.github/workflows/`) is not pinned as `name:tag@sha256:…` or uses `latest`, naming each one; needs no running stack (see Images, health checks and logs) |
