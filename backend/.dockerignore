@@ -1,7 +1,8 @@
+# requirements-dev.txt stays in the build context: only the test stage of the Dockerfile
+# copies it, the runtime stage (api, worker) never does. The tests are mounted by make test.
 .env
 .venv/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
 tests/
-requirements-dev.txt

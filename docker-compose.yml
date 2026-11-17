@@ -10,6 +10,10 @@ x-backend-env: &backend-env
   LOG_LEVEL: ${LOG_LEVEL}
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
   TEST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_TEST_DB}
+  # Database 0 of the redis service: settings.redis_url, the app's Redis client and the
+  # Celery broker. `make test` points it and TEST_REDIS_URL at the redis-test service
+  # instead, as the CI backend job points both at its Redis service.
+  REDIS_URL: redis://redis:6379/0
   JWT_SECRET: ${JWT_SECRET}
   INTERNAL_API_KEY: ${INTERNAL_API_KEY}
   FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
@@ -28,14 +32,49 @@ x-backend-env: &backend-env
   MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
   MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
 
+# Every image is pinned by tag and by the digest of its multi-arch index (amd64 + arm64), so
+# Apple Silicon laptops and the amd64 CI runner pull the same build; `make images-check`
+# fails on an image or Dockerfile FROM without a digest (INF-07).
+# Redis 7.4.12, the build `redis:7-alpine` pointed to on 2026-11-12; redis and redis-test
+# share it.
+x-redis-image: &redis-image redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+
 # The official minio/minio and minio/mc images left Docker Hub on 2025-10-23; pgsty/minio
 # rebuilds the upstream releases (amd64 + arm64) and ships mc too, so the server and
-# minio-init share one image. Pinned by tag and digest.
+# minio-init share one image.
 x-minio-image: &minio-image pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+
+# Timing of every health check (INF-07; values decided on the card 2026-11-08). While a
+# container starts, Docker checks every 2 s (start_interval, Docker Engine 25+) for up to
+# 30 s, so `make` returns as soon as a service is ready; failures in that window do not
+# count. After that one check per 30 s, so the api logs one GET /api/health per 30 s instead
+# of one per 5 s; 3 failures in a row (3 s timeout each) mark the container unhealthy.
+# Each service merges this and adds its own `test`, using a tool its image already has.
+x-healthcheck: &healthcheck
+  interval: 30s
+  timeout: 3s
+  retries: 3
+  start_period: 30s
+  start_interval: 2s
+
+# Log rotation for every service (INF-07): Docker's json-file driver keeps at most 3 files of
+# 10 MB per container and deletes the oldest. It rotates by size, not by age; a container's
+# logs go when the container is removed (`make down`, `make logs-reset`). The caps bound the
+# size, `make logs-reset` (at least weekly) the age: logs at most 30 days (PO decision
+# 2026-11-13); see "Logs and retention" in docs/infra/infrastructure.md.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   # nginx + ModSecurity CRS (INF-01). Listens on 8080/8443 inside the container (uid 101
-  # cannot bind below 1024). Upstreams resolve per request, so it needs no depends_on.
+  # cannot bind below 1024). Upstreams resolve per request, so it could start without them;
+  # it waits for them to be healthy so that the site never answers 502 right after `make`.
+  # Health: the image's own /healthz over HTTPS on its local listener (TLS and the config
+  # with ModSecurity loaded; no access-log line). The image's built-in check runs curl
+  # without -f, which also passes on a 404.
   proxy:
     image: owasp/modsecurity-crs:4.30.0-nginx-alpine-202610180210@sha256:873ce68a658d2e3b61484a8a24d215f7d15456e7ce5aec5e7114bf000d743365
     env_file: infra/proxy/proxy.env
@@ -50,24 +89,50 @@ services:
       - ./infra/proxy/templates/conf.d/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
       # Created by infra/proxy/scripts/gen-cert.sh (`make up` runs it first).
       - ./infra/proxy/certs:/etc/nginx/conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      # Host: localhost, because CRS rule 920350 logs every request whose Host is a numeric IP
+      # (a 1.5 kB audit entry per check, found on INF-07).
+      test: ["CMD", "curl", "-fsk", "-o", "/dev/null", "-A", "healthcheck", "-H", "Host: localhost", "https://127.0.0.1:8443/healthz"]
     restart: unless-stopped
+    logging: *logging
 
   # FE-01 build: static files served by nginx on port 80, SPA fallback to index.html.
+  # Health: /healthz in infra/frontend/default.conf serves the built index.html, without
+  # an access-log line; curl is in the nginx image.
   frontend:
     build:
       context: ./frontend
       target: preview
     volumes:
       - ./infra/frontend/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "curl", "-fs", "-o", "/dev/null", "http://127.0.0.1/healthz"]
     restart: unless-stopped
+    logging: *logging
 
   # FastAPI. The image runs `alembic upgrade head` before uvicorn, so it waits for the db.
   # Healthy once /api/health answers (after the migrations), so `make` returns only then.
   # The image has no curl; Python asks.
   # It also waits for minio-init: upload URLs need the bucket, and a one-shot that a
   # service depends on this way is the only kind `up --wait` accepts as exited.
+  # Built from the runtime stage of backend/Dockerfile: no tests, no test tools, non-root.
   api:
-    build: ./backend
+    build:
+      context: ./backend
+      target: runtime
     environment: *backend-env
     depends_on:
       db:
@@ -77,18 +142,21 @@ services:
       minio-init:
         condition: service_completed_successfully
     healthcheck:
+      <<: *healthcheck
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
     restart: unless-stopped
+    logging: *logging
 
-  # Celery worker + beat for video moderation. Enabled by BE-29: the backend has no Celery
-  # app yet, so the service is off by default and starts only with `--profile worker`.
+  # Celery worker + beat for video moderation. The Celery app exists since BE-07
+  # (backend/app/worker/celery_app.py), but there is no task to run until BE-29 adds the
+  # moderation task, so the service is off by default and starts only with `--profile worker`.
+  # No health check until it runs by default (INF-07 exemption); then it gets one, e.g.
+  # `celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME`.
   worker:
     profiles: ["worker"]
-    build: ./backend
+    build:
+      context: ./backend
+      target: runtime
     command: ["celery", "-A", "app.worker.celery_app", "worker", "-B", "--loglevel=INFO"]
     environment:
       <<: *backend-env
@@ -100,13 +168,30 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    logging: *logging
+
+  # Backend ruff + pytest for `make test` only (profile test): the test stage of
+  # backend/Dockerfile, i.e. the runtime image plus requirements-dev.txt. The Makefile mounts
+  # the code with the tests read-only and passes the test-only variables with -e. One-shot
+  # (`compose run --rm`), so no health check and no restart.
+  api-test:
+    profiles: ["test"]
+    build:
+      context: ./backend
+      target: test
+    environment: *backend-env
+    logging: *logging
 
   # PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, built for amd64 and arm64 by
   # one of its maintainers (every postgis/postgis tag is amd64 only), so Apple Silicon runs it
-  # natively. Pinned by tag and the digest of the multi-arch index.
+  # natively. Pinned by tag and the digest of the multi-arch index. 15-3.4 is a frozen build
+  # (PostgreSQL 15.8); staying on it is deliberate (byul-byul, 2026-11-12), and CI's backend
+  # job uses the same digest (#39).
   # On a new volume the image runs its own 10_postgis.sh, then our script, which adds the
   # test database (`make test` runs the same script for an older volume). Only the one file
   # is mounted: a mounted directory would hide 10_postgis.sh.
+  # Health: pg_isready over TCP. While the image initialises a new volume it runs a temporary
+  # server on the Unix socket only; asking over TCP keeps that phase from counting as healthy.
   db:
     image: imresamu/postgis:15-3.4@sha256:44d4443d107a7750ea29a441dec0050cd7543178f011ae0620e4b572578e9300
     environment:
@@ -118,26 +203,42 @@ services:
       - db-data:/var/lib/postgresql/data
       - ./infra/db/create-test-db.sh:/docker-entrypoint-initdb.d/20-create-test-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      <<: *healthcheck
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
     restart: unless-stopped
+    logging: *logging
 
+  # Health: PING must answer PONG; an error reply such as LOADING (data still being read
+  # from disk) does not count.
   redis:
-    image: redis:7-alpine
+    image: *redis-image
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      <<: *healthcheck
+      test: ["CMD-SHELL", "redis-cli ping | grep -qx PONG"]
     restart: unless-stopped
+    logging: *logging
+
+  # Redis only for `make test` (profile test). Pub/sub channels and CLIENT KILL are
+  # server-wide, so a database number on the redis service would still let the tests publish
+  # to the site's /ws sockets and cut them off. Nothing kept on disk, no port; the image
+  # declares VOLUME /data, so a tmpfs takes its place and no anonymous volume is left after
+  # `make down`. The health check is only for `up --wait`, no service depends on it.
+  redis-test:
+    image: *redis-image
+    profiles: ["test"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs:
+      - /data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "redis-cli ping | grep -qx PONG"]
+    logging: *logging
 
   # S3 API on minio:9000, reached from the browser only through the proxy at /files (the
   # bucket name is the route prefix). No host ports, console included.
+  # Health: MinIO's liveness endpoint, with the curl the image ships.
   minio:
     image: *minio-image
     command: ["server", "/data", "--console-address", ":9001"]
@@ -146,10 +247,15 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio-data:/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "curl", "-fs", "-o", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
     restart: unless-stopped
+    logging: *logging
 
   # One-shot: waits for MinIO, creates the private bucket and its anonymous policy, exits 0
-  # (infra/minio/init-bucket.sh). Idempotent, so it runs on every `make`.
+  # (infra/minio/init-bucket.sh). Idempotent, so it runs on every `make`. No health check
+  # (INF-07 exemption): it exits; api waits for its exit code 0 instead.
   minio-init:
     image: *minio-image
     entrypoint: ["bash", "/init-bucket.sh"]
@@ -160,17 +266,183 @@ services:
     volumes:
       - ./infra/minio/init-bucket.sh:/init-bucket.sh:ro
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
     restart: "no"
+    logging: *logging
 
   # Catches every outgoing email. SMTP on mailpit:1025, web inbox at /mail via the proxy.
+  # Health: the binary's own `readyz` subcommand (also the image's built-in check).
   mailpit:
-    image: axllent/mailpit:v1.33.1
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
     environment:
       MP_WEBROOT: /mail/
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "/mailpit", "readyz"]
     restart: unless-stopped
+    logging: *logging
+
+  # Monitoring (INF-08, module M12). Prometheus pulls /metrics from the api and the exporters
+  # every 15 s (infra/prometheus/prometheus.yml). No host port, no proxy route: only the
+  # Docker network reaches it (Grafana, INF-09). It needs no other service to start; a
+  # target that is not up yet shows as down until the next scrape.
+  # Retention (PO decision 2026-11-12): metrics are kept at most 30 days and the TSDB is
+  # capped at 1 GB, whichever comes first, as the Privacy Policy says (logs and metrics
+  # kept at most 30 days, since #38). The command replaces the image's default
+  # arguments, so the config and data paths are repeated.
+  # Health: the server's own readiness endpoint, with the busybox wget the image ships.
+  prometheus:
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=1GB
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+    restart: unless-stopped
+    logging: *logging
+
+  # PostgreSQL metrics on postgres-exporter:9187 (pg_up, connections, sizes, locks), for
+  # Prometheus only. It logs in with the app's POSTGRES_* values from .env, passed by compose
+  # interpolation: no new secret and nothing in Git; INF-13 moves them to Vault. Separate
+  # URI, user and password variables, so a password needs no URL encoding.
+  # Health: the exporter's landing page, with the busybox wget the image ships. It shows that
+  # the exporter serves; whether the database answers is pg_up, which `make metrics-check`
+  # requires to be 1.
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e
+    environment:
+      DATA_SOURCE_URI: db:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9187/"]
+    restart: unless-stopped
+    logging: *logging
+
+  # Redis metrics on redis-exporter:9121 (redis_up, memory, clients, commands). The redis
+  # service has no password.
+  # No health check (INF-08 exemption): the image is built FROM scratch and holds only the
+  # exporter binary, with no shell and no HTTP client to run one, and the binary has no
+  # check subcommand. `make metrics-check` covers it instead: the redis target must be up
+  # and redis_up must be 1.
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe77571d455ede0453b084d6840bc62fc105efac001034421cab83b99
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  # Container CPU and memory per compose service on cadvisor:8080, for the INF-09 dashboards.
+  # ghcr.io: Google publishes the v0.56+ releases there only (gcr.io/cadvisor stops at
+  # v0.55.1), for amd64 and arm64.
+  # Read-only mounts, no privileged mode: the Docker socket to list the containers and read
+  # their labels, the containerd socket (cAdvisor's Docker support will not start without
+  # it), /sys for their cgroup counters (CPU, memory), /var/lib/docker for each container's
+  # metadata. On Docker Desktop these paths resolve inside its Linux VM, not on macOS; not
+  # /var/run as a whole, which there is the Mac's own. Not mounted: / and /dev/disk, which
+  # only the disk metrics need (disabled below).
+  # Light flags: Docker containers only; their stats every 30 s instead of every second;
+  # only the cpu and memory metric groups; of all the container labels only the compose
+  # project and service names, so a series reads
+  # container_label_com_docker_compose_project="wozu" and
+  # container_label_com_docker_compose_service="api". cAdvisor sees every container on the
+  # Docker host, other compose projects too (a second clone, another team's stack); the
+  # INF-09 container panels keep this project's by filtering on the project label.
+  # Health: the same /healthz the image's own check asks, with its busybox wget.
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --enable_metrics=cpu,memory
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+    restart: unless-stopped
+    logging: *logging
+
+  # Dashboards (INF-09, module M12) at https://<host>/grafana/, through the proxy only; no
+  # host port. The datasource (Prometheus, uid prometheus) and the dashboards are provisioned
+  # from infra/grafana/, mounted read-only: nothing is clicked together in the UI.
+  # Sub-path: the root URL is the public origin from .env (FRONTEND_BASE_URL, with the port
+  # when HTTPS_PORT is not 443) plus /grafana/, and Grafana serves under that path itself
+  # (serve_from_sub_path), so the proxy passes the URI unchanged.
+  # Access: one user, admin, with GRAFANA_ADMIN_PASSWORD from .env (generated by `make env`;
+  # Grafana sets it when grafana-data is new). No anonymous access, no sign-up, no new
+  # organisations; the session cookie is Secure (HTTPS only). Grafana's own brute-force
+  # protection stays on (5 failed logins lock the user for 5 minutes).
+  # No calls out from the defense machine: no usage reports, no update or plugin update
+  # checks, no news feed, no Gravatar. No plugin is installed: Grafana 13 downloads about
+  # ten plugins from grafana.com at first start unless preinstall is disabled; the built-in
+  # Prometheus datasource is all the dashboards need. The plugin catalogue page is off and
+  # the plugin signing key is not fetched from grafana.com (the built-in key is used).
+  # Public (externally shared) dashboards are off, so admin cannot give a live dashboard a
+  # link that works without a login, and the "Publish to snapshots.raintank.io" option is
+  # gone, the last way the UI could send data out to grafana.com. Local snapshots are off
+  # too (PO decision, byul-byul, 2026-11-16): they are not needed, and a local snapshot
+  # opens without a login for anyone who has its link (a random 32-character key).
+  # Health: Grafana's own /api/health (database reachable), with the busybox wget the image
+  # ships (it has curl too).
+  grafana:
+    image: grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
+    environment:
+      GF_SERVER_ROOT_URL: ${FRONTEND_BASE_URL}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD missing in .env, run make env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED: "true"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_PUBLIC_DASHBOARDS_ENABLED: "false"
+      GF_SNAPSHOTS_ENABLED: "false"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+    volumes:
+      - ./infra/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infra/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+    restart: unless-stopped
+    logging: *logging
 
 volumes:
   db-data:
   redis-data:
   minio-data:
+  prometheus-data:
+  grafana-data:

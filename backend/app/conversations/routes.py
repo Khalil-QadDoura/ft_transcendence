@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,25 +21,55 @@ from app.conversations.schemas import (
     MessageOut,
     MessagesPage,
     ParticipantOut,
+    PeerOut,
     ReadRequest,
     SendMessageRequest,
     SendResponse,
     UnreadOut,
 )
+from app.core.redis_client import get_redis
+from app.core.storage import Storage, get_storage
 from app.db.session import get_session
-from app.realtime.connection_manager import manager
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
-
-_EDIT_WINDOW = timedelta(minutes=15)
 
 
 def _msg_out(m: Any) -> MessageOut:
     return MessageOut.model_validate(m)
 
 
-def _conv_out(row: dict[str, Any]) -> ConversationOut:
-    return ConversationOut(**row)
+def _conv_out(row: dict[str, Any], storage: Storage | None = None) -> ConversationOut:
+    peer: PeerOut | None = None
+    peer_id = row.get("peer_id")
+    if peer_id is not None:
+        if storage is None:
+            from app.core.config import settings
+
+            storage = Storage(settings=settings)
+        first_name = row.get("peer_first_name")
+        last_name = row.get("peer_last_name")
+        parts = [p for p in (first_name, last_name) if p]
+        display_name = " ".join(parts) if parts else f"User {peer_id}"
+        peer = PeerOut(
+            id=peer_id,
+            first_name=first_name,
+            last_name=last_name,
+            display_name=display_name,
+            avatar_url=storage.avatar_url(row.get("peer_avatar_key")),
+        )
+    return ConversationOut(
+        id=row["id"],
+        type=row["type"],
+        title=row.get("title"),
+        job_id=row.get("job_id"),
+        job_title=row.get("job_title"),
+        last_message_id=row.get("last_message_id"),
+        last_message_content=row.get("last_message_content"),
+        last_message_author_id=row.get("last_message_author_id"),
+        unread_count=row.get("unread_count", 0),
+        updated_at=row["updated_at"],
+        peer=peer,
+    )
 
 
 async def _require_participant(
@@ -91,6 +121,7 @@ async def _validate_job_owner(session: AsyncSession, job_id: int, user_id: int) 
 async def create_conversation(
     body: ConversationCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[Storage, Depends(get_storage)],
     me: CurrentUser,
 ) -> ConversationOut:
     """Create or retrieve a direct conversation, or create an AI conversation."""
@@ -117,7 +148,7 @@ async def create_conversation(
 
     row = await repo.get_conversation_for_user(session, conv.id, me.id)
     if row:
-        return _conv_out(row)
+        return _conv_out(row, storage)
 
     return ConversationOut(
         id=conv.id,
@@ -130,18 +161,20 @@ async def create_conversation(
         last_message_author_id=None,
         unread_count=0,
         updated_at=conv.updated_at,
+        peer=None,
     )
 
 
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
     session: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[Storage, Depends(get_storage)],
     me: CurrentUser,
     limit: int = Query(50, ge=1, le=100),
 ) -> list[ConversationOut]:
     """List conversations for the current user ordered by updated_at descending."""
     rows = await repo.list_conversations_for_user(session, me.id, limit)
-    return [_conv_out(r) for r in rows]
+    return [_conv_out(r, storage) for r in rows]
 
 
 @router.get("/unread", response_model=UnreadOut)
@@ -157,6 +190,7 @@ async def get_unread(
 async def get_conversation(
     conv_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[Storage, Depends(get_storage)],
     me: CurrentUser,
 ) -> ConversationOut:
     """Get conversation details with unread count for current user."""
@@ -166,7 +200,7 @@ async def get_conversation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="not found or forbidden",
         )
-    return _conv_out(row)
+    return _conv_out(row, storage)
 
 
 @router.delete("/{conv_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
@@ -255,12 +289,14 @@ async def send_message(
     conv_id: int,
     body: SendMessageRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
     me: CurrentUser,
 ) -> SendResponse:
-    """Send a message and broadcast over WebSocket."""
+    """Send a message and broadcast over BE-06 WebSockets when newly created."""
     try:
-        conv, msgs = await service.send_message(
+        items = await service.send_message_and_broadcast(
             session,
+            redis,
             conv_id=conv_id,
             user_id=me.id,
             content=body.content,
@@ -272,13 +308,7 @@ async def send_message(
     except PermissionError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden") from None
 
-    participant_ids = await repo.get_active_participant_ids(session, conv_id)
-    for msg in msgs:
-        payload = {"type": "message", "payload": _msg_out(msg).model_dump(mode="json")}
-        for uid in participant_ids:
-            await manager.send_to_user(uid, payload)
-
-    return SendResponse(items=[_msg_out(m) for m in msgs])
+    return SendResponse(items=items)
 
 
 @router.patch("/{conv_id}/messages/{mid}", response_model=MessageOut)
@@ -287,39 +317,24 @@ async def edit_message(
     mid: int,
     body: EditMessageRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
     me: CurrentUser,
 ) -> MessageOut:
-    """Edit own message within the 15-minute window."""
-    await _require_participant(session, conv_id, me.id)
-    msg = await repo.get_message(session, mid)
-    if not msg or msg.conversation_id != conv_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message not found")
-    if msg.author_id != me.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="cannot edit another user's message",
+    """Edit own message within the 15-minute window and broadcast message_updated."""
+    try:
+        updated = await service.edit_message(
+            session, conv_id=conv_id, msg_id=mid, user_id=me.id, content=body.content
         )
-    created_tz = (
-        msg.created_at if msg.created_at.tzinfo is not None else msg.created_at.replace(tzinfo=UTC)
-    )
-    if datetime.now(UTC) - created_tz > _EDIT_WINDOW:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="edit window expired (15 minutes)",
-        )
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err)) from None
+    except PermissionError as err:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(err)) from None
+    except service.EditWindowExpiredError as err:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(err)) from None
 
-    updated = await repo.edit_message(session, mid, body.content)
-    await session.commit()
-    if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message not found")
-
-    # Broadcast message_updated event
-    participant_ids = await repo.get_active_participant_ids(session, conv_id)
-    payload = {"type": "message_updated", "payload": _msg_out(updated).model_dump(mode="json")}
-    for uid in participant_ids:
-        await manager.send_to_user(uid, payload)
-
-    return _msg_out(updated)
+    out = _msg_out(updated)
+    await service.broadcast_event(session, redis, conv_id, "message_updated", out)
+    return out
 
 
 @router.delete("/{conv_id}/messages/{mid}", status_code=status.HTTP_204_NO_CONTENT)
@@ -327,26 +342,20 @@ async def delete_message(
     conv_id: int,
     mid: int,
     session: Annotated[AsyncSession, Depends(get_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
     me: CurrentUser,
 ) -> None:
-    """Soft delete own message."""
-    await _require_participant(session, conv_id, me.id)
-    msg = await repo.get_message(session, mid)
-    if not msg or msg.conversation_id != conv_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message not found")
-    if msg.author_id != me.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="cannot delete another user's message",
-        )
-    await repo.soft_delete_message(session, mid)
-    await session.commit()
+    """Soft delete own message and broadcast message_deleted."""
+    try:
+        await service.delete_message(session, conv_id=conv_id, msg_id=mid, user_id=me.id)
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err)) from None
+    except PermissionError as err:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(err)) from None
 
-    # Broadcast message_deleted event
-    participant_ids = await repo.get_active_participant_ids(session, conv_id)
-    payload = {"type": "message_deleted", "payload": {"id": mid, "conversation_id": conv_id}}
-    for uid in participant_ids:
-        await manager.send_to_user(uid, payload)
+    await service.broadcast_event(
+        session, redis, conv_id, "message_deleted", {"id": mid, "conversation_id": conv_id}
+    )
 
 
 @router.post("/{conv_id}/read", status_code=status.HTTP_204_NO_CONTENT)
@@ -354,24 +363,19 @@ async def mark_read(
     conv_id: int,
     body: ReadRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
     me: CurrentUser,
 ) -> None:
     """Mark conversation messages as read up to the given message ID."""
     try:
-        await service.mark_read(session, conv_id, me.id, body.last_message_id)
-    except (LookupError, PermissionError) as err:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(err)) from None
-
-    participant_ids = await repo.get_active_participant_ids(session, conv_id)
-    unread = await repo.get_total_unread(session, me.id)
-    for uid in participant_ids:
-        await manager.send_to_user(
-            uid,
-            {
-                "type": "conversation_updated",
-                "payload": {
-                    "conversation_id": conv_id,
-                    "unread_count": unread if uid == me.id else None,
-                },
-            },
+        await service.mark_read_and_broadcast(
+            session,
+            redis,
+            conv_id=conv_id,
+            user_id=me.id,
+            last_message_id=body.last_message_id,
         )
+    except LookupError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err)) from None
+    except PermissionError as err:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(err)) from None

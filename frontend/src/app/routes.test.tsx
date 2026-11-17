@@ -64,7 +64,6 @@ test.each([
   "/",
   "/jobs",
   "/jobs/4",
-  "/users/2",
   "/game/rules",
   "/privacy",
   "/terms",
@@ -122,4 +121,12 @@ test.each([
   "/\n/evil",
 ])("rejects external or looping return path %s", (value) => {
   expect(safeNext(value)).toBe("/profile");
+});
+
+test("public user profiles require the backend authenticated session", async () => {
+  const router = await render("/users/2");
+  expect(router.state.location.pathname).toBe("/login");
+  expect(new URLSearchParams(router.state.location.search).get("next")).toBe(
+    "/users/2",
+  );
 });

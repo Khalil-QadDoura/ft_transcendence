@@ -147,10 +147,10 @@ Decided by byul-byul on 2026-11-04. These rules are the input for card DOC-08, w
 
 **Scoring**
 
-- Each human marks every other participant as bot or human: +1 correct, −1 wrong, 0 no guess.
+- Each human marks every other participant as bot or human: every mark starts at "human" and can be changed until voting ends; +1 correct, −1 wrong, and a mark left at "human" counts (no "no guess" since 2026-11-15).
 - Highest score wins; a shared top score is a draw.
 - Room with a single human (1 human + bots): score above 0 is a win, 0 a draw, below 0 a loss.
-- A disconnected player scores 0 for the guesses they did not make.
+- A disconnected player keeps the marks they had, still counts as one of the humans for who wins, and gets a score and an outcome. Full rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md).
 
 ## Work split
 
@@ -213,7 +213,7 @@ Depends on: <CARD-ID>
 
 **Git**
 
-- Merge policy: use a PR with one approving review and passing applicable CI. INF-06 owns enforcement through branch protection; this plan is not proof of the live settings.
+- Merge policy: use a PR with one approving review and a green `ci-ok` check, the gate job of the single CI workflow `ci.yml` (INF-06; jobs and branch protection settings in the Infrastructure doc, section "CI"). Branch protection on `main` enforces both once the repo admin applies it.
 - Branch name: `<type>/<CARD-ID>-<short-name>`, e.g. `feat/BE-07-intro-video`, `fix/BE-10-vote-room-check`.
 - Commit message: `<type>(<scope>): <summary> (<CARD-ID>)`, types `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Example: `feat(game): reject votes for participants of other rooms (BE-10)`.
 - Small PRs (under \~400 changed lines), one card each. Squash merge keeps one clear commit per card on `main`.
@@ -254,7 +254,15 @@ Depends on: <CARD-ID>
 | 2026-11-04 | Root README placeholder is replaced by DOC-03; its author agreed | Final card plan | Decided |
 | 2026-11-05 | Front proxy: nginx + ModSecurity v3 + OWASP CRS from day one (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-01 PR |
 | 2026-11-08 | Compose and Makefile: `pgsty/minio`, `imresamu/postgis`, worker profile until BE-29, `fclean` keeps `.env`, host ports from `.env` (details below) | byul-byul | Decided; Tech Lead approves through review of the INF-02 PR |
+| 2026-11-08 | Email at the defense: verification and password emails go only to Mailpit at `https://localhost/mail`; no Brevo or other paid email service, no `BREVO_API_KEY` in compose or the root `.env.example` (details below) | byul-byul | Decided |
 | 2026-11-09 | File storage at `/files`: `minio-init` on the `pgsty/minio` image, private bucket with anonymous download on `avatars/` and `logos/` only, signing region `us-east-1` (details below) | byul-byul | Decided, except the public prefixes: proposed to Khalil (BE-08) in the INF-04 PR |
+| 2026-11-12 | Every image is pinned by tag and digest; `make images-check` enforces it (INF-07) | byul-byul | Decided |
+| 2026-11-12 | CI is one workflow `ci.yml` with a `ci-ok` gate; `ci-ok` is the only required check on `main` (INF-06) | byul-byul | Decided; branch protection on `main` to be applied by Khalil (repo admin) |
+| 2026-11-13 | Logs and metrics kept for at most 30 days (was 15): server logs, including IP addresses in the proxy access logs, and service metrics; Privacy Policy sections 2 and 6 | byul-byul | Decided; enforced by rotation + make logs-reset, INF-07 follow-up (infrastructure doc, "Logs and retention") |
+| 2026-11-15 | Monitoring (INF-08): Prometheus scrapes the API, postgres-exporter, redis-exporter and cAdvisor (from ghcr.io) every 15 s inside the Docker network; no host port, no proxy route; metrics kept 30 days, at most 1 GB (PO decision of 2026-11-12: logs and metrics at most 30 days, replacing the card's "e.g. 7 days"); `make metrics-check` runs in CI | byul-byul | Decided; review in the INF-08 PR. The Privacy Policy says at most 30 days for logs and metrics since #38 (DOC-01/02 follow-up). |
+| 2026-11-15 | Dashboards (INF-09): Grafana OSS 13.3.1 at `/grafana/` behind the proxy, no host port; one user `admin` with the generated `GRAFANA_ADMIN_PASSWORD`; no anonymous access, sign-up or org creation; Secure cookie; no plugins, usage reports, update checks or news (nothing fetched from grafana.com); datasource and the dashboards "WOZU API" and "WOZU Infrastructure" provisioned read-only from files; `make env` appends missing keys to an existing `.env` without changing a value; `make grafana-check` runs in CI | byul-byul | Decided; review in the INF-09 PR (stacked on the INF-08 PR) |
+| 2026-11-15 | Turing Duel voting: marks preset to human, changeable until voting ends; no 'no guess'; disconnected players keep their marks; label numbers only before results (DOC-08 follow-up) | byul-byul | Decided |
+| 2026-11-16 | Turing Duel: a disconnected player still counts as a human for the winner and gets a score and an outcome; a player who comes back before voting ends can change marks; the deception rate counts preset marks and divides by all humans in the game (DOC-08 follow-up, PR #60) | byul-byul | Decided |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 
@@ -274,6 +282,12 @@ Depends on: <CARD-ID>
 - **Host ports:** 443 and 80 by default, changed with `HTTPS_PORT` / `HTTP_PORT` in `.env`; the HTTP → HTTPS redirect carries a non-default HTTPS port.
 - **Variable names follow the backend code:** the JWT key is `JWT_SECRET` (BE-03), not `SECRET_KEY`; compose builds `DATABASE_URL` from `POSTGRES_*`, so the password is written once.
 - **Owner:** byul-byul. **Approval:** Tech Lead, through review of the INF-02 PR.
+
+**Email at the defense, 2026-11-08 (DOC-01)**
+
+- **Decision:** during the defense, verification and password emails go only to Mailpit, whose inbox is at `https://localhost/mail`. No Brevo or other paid email service; no `BREVO_API_KEY` in compose or the root `.env.example`. Setup: "Email without a paid service" in [infrastructure.md](../infra/infrastructure.md#email-without-a-paid-service) (INF-05).
+- **Reason:** an evaluator can sign up without a paid service, and no extra third-party processor receives user data. This matches the Privacy Policy, whose section 5 names only OpenAI and the 42 intra sign-in.
+- **Owner:** byul-byul (PO).
 
 **File storage at `/files`, 2026-11-09 (INF-04)**
 
