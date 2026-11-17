@@ -106,7 +106,12 @@ jobs:
           --health-retries 12
     env:
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/wozu_ci_test
-      TEST_REDIS_URL: redis://localhost:6379/1
+      # Both at the Redis service above, as `make test` points both at redis-test (INF-06):
+      # REDIS_URL left unset fell back to redis://redis:6379/0, a host that does not exist
+      # on the runner: a test that built its own Settings got an address that resolved nowhere
+      # (2026-11-15: that divergence from `make test` hid a hang).
+      TEST_REDIS_URL: redis://localhost:6379/0
+      REDIS_URL: redis://localhost:6379/0
       DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/wozu_ci_test
       JWT_SECRET: ci-only-jwt-secret-not-for-production
       # The media tests (BE-07) also need MinIO, and the Redis above (TEST_REDIS_URL).
@@ -136,7 +141,9 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest -q --junitxml=pytest-results.xml
+      # A test running longer than 300 s prints the stack of every thread instead of
+      # hanging silently until the job times out (INF-06, as in `make test`).
+      - run: pytest -q -o faulthandler_timeout=300 --junitxml=pytest-results.xml
       - name: Require database tests to run
         run: |
           python - <<'PY'

@@ -47,14 +47,17 @@ logs:
 # database when it is missing, and pytest sees DATABASE_URL = TEST_DATABASE_URL, as in CI.
 # Redis: the tests get their own server, redis-test (profile test), as CI gets a Redis service
 # container. Pub/sub and CLIENT KILL ignore database numbers, so database 1 of the site's redis
-# would send test events to open /ws sockets and cut them off. TEST_REDIS_URL (the WebSocket and
-# media tests) and REDIS_URL (the app's connection_manager, used by the conversation tests)
-# both point at it, set only here; --no-deps keeps `run` from starting the api's own
-# dependencies (redis, minio-init), which the tests do not use.
+# would send test events to open /ws sockets and cut them off. TEST_REDIS_URL (the tests' own
+# clients, and build_app's redis_url) and REDIS_URL (the app's settings.redis_url, read by
+# every Settings a test builds without that override) both point at it, set only here, as the
+# CI backend job points both at its Redis service; --no-deps keeps `run` from starting the
+# api's own dependencies (redis, minio-init), which the tests do not use.
 # Frontend: the checks of its CI job, in the build stage of its image.
 # The MinIO tests use their own buckets (media-test, pictures-test) on the dev MinIO, with
 # the api container's own keys: they never appear on a command line or in this output.
-# As in CI, a skipped backend test fails make test (-rs prints why it was skipped).
+# As in CI, a skipped backend test fails make test (-rs prints why it was skipped), and a test
+# that runs longer than 300 s prints the stack of every thread (faulthandler_timeout) instead
+# of hanging silently; the test keeps running.
 test: env
 	$(COMPOSE) --profile test up -d --wait db redis-test minio
 	$(COMPOSE) exec -T db /docker-entrypoint-initdb.d/20-create-test-db.sh
@@ -65,7 +68,8 @@ test: env
 		&& ruff format --check --no-cache . \
 		&& DATABASE_URL="$$TEST_DATABASE_URL" TEST_MINIO_ACCESS_KEY="$$MINIO_ACCESS_KEY" \
 		TEST_MINIO_SECRET_KEY="$$MINIO_SECRET_KEY" pytest -q -rs -p no:cacheprovider \
-		--junitxml=/tmp/pytest-results.xml && python -c "import sys, xml.etree.ElementTree as ET; \
+		-o faulthandler_timeout=300 --junitxml=/tmp/pytest-results.xml \
+		&& python -c "import sys, xml.etree.ElementTree as ET; \
 		suites = ET.parse(\"/tmp/pytest-results.xml\").getroot().iter(\"testsuite\"); \
 		skipped = sum(int(suite.get(\"skipped\", \"0\")) for suite in suites); \
 		sys.exit(f\"{skipped} tests skipped; make test must run every backend test, as CI\" \
@@ -79,8 +83,10 @@ test: env
 https-check:
 	@./infra/proxy/smoke-test.sh
 
-# Fails when a compose image or a Dockerfile FROM is not pinned as name:tag@sha256:... or
-# uses latest; prints each offender (INF-07). Needs no running stack and no .env.
+# Fails when a compose image, a Dockerfile FROM or an image a GitHub Actions workflow pulls
+# (service containers, container:, docker:// steps; INF-06) is not pinned as
+# name:tag@sha256:... or uses latest; prints each offender (INF-07). Needs no running stack
+# and no .env.
 images-check:
 	@./scripts/images-check.sh
 
