@@ -13,6 +13,7 @@ import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
+import { JobsPage } from "../features/jobs/JobsPage";
 function ComingSoon({ title }: { title: string }) {
   const { t } = useText();
   return (
@@ -61,8 +62,8 @@ export const routes: RouteObject[] = [
       { index: true, element: <Welcome /> },
       { path: "privacy", element: <LegalPage kind="privacy" /> },
       { path: "terms", element: <LegalPage kind="terms" /> },
+      { path: "jobs", element: <JobsPage /> },
       ...pages([
-        ["jobs", "routes.jobs"],
         ["jobs/:id", "routes.job"],
         ["game/rules", "routes.rules"],
         ["status", "routes.status"],
