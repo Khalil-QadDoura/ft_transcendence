@@ -42,8 +42,6 @@ export interface WsClientOptions {
   pingIntervalMs?: number;
   /** TanStack QueryClient to invalidate active queries upon reconnect */
   queryClient?: QueryClient;
-  /** Legacy token adapter for developing against reference backend (?token=) if needed */
-  legacyToken?: string;
 }
 
 const DEFAULT_RECONNECT_DELAYS = [1000, 2000, 5000, 10000];
@@ -55,6 +53,9 @@ export class WebSocketClient {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private backoffResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectPromise: Promise<void> | null = null;
+  private connectionGeneration = 0;
   private isManuallyClosed = false;
   private hasConnectedOnce = false;
 
@@ -149,9 +150,6 @@ export class WebSocketClient {
    * Obtain a fresh one-time ticket via POST /api/ws/ticket.
    */
   private async getTicket(): Promise<string> {
-    if (this.options.legacyToken) {
-      return this.options.legacyToken;
-    }
     if (this.options.fetchTicket) {
       return this.options.fetchTicket();
     }
@@ -171,12 +169,6 @@ export class WebSocketClient {
         : "ws:";
     const host =
       typeof window !== "undefined" ? window.location.host : "localhost";
-
-    if (this.options.legacyToken) {
-      const base = this.options.url ?? `${protocol}//${host}/ws`;
-      const delimiter = base.includes("?") ? "&" : "?";
-      return `${base}${delimiter}token=${encodeURIComponent(this.options.legacyToken)}`;
-    }
 
     if (this.options.url) {
       const delimiter = this.options.url.includes("?") ? "&" : "?";
@@ -201,58 +193,97 @@ export class WebSocketClient {
       return;
     }
 
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
+
     this.clearTimers();
 
     if (this.reconnectAttempt > 0) {
       this.setState("reconnecting");
     }
 
-    try {
-      const ticket = await this.getTicket();
-      if (this.isManuallyClosed) return;
+    const currentGen = ++this.connectionGeneration;
 
-      const wsUrl = this.resolveUrl(ticket);
-      const ws = new WebSocket(wsUrl);
-      this.socket = ws;
-
-      ws.onopen = () => {
-        if (this.socket !== ws) return;
-
-        const isReconnection = this.hasConnectedOnce;
-        this.hasConnectedOnce = true;
-        this.reconnectAttempt = 0;
-        this.setState("connected");
-
-        this.startPing();
-
-        // Invalidate and refetch visible TanStack queries after reconnection
-        if (isReconnection && this.queryClient) {
-          this.queryClient.invalidateQueries({
-            type: "active",
-            refetchType: "active",
-          });
+    this.connectPromise = (async () => {
+      try {
+        const ticket = await this.getTicket();
+        if (this.isManuallyClosed || this.connectionGeneration !== currentGen) {
+          return;
         }
-      };
 
-      ws.onmessage = (event: MessageEvent) => {
-        if (this.socket !== ws) return;
-        this.handleMessage(event.data);
-      };
+        if (this.socket) {
+          const old = this.socket;
+          this.socket = null;
+          old.close(1000, "Superseded");
+        }
 
-      ws.onclose = (event: CloseEvent) => {
-        if (this.socket !== ws) return;
-        this.handleClose(event);
-      };
+        const wsUrl = this.resolveUrl(ticket);
+        const ws = new WebSocket(wsUrl);
+        this.socket = ws;
 
-      ws.onerror = () => {
-        // WebSocket error is handled via onclose callback
-      };
-    } catch {
-      // Failed to acquire ticket or establish socket: schedule reconnect
-      if (!this.isManuallyClosed) {
-        this.scheduleReconnect();
+        ws.onopen = () => {
+          if (this.socket !== ws || this.connectionGeneration !== currentGen) {
+            ws.close();
+            return;
+          }
+
+          const isReconnection = this.hasConnectedOnce;
+          this.hasConnectedOnce = true;
+          this.setState("connected");
+
+          this.startPing();
+          this.scheduleBackoffReset(ws);
+
+          // Invalidate and refetch visible TanStack queries after reconnection
+          if (isReconnection && this.queryClient) {
+            this.queryClient.invalidateQueries({
+              type: "active",
+              refetchType: "active",
+            });
+          }
+        };
+
+        ws.onmessage = (event: MessageEvent) => {
+          if (this.socket !== ws) return;
+          this.handleMessage(event.data);
+        };
+
+        ws.onclose = (event: CloseEvent) => {
+          if (this.socket !== ws) return;
+          this.handleClose(event);
+        };
+
+        ws.onerror = () => {
+          // WebSocket error is handled via onclose callback
+        };
+      } catch {
+        // Failed to acquire ticket or establish socket: schedule reconnect
+        if (
+          !this.isManuallyClosed &&
+          this.connectionGeneration === currentGen
+        ) {
+          this.scheduleReconnect();
+        }
+      } finally {
+        if (this.connectionGeneration === currentGen) {
+          this.connectPromise = null;
+        }
       }
+    })();
+
+    return this.connectPromise;
+  }
+
+  private scheduleBackoffReset(ws: WebSocket): void {
+    if (this.backoffResetTimer) {
+      clearTimeout(this.backoffResetTimer);
     }
+    this.backoffResetTimer = setTimeout(() => {
+      if (this.socket === ws && ws.readyState === WebSocket.OPEN) {
+        this.reconnectAttempt = 0;
+      }
+    }, 2000);
   }
 
   /**
@@ -263,19 +294,21 @@ export class WebSocketClient {
     if (typeof data !== "string") return;
 
     try {
-      const frame = JSON.parse(data) as WsEvent;
+      const frame = JSON.parse(data) as WsEvent & Record<string, unknown>;
       if (!frame || typeof frame.type !== "string") return;
 
       // Ping/Pong heartbeat response
       if (frame.type === "pong") {
+        this.reconnectAttempt = 0;
         return;
       }
 
       const handlers = this.listeners.get(frame.type);
       if (handlers && handlers.size > 0) {
+        const payload = frame.payload !== undefined ? frame.payload : frame;
         for (const handler of handlers) {
           try {
-            handler(frame.payload);
+            handler(payload);
           } catch (err) {
             console.error(
               `Error in handler for ws event [${frame.type}]:`,
@@ -327,11 +360,17 @@ export class WebSocketClient {
   }
 
   /**
-   * Send JSON frame over the socket.
+   * Send JSON frame over the socket with top-level fields matching the contract.
    */
   public send(type: string, payload?: unknown): boolean {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify({ type, payload }));
+      const frame =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? { type, ...(payload as Record<string, unknown>) }
+          : payload !== undefined
+            ? { type, payload }
+            : { type };
+      this.socket.send(JSON.stringify(frame));
       return true;
     }
     return false;
@@ -368,7 +407,13 @@ export class WebSocketClient {
    */
   public disconnect(): void {
     this.isManuallyClosed = true;
+    this.connectionGeneration++;
+    this.connectPromise = null;
     this.clearTimers();
+    if (this.backoffResetTimer) {
+      clearTimeout(this.backoffResetTimer);
+      this.backoffResetTimer = null;
+    }
     if (this.socket) {
       // Avoid firing reconnect on manual disconnect
       const s = this.socket;
