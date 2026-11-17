@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-11-13
+Last updated: 2026-11-17
 
 This policy explains what personal data WOZU Web collects, why, who can see it, how long we keep it and what you can do about it. We wrote it for this service, in plain words. If something is unclear, write to us: burhan.hajili@gmail.com.
 
@@ -61,7 +61,7 @@ If you create a company, we store its name, description, logo, country, city and
 
 - Technical logs of the service: the time of a request, which page or API was called, the result, a request ID and your IP address. IP addresses appear in the access logs of the front proxy. Logs are kept for at most 30 days.
 - Metrics about how the service runs (for example number of requests and errors). They do not contain your content.
-- Your IP address is also used by the front proxy to limit repeated requests (rate limiting), for example repeated sign-in attempts.
+- Your IP address is also used by the service to limit repeated requests (rate limiting), for example repeated sign-in attempts. These counters are kept only in the server's memory for a short time.
 
 ## 3. Why we use your data
 

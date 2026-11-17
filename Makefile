@@ -11,7 +11,7 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
 
-.PHONY: all env certs up down logs test https-check images-check files-check mail-check metrics-check \
+.PHONY: all env certs up down logs logs-reset test https-check images-check files-check mail-check metrics-check \
 	grafana-check fclean re
 
 all: env up
@@ -39,6 +39,27 @@ down:
 # The last 100 lines, then follows; Ctrl-C stops following, the stack keeps running.
 logs:
 	-$(COMPOSE_ALL) logs -f --tail=100 $(s)
+
+# Empties the logs of the stack (INF-07). Every log of the stack is the json-file log of a
+# container (the proxy's access and ModSecurity audit logs included, both on stdout); no log
+# is kept in a volume. Docker deletes those files with the container, so this removes the
+# stopped containers (e.g. the exited one-shot minio-init) and recreates every running
+# service: new containers, empty logs. Named data volumes (database, files, metrics, Grafana)
+# are not touched. A dependency that is not running is started, as `make` would (minio-init
+# runs again as the api's). Mailpit keeps its inbox inside its container, so the inbox is
+# emptied too. Logs are kept at most 30 days (Privacy Policy, PO decision 2026-11-13); the
+# operator runs this at least weekly, see "Logs and retention" in docs/infra/infrastructure.md.
+logs-reset:
+	@running="$$($(COMPOSE_ALL) ps --services --status running | sort | tr '\n' ' ')"; \
+	stopped="$$($(COMPOSE_ALL) ps --services --status exited --status created --status dead \
+		| sort | tr '\n' ' ')"; \
+	if [ -z "$$running$$stopped" ]; then echo "logs-reset: no container, nothing to reset"; exit 0; fi; \
+	if [ -n "$$stopped" ]; then $(COMPOSE_ALL) rm --force $$stopped || exit 1; fi; \
+	if [ -n "$$running" ]; then \
+		$(COMPOSE_ALL) up -d --force-recreate --wait --wait-timeout 300 $$running || exit 1; \
+	fi; \
+	echo "logs-reset: stopped containers removed: $${stopped:-none}"; \
+	echo "logs-reset: recreated with empty logs: $${running:-none}"
 
 # Backend: ruff + pytest in a throwaway api-test container (profile test): the test stage of
 # backend/Dockerfile, which is the api runtime image plus requirements-dev.txt, run as the same
