@@ -160,11 +160,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           className={`relative rounded-2xl px-4 py-2.5 shadow-sm transition-colors ${
             isOwn
               ? isDeleted
-                ? "border border-gray-200 bg-gray-50 text-gray-400 italic dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-500"
-                : "bg-primary-600 text-white dark:bg-primary-500"
+                ? "border border-border bg-paper text-ink-muted italic"
+                : "bg-ink text-paper"
               : isDeleted
-                ? "border border-gray-200 bg-gray-50 text-gray-400 italic dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-500"
-                : "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                ? "border border-border bg-paper text-ink-muted italic"
+                : "bg-paper-subtle text-ink border border-border-subtle"
           }`}
         >
           {isDeleted ? (
@@ -191,21 +191,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 onChange={(e) => setEditContent(e.target.value)}
                 maxLength={4000}
                 rows={2}
-                className="w-full resize-none rounded-lg border border-primary-300 bg-white p-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-400 dark:border-primary-600 dark:bg-gray-900 dark:text-gray-100"
+                className="w-full resize-none rounded-lg border border-border bg-surface p-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-lime"
                 data-testid={`edit-msg-input-${message.id}`}
                 autoFocus
               />
               {editError && (
-                <span className="text-xs text-red-200 dark:text-red-400">
-                  {editError}
-                </span>
+                <span className="text-xs text-danger">{editError}</span>
               )}
               <div className="flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setIsEditing(false)}
                   disabled={savingEdit}
-                  className="rounded px-2.5 py-1 text-xs font-medium text-white/80 hover:bg-black/10 dark:text-gray-300 dark:hover:bg-white/10"
+                  className="rounded px-2.5 py-1 text-xs font-medium text-paper/80 hover:bg-white/10"
                 >
                   {t("chat.cancel")}
                 </button>
@@ -213,7 +211,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                   type="button"
                   onClick={handleSaveEdit}
                   disabled={savingEdit || !editContent.trim()}
-                  className="rounded bg-white px-2.5 py-1 text-xs font-medium text-primary-600 shadow hover:bg-gray-50 disabled:opacity-50 dark:bg-gray-100 dark:text-primary-700"
+                  className="rounded bg-lime px-2.5 py-1 text-xs font-semibold text-ink shadow hover:bg-lime-dark disabled:opacity-50"
                   data-testid={`save-edit-btn-${message.id}`}
                 >
                   {savingEdit ? t("chat.saving") : t("chat.save")}
@@ -234,9 +232,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               {/* Message Meta Info: Timestamp, Edited badge, Status ticks */}
               <div
                 className={`mt-1 flex items-center justify-end space-x-1.5 text-[11px] ${
-                  isOwn
-                    ? "text-primary-100 dark:text-primary-200"
-                    : "text-gray-400 dark:text-gray-500"
+                  isOwn ? "text-paper/70" : "text-ink-muted"
                 }`}
               >
                 {message.edited_at && (

@@ -369,17 +369,17 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
 
   return (
     <div
-      className="flex h-full flex-col bg-white dark:bg-gray-900"
+      className="flex h-full flex-col bg-surface text-ink"
       data-testid="chat-thread"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-100 p-4 dark:border-gray-800">
+      <div className="flex items-center justify-between border-b border-border p-4">
         <div className="flex items-center space-x-3">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 md:hidden"
+              className="rounded-lg p-1.5 text-ink-muted hover:bg-surface-muted md:hidden"
               aria-label={t("chat.backToConversations")}
               data-testid="thread-back-btn"
             >
@@ -401,13 +401,13 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
 
           <div className="min-w-0">
             <h2
-              className="truncate text-base font-semibold text-gray-900 dark:text-gray-100"
+              className="truncate text-base font-semibold text-ink"
               data-testid="thread-peer-name"
             >
               {peerDisplayName}
             </h2>
             {conversation?.job_title && (
-              <p className="truncate text-xs text-primary-600 dark:text-primary-400">
+              <p className="truncate text-xs text-ink-muted">
                 {t("chat.appliedFor", { job: conversation.job_title })}
               </p>
             )}
@@ -434,11 +434,11 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
             className="flex h-full flex-col items-center justify-center p-6 text-center"
             data-testid="thread-error"
           >
-            <p className="text-sm text-red-500">{error}</p>
+            <p className="text-sm text-danger">{error}</p>
             <button
               type="button"
               onClick={loadInitialMessages}
-              className="mt-2 text-xs font-semibold text-primary-600 hover:underline"
+              className="mt-2 text-xs font-semibold text-ink underline hover:text-ink-muted"
             >
               {t("chat.retry")}
             </button>

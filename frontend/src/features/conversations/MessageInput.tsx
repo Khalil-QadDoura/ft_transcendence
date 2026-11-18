@@ -79,7 +79,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   return (
     <div
-      className="border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+      className="border-t border-border bg-surface p-3"
       data-testid="message-input-container"
     >
       <div className="relative flex items-end space-x-2">
@@ -93,8 +93,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             onKeyDown={handleKeyDown}
             disabled={disabled || sending}
             placeholder={inputPlaceholder}
+            aria-label={inputPlaceholder}
             maxLength={MAX_CHARS}
-            className="w-full resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 transition-colors focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100 dark:focus:border-primary-400 dark:focus:bg-gray-800"
+            className="w-full resize-none rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm text-ink transition-colors focus:border-ink focus:bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:opacity-50"
             data-testid="message-textarea"
           />
 
@@ -102,10 +103,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             <span
               className={`absolute right-3 -top-5 text-[11px] font-medium ${
                 remainingChars < 0
-                  ? "text-red-500"
+                  ? "text-danger"
                   : remainingChars < 50
-                    ? "text-amber-500"
-                    : "text-gray-400"
+                    ? "text-warning"
+                    : "text-ink-muted"
               }`}
               data-testid="char-counter"
             >
@@ -118,7 +119,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           type="button"
           onClick={handleSend}
           disabled={disabled || sending || !text.trim()}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white shadow-sm transition-all hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-primary-500 dark:hover:bg-primary-600"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink text-paper shadow-sm transition-all hover:bg-ink-muted focus:outline-none focus:ring-2 focus:ring-ink focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
           aria-label={t("chat.sendMessageAria")}
           data-testid="send-message-btn"
         >

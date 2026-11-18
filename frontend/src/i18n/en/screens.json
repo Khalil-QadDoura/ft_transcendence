@@ -199,7 +199,6 @@
     "inReview": "In Review",
     "needsAttention": "Needs Attention"
   },
->>>>>>> origin/main
   "chat": {
     "appliedFor": "Applied for: {{job}}",
     "conversationFallback": "Conversation #{{id}}",
