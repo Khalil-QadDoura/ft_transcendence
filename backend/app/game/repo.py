@@ -17,7 +17,7 @@ from app.game.constants import (
     MAX_PARTICIPANTS,
     ROOM_LOCK_KEY_PREFIX,
 )
-from app.game.models import GameMessage, GameParticipant, GameRoom
+from app.game.models import GameMessage, GameParticipant, GameRoom, GameVote
 
 
 @asynccontextmanager
@@ -223,6 +223,16 @@ async def list_room_messages(
     page = rows[:limit]
     prev_before_id = page[-1][0].id if len(rows) > limit else None
     return [(message, author) for message, author in reversed(page)], prev_before_id
+
+
+async def list_votes_of(session: AsyncSession, voter_participant_id: int) -> list[GameVote]:
+    """The marks one participant has saved (BE-10 writes them)."""
+    stmt = (
+        select(GameVote)
+        .where(GameVote.voter_participant_id == voter_participant_id)
+        .order_by(GameVote.id.asc())
+    )
+    return list(await session.scalars(stmt))
 
 
 async def list_active_room_ids(session: AsyncSession) -> list[int]:

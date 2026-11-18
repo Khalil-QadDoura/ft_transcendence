@@ -109,6 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(media.router)
     app.include_router(api)
     app.include_router(realtime.socket_router)  # the WebSocket at /ws
+    app.include_router(game.socket_router)  # the room WebSocket at /ws/game
 
     # Internal routes: left out of the OpenAPI spec and locked by X-Internal-Key.
     internal = APIRouter(
