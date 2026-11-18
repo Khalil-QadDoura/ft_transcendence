@@ -32,9 +32,11 @@ from app.game.schemas import (
     GamePhaseEventOut,
     GameRoomEventOut,
     ParticipantOut,
+    ParticipantResultOut,
     QueueJoinOut,
     RoomOut,
     RoomParticipantOut,
+    RoomResultsOut,
     VoteIn,
     VoteOut,
 )
@@ -362,6 +364,48 @@ async def cast_vote(
     )
     await session.commit()
     return VoteOut(target_participant_id=vote.target_participant_id, guess=vote.guess)
+
+
+async def get_results(session: AsyncSession, user: User, room_id: int) -> RoomResultsOut:
+    """Who was a bot, each human's score and outcome, and each bot's deception rate.
+
+    Only once the room is finished, so nothing tells bots from humans earlier (rules, section 9).
+    """
+    room = await repo.get_room(session, room_id)
+    if room is None:
+        raise HTTPException(status_code=404, detail="Room not found")
+    me = await repo.get_participant_for_user(session, room_id, user.id)
+    if me is None:
+        raise HTTPException(status_code=403, detail="Not a participant of this room")
+    if room.state != "finished":
+        raise HTTPException(status_code=409, detail="Results are ready when the game has finished")
+
+    participants = await repo.list_participants(session, room_id)
+    marks = await repo.list_marks(session, room_id)
+    humans = [p for p in participants if p.user_id is not None]
+    human_ids = [p.id for p in humans]
+    outcomes = scoring.outcomes({p.id: p.score for p in humans})
+    rows = []
+    for p in participants:
+        is_bot = p.user_id is None
+        rows.append(
+            ParticipantResultOut(
+                participant_id=_label_number(p),
+                display_label=p.display_label,
+                is_bot=is_bot,
+                score=None if is_bot else p.score,
+                outcome=None if is_bot else outcomes[p.id],
+                deception_rate=scoring.deception_rate(p.id, human_ids, marks) if is_bot else None,
+            )
+        )
+    return RoomResultsOut(
+        room_id=room.id,
+        state=room.state,
+        my_participant_id=_label_number(me),
+        winner_participant_ids=[row.participant_id for row in rows if row.outcome == "win"],
+        is_draw=any(row.outcome == "draw" for row in rows),
+        participants=rows,
+    )
 
 
 async def process_room_tick(

@@ -11,7 +11,7 @@ from app.core.redis_client import get_redis
 from app.db.session import get_session
 from app.game import service
 from app.game.constants import MAX_ID
-from app.game.schemas import QueueJoinOut, RoomOut, VoteIn, VoteOut
+from app.game.schemas import QueueJoinOut, RoomOut, RoomResultsOut, VoteIn, VoteOut
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -75,3 +75,13 @@ async def cast_vote(
 ) -> VoteOut:
     """Mark another participant (by label number) as bot or human; a new mark replaces the old."""
     return await service.cast_vote(session, request.app.state.settings, user, room_id, vote)
+
+
+@router.get("/rooms/{room_id}/results")
+async def get_results(
+    room_id: RoomIdPath,
+    user: CurrentUser,
+    session: Session,
+) -> RoomResultsOut:
+    """Bots revealed, scores, outcomes and deception rates, once the room is finished."""
+    return await service.get_results(session, user, room_id)

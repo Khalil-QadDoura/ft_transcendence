@@ -72,6 +72,26 @@ class VoteOut(BaseModel):
     guess: Literal["bot", "human"]
 
 
+class ParticipantResultOut(BaseModel):
+    """One participant in the results; ids are label numbers, as in every game payload."""
+
+    participant_id: int
+    display_label: str
+    is_bot: bool
+    score: int | None  # humans only
+    outcome: Literal["win", "draw", "loss"] | None  # humans only
+    deception_rate: int | None  # bots only: percentage 0-100
+
+
+class RoomResultsOut(BaseModel):
+    room_id: int
+    state: str
+    my_participant_id: int
+    winner_participant_ids: list[int]
+    is_draw: bool
+    participants: list[ParticipantResultOut]
+
+
 class GameMessageEventOut(BaseModel):
     id: int
     participant_id: int
