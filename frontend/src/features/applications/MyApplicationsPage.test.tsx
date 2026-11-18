@@ -12,6 +12,16 @@ vi.mock("./api", () => ({
   withdrawApplication: vi.fn(),
 }));
 
+// Mock WebSocket event hook
+type WsCallback<T> = (payload: T) => void;
+const wsListeners = new Map<string, WsCallback<unknown>>();
+
+vi.mock("../../api/ws", () => ({
+  useWsEvent: vi.fn((type: string, handler: WsCallback<unknown>) => {
+    wsListeners.set(type, handler);
+  }),
+}));
+
 let root: Root;
 let container: HTMLDivElement;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -52,6 +62,7 @@ const mockApplications: ApplicationItem[] = [
 describe("MyApplicationsPage Component (FE-15)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    wsListeners.clear();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -216,5 +227,33 @@ describe("MyApplicationsPage Component (FE-15)", () => {
     );
     expect(container.textContent).toContain("Full Stack Developer");
     expect(container.querySelector('[data-testid="load-more-btn"]')).toBeNull();
+  });
+
+  it("updates application status live when application_updated WebSocket event arrives", async () => {
+    vi.mocked(api.listMyApplications).mockResolvedValueOnce({
+      items: [mockApplications[0]],
+      next_cursor: null,
+    });
+
+    await renderPage();
+
+    expect(
+      container.querySelector('[data-testid="status-submitted"]'),
+    ).not.toBeNull();
+
+    // Live WebSocket update: employer shortlisted candidate
+    const handler = wsListeners.get("application_updated");
+    expect(handler).toBeDefined();
+
+    await act(async () => {
+      handler?.({
+        id: 1,
+        status: "shortlisted",
+      });
+    });
+
+    expect(
+      container.querySelector('[data-testid="status-shortlisted"]'),
+    ).not.toBeNull();
   });
 });

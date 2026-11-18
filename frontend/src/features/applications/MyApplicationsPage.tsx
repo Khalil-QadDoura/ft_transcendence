@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useWsEvent } from "../../api/ws";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Spinner } from "../../components/Spinner";
@@ -56,6 +57,14 @@ export const MyApplicationsPage: React.FC = () => {
   useEffect(() => {
     fetchApplications(statusFilter, null);
   }, [statusFilter, fetchApplications]);
+
+  // Real-time WebSocket listener for live application status updates
+  useWsEvent<ApplicationItem>("application_updated", (payload) => {
+    if (!payload || typeof payload.id !== "number") return;
+    setApplications((prev) =>
+      prev.map((app) => (app.id === payload.id ? { ...app, ...payload } : app)),
+    );
+  });
 
   const handleWithdraw = async (id: number) => {
     await withdrawApplication(id);

@@ -21,7 +21,10 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const canWithdraw =
-    application.status === "submitted" || application.status === "shortlisted";
+    application.status === "submitted" ||
+    application.status === "viewed" ||
+    application.status === "shortlisted" ||
+    application.status === "contacted";
 
   const handleConfirmWithdraw = async () => {
     try {
