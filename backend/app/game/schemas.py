@@ -141,3 +141,9 @@ class GameSnapshotOut(BaseModel):
     room: RoomOut
     messages: list[GameMessageEventOut]
     my_votes: list[MyVoteOut]
+
+
+class GameErrorOut(BaseModel):
+    """Why the server refused a frame sent on /ws/game, e.g. chat outside the discussion."""
+
+    detail: str

@@ -112,6 +112,18 @@ async def get_room_for_update(session: AsyncSession, room_id: int) -> GameRoom |
     return await session.scalar(stmt)
 
 
+async def get_room_for_share(session: AsyncSession, room_id: int) -> GameRoom | None:
+    """The room, read with a shared row lock (FOR SHARE) held until commit: a phase change
+    (FOR UPDATE) waits for it, while other chat messages of the room do not."""
+    stmt = (
+        select(GameRoom)
+        .where(GameRoom.id == room_id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    return await session.scalar(stmt)
+
+
 async def list_participants(session: AsyncSession, room_id: int) -> list[GameParticipant]:
     """Return participants ordered by display_label so join order and bots never leak."""
     stmt = (
