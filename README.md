@@ -23,6 +23,8 @@ Planning documents (roles, module plan, API contract, infrastructure) are in [do
 
 <!-- TODO DOC-05 (byul-byul): prerequisites (software, tools, versions), .env setup, step-by-step run with make, Mailpit at /mail. Only commands that work. -->
 
+**Prerequisites:** Docker Engine 25 or newer (the health checks use `start_interval`) with Docker Compose v2, make, bash and openssl.
+
 ## Resources
 
 <!-- TODO DOC-07 (Zayid): classic references (documentation, articles, tutorials) and the final description of how AI was used, for which tasks and which parts. -->

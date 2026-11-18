@@ -214,6 +214,56 @@ describe("ConversationList Component (FE-29)", () => {
     expect(container.querySelector('[data-testid="unread-badge"]')).toBeNull();
   });
 
+  it("resets row unread to 0 and updates header total unread on conversation_updated", async () => {
+    const twoUnreadConvs: ConversationItem[] = [
+      { ...mockConversations[0], id: 1, unread_count: 1 },
+      { ...mockConversations[1], id: 2, unread_count: 1 },
+    ];
+    vi.mocked(api.listConversations).mockResolvedValueOnce(twoUnreadConvs);
+
+    await act(async () => {
+      root.render(<ConversationList onSelectConversation={vi.fn()} />);
+    });
+
+    // Both rows have unread badges, and header says 2 unread
+    expect(
+      container.querySelector('[data-testid="header-unread-count"]')
+        ?.textContent,
+    ).toContain("2");
+
+    const updateHandler = wsListeners.get("conversation_updated") as
+      WsCallback<WsConversationUpdatedPayload> | undefined;
+    expect(updateHandler).toBeDefined();
+
+    // User reads conversation 1 -> event arrives with total unread remaining = 1
+    await act(async () => {
+      updateHandler?.({
+        conversation_id: 1,
+        unread_count: 1,
+      });
+    });
+
+    // Row 1 badge should be gone (reset to 0)
+    const card1 = container.querySelector(
+      '[data-testid="conversation-card-1"]',
+    );
+    expect(card1?.querySelector('[data-testid="unread-badge"]')).toBeNull();
+
+    // Row 2 badge should still be 1
+    const card2 = container.querySelector(
+      '[data-testid="conversation-card-2"]',
+    );
+    expect(
+      card2?.querySelector('[data-testid="unread-badge"]')?.textContent,
+    ).toContain("1");
+
+    // Header total unread reflects payload.unread_count (1)
+    expect(
+      container.querySelector('[data-testid="header-unread-count"]')
+        ?.textContent,
+    ).toContain("1");
+  });
+
   it("filters conversation list by search query", async () => {
     vi.mocked(api.listConversations).mockResolvedValueOnce(mockConversations);
     await act(async () => {

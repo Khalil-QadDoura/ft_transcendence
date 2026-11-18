@@ -22,23 +22,29 @@ The image renders every `/etc/nginx/templates/**/*.template` with envsubst into 
 | `templates/nginx.conf.template` | Image | Loads the ModSecurity module, sets `resolver` from `/etc/resolv.conf` (`127.0.0.11` in Docker) |
 | `templates/conf.d/modsecurity.conf.template` | Image | `modsecurity on` + `modsecurity_rules_file`, at `http` level, so it covers every location |
 | `templates/modsecurity.d/*`, `/opt/owasp-crs` | Image | ModSecurity settings and the CRS rules |
-| `templates/includes/location_common.conf.template` | Image, included by our template | `/healthz` (used by the image's `HEALTHCHECK`), `/50x.html` |
+| `templates/includes/location_common.conf.template` | Image, included by our template | `/healthz` (used by the proxy health check in compose, INF-07), `/50x.html` |
 
 ## Routes
 
 | Path | Upstream | Notes |
 | --- | --- | --- |
-| `http://` any | none | 301 to `https://` |
-| `/` | `frontend:80` | The frontend container does the SPA fallback |
+| `http://` any | none | 301 to `https://`, path, query and the HTTPS host port kept |
+| `/` | `frontend:80` | The frontend container does the SPA fallback; a missing `/assets/*` file is a 404 |
 | `/api/*` | `api:8000` | Full path kept; `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`; 1 MB body limit |
 | `/ws*` | `api:8000` | Upgrade headers, one-hour timeouts, no buffering |
-| `/files/*` | `minio:9000` | Host and URI unchanged for presigned signatures; 60 MB body limit, no buffering |
+| `/files/*` | `minio:9000` | Host and URI unchanged for presigned signatures; 60 MB body limit, no buffering; `Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff` on every answer (MinIO's own `nosniff` hidden), so an uploaded HTML file cannot run as our origin |
 | `/grafana/*` | `grafana:3000` | Full path kept (`serve_from_sub_path`), upgrade headers |
 | `/mail/*` | `mailpit:8025` | Full path kept (`MP_WEBROOT=/mail/`), upgrade headers |
-| `/_internal*`, `/metrics*` | none | 404, including the image's `/metrics/nginx` |
+| `/_internal*`, `/metrics*`, `/api/_internal*`, `/api/metrics*` | none | 404, including the image's `/metrics/nginx`; matched on the decoded, normalized path |
 | `/healthz` | none | 200 `OK` from the image's include |
 
 Upstream names resolve per request, so the proxy starts with any upstream missing and answers 502 on that route only; the route comes back with no proxy restart once the service is up (`resolver` caches names for 5 seconds).
+
+The API mounts its internal routes at `/_internal` and BE-30 plans `/metrics` at the root; both stay reachable inside the Docker network (`http://api:8000/...`). The `/api/` variants are closed too, so a router mounted under `/api` by mistake does not become public. Internal routes belong under `/_internal`, never in the `/api` router.
+
+nginx's own trailing-slash redirects (`/mail` → `/mail/`) send a relative `Location` (`absolute_redirect off`): an absolute one drops a non-default host port, because the image sets `port_in_redirect off` and nginx only knows its listen port 8443 anyway. `infra/frontend/default.conf` does the same for the frontend container's `/assets` → `/assets/`.
+
+`make https-check` (`smoke-test.sh` in this folder) checks every route above against the running stack; `/ws` passes only with `101 Switching Protocols` to a ticketless handshake. See "One origin over HTTPS" in infrastructure.md.
 
 ## Ports
 
@@ -87,8 +93,10 @@ Two traps when testing with stubs:
 Each match goes to the container's stdout as one JSON audit line: `transaction.messages[].details.ruleId`. In DetectionOnly the request still goes through. A SQL injection probe logs rule 942100 and the anomaly total 949110.
 
 ```
-docker logs inf01-proxy 2>&1 | grep '"transaction"'
+docker compose logs --no-log-prefix proxy 2>&1 | grep '"transaction"'
 ```
+
+The audit line has parts `AHZ` only (`MODSEC_AUDIT_LOG_PARTS` in `proxy.env`, PO decision, byul-byul, 2026-11-17): A is the client IP and port, the time, the unique ID and the request line (method, host, URI with query string); H is the matched rules with their scores and the response status; Z ends the entry. It holds no request or response header and no body. `Authorization` and `Cookie` carry passwords, Bearer tokens and session cookies, and the image default `ABIJDEFHZ` wrote them into the log for every audited request. INF-11 may add parts for tuning, never `B` (request headers), `I` or `J` (request bodies) or `E` (response body).
 
 ## For INF-11
 

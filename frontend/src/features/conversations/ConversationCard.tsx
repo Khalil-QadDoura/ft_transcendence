@@ -52,22 +52,19 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
       onClick={() => onClick(conversation)}
       className={`group flex w-full items-start space-x-3.5 rounded-xl p-3.5 text-left transition-all duration-150 ${
         isSelected
-          ? "bg-primary-50/80 ring-1 ring-primary-500/30 dark:bg-primary-950/40 dark:ring-primary-400/30"
-          : "hover:bg-gray-100/70 dark:hover:bg-gray-800/60"
+          ? "bg-surface-muted ring-1 ring-border shadow-xs"
+          : "hover:bg-surface-muted/60"
       }`}
       data-testid={`conversation-card-${conversation.id}`}
     >
       <div className="relative shrink-0">
         <Avatar src={avatarUrl} alt={displayName} size="md" />
         {conversation.unread_count > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-400 opacity-75"></span>
-            <span
-              className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary-600"
-              data-testid="unread-badge"
-            >
-              <span className="sr-only">{conversation.unread_count}</span>
-            </span>
+          <span
+            className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-5 h-5 px-1 text-[11px] font-bold rounded-full bg-lime text-ink border border-surface shadow-xs"
+            data-testid="unread-badge"
+          >
+            {conversation.unread_count}
           </span>
         )}
       </div>
@@ -78,8 +75,8 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
             <span
               className={`truncate text-sm font-semibold ${
                 conversation.unread_count > 0
-                  ? "text-gray-900 dark:text-gray-50"
-                  : "text-gray-800 dark:text-gray-200"
+                  ? "text-ink font-bold"
+                  : "text-ink"
               }`}
               data-testid="conversation-name"
             >
@@ -87,7 +84,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
             </span>
             {conversation.job_title && (
               <Badge
-                variant="default"
+                variant="outline"
                 size="sm"
                 className="hidden sm:inline-flex"
               >
@@ -95,7 +92,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
               </Badge>
             )}
           </div>
-          <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+          <span className="shrink-0 text-xs text-ink-muted">
             {formatTimestamp(conversation.updated_at)}
           </span>
         </div>
@@ -104,8 +101,8 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
           <p
             className={`truncate text-xs ${
               conversation.unread_count > 0
-                ? "font-medium text-gray-900 dark:text-gray-100"
-                : "text-gray-500 dark:text-gray-400"
+                ? "font-medium text-ink"
+                : "text-ink-muted"
             }`}
             data-testid="conversation-snippet"
           >
