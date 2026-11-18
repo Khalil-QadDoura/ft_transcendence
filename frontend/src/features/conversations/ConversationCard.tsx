@@ -2,6 +2,7 @@ import React from "react";
 import { Avatar } from "../../components/Avatar";
 import { Badge } from "../../components/Badge";
 import { useText } from "../../i18n/useText";
+import { useUserPresence } from "../presence";
 import type { ConversationItem } from "./types";
 
 export interface ConversationCardProps {
@@ -24,6 +25,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
       : t("chat.directConversation"));
 
   const avatarUrl = conversation.peer?.avatar_url || undefined;
+  const isPeerOnline = useUserPresence(conversation.peer?.id);
 
   const formatTimestamp = (dateStr?: string) => {
     if (!dateStr) return "";
@@ -59,6 +61,17 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
     >
       <div className="relative shrink-0">
         <Avatar src={avatarUrl} alt={displayName} size="md" />
+        {conversation.peer && (
+          <span
+            className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-surface ${
+              isPeerOnline ? "bg-emerald-500" : "bg-gray-400"
+            }`}
+            aria-label={t(
+              isPeerOnline ? "controls.online" : "controls.offline",
+            )}
+            data-testid={`presence-dot-${conversation.peer.id}`}
+          />
+        )}
         {conversation.unread_count > 0 && (
           <span
             className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-5 h-5 px-1 text-[11px] font-bold rounded-full bg-lime text-ink border border-surface shadow-xs"
