@@ -384,6 +384,7 @@ def test_confirm_refuses_a_file_over_50_mib_even_when_the_browser_says_it_is_sma
     assert response.status_code == 413
     assert response.json() == error(413, "The video is larger than 50 MiB")
     assert sql("SELECT count(*) FROM intro_videos") == [(0,)]
+    assert keys_in_bucket() == []  # neither the upload nor the copy is left
 
 
 def test_a_file_of_exactly_50_mib_is_accepted(client, ana):
@@ -783,7 +784,7 @@ def add_video(user_id: int, moderation: str = "approved", lifecycle: str = "post
         " VALUES (:user_id, :key, 25, 1000, 'video/mp4', :moderation, :lifecycle, :rating)"
         " RETURNING id",
         user_id=user_id,
-        key=f"users/{user_id}/intro/{uuid4()}.mp4",
+        key=row.get("object_key", f"users/{user_id}/intro/{uuid4()}.mp4"),
         moderation=moderation,
         lifecycle=lifecycle,
         rating=row.get("rating", "B"),
@@ -997,6 +998,106 @@ def test_the_feed_for_a_job_shows_applicants_then_matching_positions_then_everyo
     # Without job_id it is simply newest first; an unknown job gives the same order.
     assert feed_ids(client, employer) == sorted(video.values(), reverse=True)
     assert feed_ids(client, employer, job_id=999) == sorted(video.values(), reverse=True)
+
+
+# --- after confirm, the upload link changes nothing --------------------------------------
+
+
+def keys_in_bucket() -> list[str]:
+    """Every key in the test bucket that has a file, in order."""
+    return sorted(
+        stored.object_name for stored in minio_client().list_objects(TEST_BUCKET, recursive=True)
+    )
+
+
+def file_at(object_key: str) -> bytes:
+    """The whole file stored at this key in the test bucket."""
+    response = minio_client().get_object(TEST_BUCKET, object_key)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def test_a_new_put_to_the_old_link_cannot_change_a_confirmed_video(client, ana, ben):
+    # Ana uploads her video and confirms it; the moderation approves it and she posts it.
+    links = ask_upload_url(client, ana, expires_sec=3600).json()
+    video = made_up_mp4(3000)
+    assert put_file(links["put_url"], video) == 200
+    video_id = confirm(client, ana, links["object_key"]).json()["id"]
+    moderate(video_id)
+    action(client, ana, video_id, "post")
+    key = saved_key(video_id)
+    # The upload link works until it expires, so another file can still be PUT with it...
+    assert put_file(links["put_url"], made_up_mp4(9000)) == 200
+    # ...but it lands at the upload key, which nothing reads any more. The video keeps its
+    # key and its file, and the feed and mine still give the file that was confirmed.
+    assert saved_key(video_id) == key
+    assert file_at(key) == video
+    [item] = feed(client, ben)["items"]
+    assert (item["id"], item["size_bytes"]) == (video_id, 3000)
+    assert httpx2.get(item["signed_url"]).content == video
+    [mine] = client.get("/api/media/intro-video/mine", headers=ana.headers).json()["items"]
+    assert (mine["object_key"], httpx2.get(mine["signed_url"]).content) == (key, video)
+
+
+def test_confirm_keeps_a_copy_under_videos_and_deletes_the_upload(client, ana):
+    links = ask_upload_url(client, ana).json()
+    video = made_up_mp4(3000)
+    # Whatever Content-Type the browser sends with the PUT...
+    headers = {"Content-Type": "text/html"}
+    assert httpx2.put(links["put_url"], content=video, headers=headers).status_code == 200
+    video_id = confirm(client, ana, links["object_key"]).json()["id"]
+    # ...the video is a copy under videos/, stored as video/mp4, and the upload is gone.
+    key = saved_key(video_id)
+    assert VIDEO_KEY_OF_USER_1.fullmatch(key)
+    assert keys_in_bucket() == [key]
+    assert file_at(key) == video
+    assert minio_client().stat_object(TEST_BUCKET, key).content_type == "video/mp4"
+    # get_url pointed at the upload, so it finds nothing now; mine gives the video's link.
+    assert httpx2.get(links["get_url"]).status_code == 404
+
+
+@pytest.mark.parametrize("videos_before", [0, 3])
+def test_a_refused_confirm_leaves_neither_the_upload_nor_a_copy(client, ana, videos_before):
+    kept = [saved_key(new_video(client, ana)) for _ in range(videos_before)]
+    # With no video yet, the file is not an MP4 (415); with 3, it is a fourth video (409).
+    data = b"not a video" if videos_before == 0 else made_up_mp4()
+    response = confirm(client, ana, upload(client, ana, data))
+    assert response.status_code == (415 if videos_before == 0 else 409)
+    assert keys_in_bucket() == sorted(kept)
+
+
+def test_a_deleted_video_is_served_no_more_and_keeps_its_copy(client, ana, ben):
+    video_id = new_video(client, ana)
+    moderate(video_id)
+    action(client, ana, video_id, "post")
+    key = saved_key(video_id)
+    assert action(client, ana, video_id, "delete").status_code == 200
+    # Gone from the feed and from mine. Still a soft delete: the row and the copy stay.
+    assert feed_ids(client, ben) == []
+    assert client.get("/api/media/intro-video/mine", headers=ana.headers).json()["items"] == []
+    assert (saved_key(video_id), keys_in_bucket()) == (key, [key])
+
+
+def test_a_video_saved_before_the_copy_keeps_its_file_and_cannot_be_confirmed_again(
+    client, ana, ben
+):
+    # Before confirm made copies, a video's object_key was its upload key itself.
+    links = ask_upload_url(client, ana).json()
+    video = made_up_mp4(3000)
+    assert put_file(links["put_url"], video) == 200
+    video_id = add_video(ana.id, object_key=links["object_key"])  # approved and posted
+    # Such a video is still shown, from its old key...
+    [item] = feed(client, ben)["items"]
+    assert (item["id"], httpx2.get(item["signed_url"]).content) == (video_id, video)
+    # ...and confirming that key again is refused before anything is copied or deleted.
+    response = confirm(client, ana, links["object_key"])
+    assert response.json() == error(409, "This video is already confirmed")
+    assert keys_in_bucket() == [links["object_key"]]
+    assert sql("SELECT id, object_key FROM intro_videos") == [(video_id, links["object_key"])]
+    assert take_queued_tasks() == []
 
 
 # --- routes that need no service ------------------------------------------------------
