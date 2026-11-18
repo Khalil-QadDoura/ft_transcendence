@@ -63,6 +63,7 @@ class MyVideoOut(BaseModel):
     size_bytes: int
     content_type: str
     moderation_status: str
+    rejected_reason: str | None = None
     lifecycle_status: str
     created_at: datetime
     updated_at: datetime

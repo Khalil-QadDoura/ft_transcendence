@@ -123,6 +123,10 @@ class Storage:
             response.close()
             response.release_conn()
 
+    def download_to_file(self, key: str, dest_path: str) -> None:
+        """Stream an object straight from internal MinIO (minio:9000) to a local file path."""
+        self.internal.fget_object(self.bucket, key, dest_path)
+
 
 def get_storage(request: Request) -> Storage:
     """FastAPI dependency: this app's storage, made once in create_app()."""
