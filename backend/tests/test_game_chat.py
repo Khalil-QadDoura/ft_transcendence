@@ -36,7 +36,13 @@ from app.auth import security
 from app.game import chat
 from app.game import repo as game_repo
 from app.game import service as game_service
-from app.game.constants import MAX_ID, MESSAGE_MAX_LENGTH, PLAYER_LABELS, label_number
+from app.game.constants import (
+    MAX_ID,
+    MESSAGE_MAX_LENGTH,
+    PLAYER_LABELS,
+    SNAPSHOT_MESSAGES,
+    label_number,
+)
 
 pytestmark = [needs_database, needs_redis]
 
@@ -418,13 +424,15 @@ def test_snapshot_carries_only_the_recent_messages(server):
     pid = participant_id(room_id, alice_id)
     sql(
         "INSERT INTO game_messages (room_id, participant_id, text)"
-        " SELECT :room_id, :pid, 'line ' || n FROM generate_series(1, 60) AS n",
+        " SELECT :room_id, :pid, 'line ' || n FROM generate_series(1, :count) AS n",
         room_id=room_id,
         pid=pid,
+        count=SNAPSHOT_MESSAGES + 10,
     )
     with room_socket(server, alice_token, room_id) as ws:
         texts = [m["text"] for m in snapshot(ws)["messages"]]
-    assert texts == [f"line {n}" for n in range(11, 61)]  # the newest 50, oldest first
+    # The newest SNAPSHOT_MESSAGES (50), oldest first: lines 11 to 60.
+    assert texts == [f"line {n}" for n in range(11, SNAPSHOT_MESSAGES + 11)]
 
 
 # Chat ---------------------------------------------------------------------------------------
