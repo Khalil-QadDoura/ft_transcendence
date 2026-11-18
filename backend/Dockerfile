@@ -12,6 +12,10 @@ RUN /venv/bin/pip install -r requirements.txt
 # from this stage (`target: runtime`).
 FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS runtime
 ENV PATH=/venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# ffmpeg + ffprobe are required by the Celery video moderation worker (BE-29 / M9).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 app
 WORKDIR /app
 COPY --from=build /venv /venv
