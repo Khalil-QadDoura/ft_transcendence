@@ -6,6 +6,11 @@ START_NOW_MIN_PARTICIPANTS = 2
 START_NOW_MAX_PARTICIPANTS = 4
 MIN_EXPIRY_START_PARTICIPANTS = 2
 
+# Voting and scoring (DOC-08): every mark starts at "human"; each mark is worth +1 or -1.
+DEFAULT_GUESS = "human"
+POINTS_CORRECT = 1
+POINTS_WRONG = -1
+
 # Largest positive BIGINT accepted in path/query parameters.
 MAX_ID = 9_223_372_036_854_775_807
 
