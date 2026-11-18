@@ -1,0 +1,179 @@
+.company-page {
+  max-width: 1120px;
+  margin: auto;
+  padding: 64px 24px 96px;
+}
+.company-heading {
+  max-width: 760px;
+  margin-block-end: 40px;
+}
+.company-heading h1 {
+  font-size: clamp(2.3rem, 5vw, 4.2rem);
+  line-height: 1.05;
+  letter-spacing: -0.05em;
+  margin-block: 18px;
+}
+.company-heading > p:last-child {
+  max-width: 540px;
+  line-height: 1.7;
+  color: var(--color-ink-muted);
+}
+.company-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr);
+  gap: 24px;
+  align-items: start;
+}
+.company-summary {
+  padding: 32px;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-radius: 24px;
+  overflow-wrap: anywhere;
+}
+.company-spark {
+  display: block;
+  font-size: 64px;
+  line-height: 1;
+  color: var(--color-lime);
+  margin-block-end: 24px;
+}
+.company-summary h2 {
+  font-size: 1.7rem;
+  line-height: 1.25;
+  font-weight: 600;
+}
+.company-location {
+  margin-block: 10px 20px;
+  opacity: 0.8;
+}
+.company-description-copy {
+  padding-block: 16px;
+  border-block: 1px solid #ffffff30;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  opacity: 0.9;
+}
+.company-jobs-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-block-start: 12px;
+  color: var(--color-lime);
+  text-decoration: underline;
+}
+.company-logo-panel {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border-radius: 16px;
+  padding: 20px;
+  margin-block-start: 24px;
+}
+.company-logo-panel h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-block-end: 16px;
+}
+.company-logo-panel p {
+  margin-block: 10px;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.company-logo-preview {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  object-fit: cover;
+  margin-block: 12px;
+  border: 1px solid var(--color-border);
+}
+.company-logo-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-block-start: 12px;
+}
+.company-logo-panel progress {
+  width: 100%;
+  margin-block-start: 16px;
+  accent-color: var(--color-ink);
+}
+.company-form-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  padding: 32px;
+  min-width: 0;
+}
+.company-form-panel h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+.company-form-panel > p {
+  margin-block: 8px 24px;
+  color: var(--color-ink-muted);
+}
+.company-form-panel fieldset {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.company-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.company-form-panel input {
+  min-height: 44px;
+  min-width: 0;
+}
+.company-form-panel button,
+.company-logo-panel button {
+  min-height: 44px;
+}
+.company-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-block-start: 28px;
+  padding-block-start: 24px;
+  border-block-start: 1px solid var(--color-border);
+}
+.company-danger {
+  margin-block-start: 32px;
+  padding-block-start: 24px;
+  border-block-start: 1px solid var(--color-border);
+}
+.company-danger h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-danger);
+}
+.company-danger p {
+  margin-block: 6px 14px;
+  font-size: 0.875rem;
+  color: var(--color-ink-muted);
+}
+.company-success {
+  margin-block-start: 16px;
+  color: var(--color-success);
+}
+.company-form-panel [role="alert"],
+.company-logo-panel [role="alert"] {
+  color: var(--color-danger);
+}
+@media (max-width: 700px) {
+  .company-page {
+    padding: 32px 16px 64px;
+  }
+  .company-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .company-summary,
+  .company-form-panel {
+    padding: 24px;
+  }
+  .company-two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

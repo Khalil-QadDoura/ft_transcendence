@@ -42,6 +42,7 @@ async function render(
 }
 test.each([
   "/profile",
+  "/company",
   "/friends",
   "/chat/7",
   "/videos",

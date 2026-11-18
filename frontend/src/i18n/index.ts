@@ -1,3 +1,4 @@
+import company from "./en/company.json";
 import people from "./en/people.json";
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
@@ -65,6 +66,7 @@ void i18next.init({
       screens,
       profile,
       people,
+      company,
       status: statusEn,
       gameRules: gameRulesEn,
     },
@@ -74,7 +76,15 @@ void i18next.init({
     ru: { common: ru, status: statusRu, gameRules: gameRulesRu },
   },
   defaultNS: "common",
-  ns: ["common", "screens", "profile", "people", "status", "gameRules"],
+  ns: [
+    "common",
+    "screens",
+    "profile",
+    "people",
+    "company",
+    "status",
+    "gameRules",
+  ],
   initAsync: false,
   interpolation: { escapeValue: false },
 });

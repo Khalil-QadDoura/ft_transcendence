@@ -12,6 +12,7 @@ export interface Job {
   id: number;
   owner_id: number;
   company_name?: string | null;
+  company_logo_url?: string | null;
   title: string;
   description: string;
   status: "active" | "open" | "deleted";

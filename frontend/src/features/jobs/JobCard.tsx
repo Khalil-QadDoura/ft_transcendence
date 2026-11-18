@@ -54,6 +54,7 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
             <Avatar
+              src={job.company_logo_url ?? undefined}
               alt={companyName}
               fallbackText={companyName}
               size="md"
