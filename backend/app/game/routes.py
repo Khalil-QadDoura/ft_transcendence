@@ -1,8 +1,9 @@
-"""The /api/game routes for matchmaking, waiting room management, and room state."""
+"""The /api/game routes for matchmaking, waiting room management, and room state, and the
+room socket at /ws/game (BE-09)."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, WebSocket
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,8 +13,10 @@ from app.db.session import get_session
 from app.game import chat, service
 from app.game.constants import HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX, MAX_ID
 from app.game.schemas import GameMessagesPage, QueueJoinOut, RoomOut
+from app.realtime import service as realtime_service
 
 router = APIRouter(prefix="/game", tags=["game"])
+socket_router = APIRouter()  # mounted at the root, like /ws: the proxy passes /ws/game as it is
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
@@ -63,6 +66,18 @@ async def list_room_messages(
 ) -> GameMessagesPage:
     """The room's chat, oldest to newest, a page at a time; for its participants only."""
     return await chat.list_messages(session, user, room_id, before_id, limit)
+
+
+@socket_router.websocket("/ws/game")
+async def room_socket(websocket: WebSocket) -> None:
+    """The room's live connection: wss://<host>/ws/game?ticket=<ticket>&room_id=<id>.
+
+    Same one-time ticket and same check as /ws. It sends a `game_snapshot` first, then every
+    event of the user; it takes `chat_message` frames during the discussion."""
+    user = await realtime_service.authenticate_ws(websocket)
+    if user is None:
+        return  # already closed with code 1008
+    await chat.serve_room_socket(websocket, user)
 
 
 @router.post("/rooms/{room_id}/start")
