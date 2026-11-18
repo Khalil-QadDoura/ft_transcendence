@@ -11,6 +11,7 @@ import structlog
 import urllib3
 from fastapi import Request
 from minio import Minio
+from minio.commonconfig import REPLACE, CopySource
 from minio.datatypes import Object
 from minio.error import S3Error
 
@@ -113,6 +114,24 @@ class Storage:
         self.internal.put_object(
             self.bucket, key, io.BytesIO(data), len(data), content_type=content_type
         )
+
+    def copy(self, key: str, new_key: str, content_type: str) -> bool:
+        """Copy the file at key to new_key, with the Content-Type we choose (never the
+        uploader's). MinIO makes the copy itself: the file never passes through the API.
+        False if there is no file at key."""
+        try:
+            self.internal.copy_object(
+                self.bucket,
+                new_key,
+                CopySource(self.bucket, key),
+                metadata={"Content-Type": content_type},
+                metadata_directive=REPLACE,
+            )
+        except S3Error as error:
+            if error.code == "NoSuchKey":
+                return False
+            raise
+        return True
 
     def first_bytes(self, key: str, count: int) -> bytes:
         """The first bytes of the stored file, without downloading the rest."""
