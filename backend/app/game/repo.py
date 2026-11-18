@@ -8,6 +8,7 @@ from typing import Any
 from redis.asyncio import Redis
 from redis.exceptions import LockError
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.game.constants import (
@@ -17,7 +18,7 @@ from app.game.constants import (
     MAX_PARTICIPANTS,
     ROOM_LOCK_KEY_PREFIX,
 )
-from app.game.models import GameMessage, GameParticipant, GameRoom
+from app.game.models import GameMessage, GameParticipant, GameRoom, GameVote
 
 
 @asynccontextmanager
@@ -209,3 +210,47 @@ async def list_active_room_ids(session: AsyncSession) -> list[int]:
         .order_by(GameRoom.id.asc())
     )
     return list(await session.scalars(stmt))
+
+
+async def get_room_for_share(session: AsyncSession, room_id: int) -> GameRoom | None:
+    """Read the room and hold a shared lock on it until the transaction ends.
+
+    Many votes can hold this lock at once. The server clock's `get_room_for_update` waits for
+    them, so a vote is either saved before the room finishes or sees the finished state.
+    """
+    stmt = (
+        select(GameRoom)
+        .where(GameRoom.id == room_id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    return await session.scalar(stmt)
+
+
+async def get_participant_by_label(
+    session: AsyncSession, room_id: int, display_label: str
+) -> GameParticipant | None:
+    stmt = select(GameParticipant).where(
+        GameParticipant.room_id == room_id, GameParticipant.display_label == display_label
+    )
+    return await session.scalar(stmt)
+
+
+async def save_mark(
+    session: AsyncSession, *, room_id: int, voter_id: int, target_id: int, guess: str
+) -> None:
+    """Insert the voter's mark on the target, or replace the one already there (one row each)."""
+    stmt = (
+        pg_insert(GameVote)
+        .values(
+            room_id=room_id,
+            voter_participant_id=voter_id,
+            target_participant_id=target_id,
+            guess=guess,
+        )
+        .on_conflict_do_update(
+            index_elements=["voter_participant_id", "target_participant_id"],
+            set_={"guess": guess, "updated_at": func.now()},
+        )
+    )
+    await session.execute(stmt)

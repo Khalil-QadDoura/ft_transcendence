@@ -5,8 +5,11 @@ no user_id, no is_bot, no avatar, and no bot-plan metadata.
 """
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.game.constants import MAX_PARTICIPANTS
 
 
 class QueueJoinOut(BaseModel):
@@ -53,6 +56,18 @@ class GameParticipantEventOut(BaseModel):
     participant: ParticipantOut
     participant_count: int
     room_expires_at: datetime | None
+
+
+class VoteIn(BaseModel):
+    """A voter's mark on one other participant, named by its label number ("Player 3" -> 3)."""
+
+    target_participant_id: int = Field(ge=1, le=MAX_PARTICIPANTS)
+    guess: Literal["bot", "human"]
+
+
+class VoteOut(BaseModel):
+    target_participant_id: int
+    guess: Literal["bot", "human"]
 
 
 class GameMessageEventOut(BaseModel):

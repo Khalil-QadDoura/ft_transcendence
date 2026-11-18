@@ -1,4 +1,4 @@
-"""The /api/game routes for matchmaking, waiting room management, and room state."""
+"""The /api/game routes for matchmaking, waiting room management, room state, votes and results."""
 
 from typing import Annotated
 
@@ -11,7 +11,7 @@ from app.core.redis_client import get_redis
 from app.db.session import get_session
 from app.game import service
 from app.game.constants import MAX_ID
-from app.game.schemas import QueueJoinOut, RoomOut
+from app.game.schemas import QueueJoinOut, RoomOut, VoteIn, VoteOut
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -63,3 +63,15 @@ async def start_room(
 ) -> RoomOut:
     """Start a waiting room early with 2–4 participants; idempotent across concurrent presses."""
     return await service.start_room(session, redis, request.app.state.settings, user, room_id)
+
+
+@router.post("/rooms/{room_id}/votes")
+async def cast_vote(
+    room_id: RoomIdPath,
+    vote: VoteIn,
+    request: Request,
+    user: CurrentUser,
+    session: Session,
+) -> VoteOut:
+    """Mark another participant (by label number) as bot or human; a new mark replaces the old."""
+    return await service.cast_vote(session, request.app.state.settings, user, room_id, vote)

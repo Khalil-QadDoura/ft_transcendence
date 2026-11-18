@@ -1,4 +1,5 @@
-"""Turing Duel matchmaking, hidden bot plans, room controls, and server-clock phase loop."""
+"""Turing Duel matchmaking, hidden bot plans, room controls, server-clock phase loop, votes
+and results."""
 
 import asyncio
 import random
@@ -34,6 +35,8 @@ from app.game.schemas import (
     QueueJoinOut,
     RoomOut,
     RoomParticipantOut,
+    VoteIn,
+    VoteOut,
 )
 from app.realtime import service as realtime_service
 from app.users.models import User
@@ -324,6 +327,41 @@ async def start_room(
 
     await _push_events(redis, events)
     return result
+
+
+def _label_number(participant: GameParticipant) -> int:
+    """The number players know a participant by: "Player 3" -> 3 (rules, section 9)."""
+    return PLAYER_LABELS.index(participant.display_label) + 1
+
+
+async def cast_vote(
+    session: AsyncSession, settings: Settings, user: User, room_id: int, vote: VoteIn
+) -> VoteOut:
+    """Save the caller's mark on another participant of this room while voting is open.
+
+    Sending a mark again replaces it, as often as the voter likes (rules, section 5).
+    """
+    # The shared lock keeps the server clock from finishing the room while this vote is saved.
+    room = await repo.get_room_for_share(session, room_id)
+    if room is None:
+        raise HTTPException(status_code=404, detail="Room not found")
+    me = await repo.get_participant_for_user(session, room_id, user.id)
+    if me is None:
+        raise HTTPException(status_code=403, detail="Not a participant of this room")
+    voting_ends_at = _phase_ends_at(room, settings)
+    if room.state != "voting" or voting_ends_at is None or _utcnow() >= voting_ends_at:
+        raise HTTPException(status_code=409, detail="Voting is not open in this room")
+    if vote.target_participant_id == _label_number(me):
+        raise HTTPException(status_code=400, detail="You cannot vote for yourself")
+    label = PLAYER_LABELS[vote.target_participant_id - 1]
+    target = await repo.get_participant_by_label(session, room_id, label)
+    if target is None:
+        raise HTTPException(status_code=422, detail="No participant with this number in the room")
+    await repo.save_mark(
+        session, room_id=room_id, voter_id=me.id, target_id=target.id, guess=vote.guess
+    )
+    await session.commit()
+    return VoteOut(target_participant_id=vote.target_participant_id, guess=vote.guess)
 
 
 async def process_room_tick(
