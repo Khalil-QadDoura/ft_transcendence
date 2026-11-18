@@ -2,16 +2,16 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentUser
 from app.core.redis_client import get_redis
 from app.db.session import get_session
-from app.game import service
-from app.game.constants import MAX_ID
-from app.game.schemas import QueueJoinOut, RoomOut
+from app.game import chat, service
+from app.game.constants import HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX, MAX_ID
+from app.game.schemas import GameMessagesPage, QueueJoinOut, RoomOut
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -51,6 +51,18 @@ async def get_room(
 ) -> RoomOut:
     """Return room details for a participant without revealing bot identity or plans."""
     return await service.get_room(session, request.app.state.settings, user, room_id)
+
+
+@router.get("/rooms/{room_id}/messages")
+async def list_room_messages(
+    room_id: RoomIdPath,
+    user: CurrentUser,
+    session: Session,
+    before_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
+    limit: Annotated[int, Query(ge=1, le=HISTORY_PAGE_MAX)] = HISTORY_PAGE_DEFAULT,
+) -> GameMessagesPage:
+    """The room's chat, oldest to newest, a page at a time; for its participants only."""
+    return await chat.list_messages(session, user, room_id, before_id, limit)
 
 
 @router.post("/rooms/{room_id}/start")
