@@ -23,6 +23,7 @@ from app.game.constants import (
     PLAYER_LABELS,
     START_NOW_MAX_PARTICIPANTS,
     START_NOW_MIN_PARTICIPANTS,
+    label_number,
 )
 from app.game.models import GameParticipant, GameRoom
 from app.game.schemas import (
@@ -459,7 +460,7 @@ async def _tick_discussion_room(
                 "game_message",
                 GameMessageEventOut(
                     id=message.id,
-                    participant_id=bot.id,
+                    participant_id=label_number(bot.display_label),
                     display_label=bot.display_label,
                     text=message.text,
                 ),

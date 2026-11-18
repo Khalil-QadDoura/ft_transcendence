@@ -12,6 +12,13 @@ MAX_ID = 9_223_372_036_854_775_807
 # Anonymous seats drawn randomly from this pool on join (DOC-08).
 PLAYER_LABELS = tuple(f"Player {n}" for n in range(1, MAX_PARTICIPANTS + 1))
 
+
+def label_number(display_label: str) -> int:
+    """The number of a label: 3 for "Player 3". Before the results, players know each other
+    only by this number, never by the database id (rules, section 9)."""
+    return PLAYER_LABELS.index(display_label) + 1
+
+
 # Redis lock timeouts for queue assignment and per-room transitions.
 MATCHMAKING_LOCK_KEY = "game:lock:matchmaking"
 ROOM_LOCK_KEY_PREFIX = "game:lock:room:"
