@@ -37,7 +37,7 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | POST | `/auth/reset-password` | — | `{token, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
 | PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
-| DELETE | `/users/me` | Bearer | — | 204 (soft delete) | 401 |
+| DELETE | `/users/me` | Bearer | — | 204 (soft delete; the user's company is soft-deleted too) | 401 |
 
 `UserOut` = `{id, email, first_name, last_name, position, birth_date, bio, avatar_object_key, avatar_url, is_email_verified}` (new backend, BE-05; `avatar_url` from BE-08: my picture's public address, or the default picture, see Media). The reference also sends `phone`, `username`, `is_phone_verified` and `account_number` (`WZ-000123`); the new backend drops them.
 
@@ -59,7 +59,7 @@ Passwords in the new backend (BE-04):
 The profile in the new backend (BE-05):
 
 - `PATCH /users/me` changes only the fields that are sent: a field left out keeps its value, and `{}` changes nothing (200). `first_name` and `last_name` 1–50 characters, `position` 1–100, `bio` up to 500; spaces around them are removed. `birth_date` is `YYYY-MM-DD`, and the user must be at least 18 full years old today, else 422 `"body → birth_date: You must be at least 18 years old"`. Only `bio` accepts `null` (it empties the bio). Any other field (`email`, `status`, `phone`, …) gets 422 `"body → <field>: Extra inputs are not permitted"`, and then nothing is changed. No body at all gets 422.
-- `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409). The files of the avatar and of the user's company logo are deleted from storage at once and both keys are emptied (BE-08), because their public addresses would otherwise keep working.
+- `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409). The files of the avatar and of the user's company logo are deleted from storage at once and both keys are emptied (BE-08), because their public addresses would otherwise keep working. The user's active company, if any, is soft-deleted in the same transaction (`companies.status` becomes `deleted`), so it and its jobs leave every public view: `GET /jobs/{id}` answers 404 and `GET /jobs/open` leaves them out. The jobs and the applications already sent stay as they are.
 
 ## Friends, profiles and conversations
 
