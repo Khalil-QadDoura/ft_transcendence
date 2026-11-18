@@ -25,6 +25,13 @@ ROOM_LOCK_KEY_PREFIX = "game:lock:room:"
 LOCK_TTL_SECONDS = 10
 LOCK_BLOCKING_TIMEOUT_SECONDS = 5
 
+# Room chat (BE-09): the longest message, how many recent messages the snapshot on (re)connect
+# carries, and the page sizes of GET /api/game/rooms/{id}/messages.
+MESSAGE_MAX_LENGTH = 500
+SNAPSHOT_MESSAGES = 50
+HISTORY_PAGE_DEFAULT = 50
+HISTORY_PAGE_MAX = 100
+
 # Template discussion lines used by bots with simulated typing delays until TC-01.
 BOT_CHAT_TEMPLATES = (
     "hey everyone, good luck figuring this out",

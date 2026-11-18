@@ -60,3 +60,11 @@ class GameMessageEventOut(BaseModel):
     participant_id: int
     display_label: str
     text: str
+
+
+class GameMessagesPage(BaseModel):
+    """GET /api/game/rooms/{id}/messages: oldest to newest. `prev_before_id` asks for the
+    page before this one; null means this page starts the chat."""
+
+    items: list[GameMessageEventOut]
+    prev_before_id: int | None

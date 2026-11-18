@@ -202,6 +202,29 @@ async def create_message(
     return message
 
 
+async def list_room_messages(
+    session: AsyncSession, room_id: int, before_id: int | None, limit: int
+) -> tuple[list[tuple[GameMessage, GameParticipant]], int | None]:
+    """One page of a room's chat, each message with its author, oldest to newest.
+
+    The page holds the `limit` newest messages with an id below `before_id` (all of them when
+    it is None). The second value is the `before_id` of the next older page, or None when
+    there is nothing older.
+    """
+    stmt = (
+        select(GameMessage, GameParticipant)
+        .join(GameParticipant, GameParticipant.id == GameMessage.participant_id)
+        .where(GameMessage.room_id == room_id)
+    )
+    if before_id is not None:
+        stmt = stmt.where(GameMessage.id < before_id)
+    # One more than asked: if it exists, there is an older page.
+    rows = (await session.execute(stmt.order_by(GameMessage.id.desc()).limit(limit + 1))).all()
+    page = rows[:limit]
+    prev_before_id = page[-1][0].id if len(rows) > limit else None
+    return [(message, author) for message, author in reversed(page)], prev_before_id
+
+
 async def list_active_room_ids(session: AsyncSession) -> list[int]:
     stmt = (
         select(GameRoom.id)
