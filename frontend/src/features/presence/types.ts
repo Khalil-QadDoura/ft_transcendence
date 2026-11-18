@@ -9,3 +9,4 @@ export interface FriendPresenceItem {
   user_id: number;
   is_online?: boolean;
 }
+
