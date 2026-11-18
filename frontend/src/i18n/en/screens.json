@@ -198,5 +198,27 @@
     "approved": "Approved",
     "inReview": "In Review",
     "needsAttention": "Needs Attention"
+  },
+  "chat": {
+    "appliedFor": "Applied for: {{job}}",
+    "conversationFallback": "Conversation #{{id}}",
+    "conversationThreadTitle": "Conversation Thread",
+    "conversationThreadDesc": "Connected via WebSocket. Live message history and interactive messaging thread ready.",
+    "selectConversation": "Select a conversation",
+    "selectConversationDesc": "Choose a chat from the left sidebar to view messages and reply in real time.",
+    "messages": "Messages",
+    "unreadCount": "{{count}} unread",
+    "searchPlaceholder": "Search conversations...",
+    "searchAria": "Search conversations",
+    "failedToLoad": "Failed to load conversations.",
+    "tryAgain": "Try Again",
+    "noMatchesFound": "No matches found",
+    "noConversationsYet": "No conversations yet",
+    "noMatchesDesc": "Try searching for a different name or job title.",
+    "noConversationsDesc": "When employers or candidates contact you, your messages will appear here.",
+    "assistant": "WOZU Assistant",
+    "directConversation": "Direct Conversation",
+    "justNow": "Just now",
+    "noMessagesYet": "No messages yet"
   }
 }

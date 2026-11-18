@@ -14,6 +14,7 @@ import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
 import { JobsPage } from "../features/jobs/JobsPage";
+import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
 function ComingSoon({ title }: { title: string }) {
   const { t } = useText();
@@ -91,12 +92,12 @@ export const routes: RouteObject[] = [
           { path: "videos", element: <VideoResumePage /> },
           ...pages([
             ["friends", "routes.friends"],
-            ["chat", "routes.chat"],
-            ["chat/:id", "routes.conversation"],
             ["employer/*", "routes.employer"],
             ["game", "routes.game"],
             ["game/rooms/:id", "routes.room"],
           ]),
+          { path: "chat", element: <ConversationsPage /> },
+          { path: "chat/:id", element: <ConversationsPage /> },
         ],
       },
       { path: "*", element: <Missing /> },
