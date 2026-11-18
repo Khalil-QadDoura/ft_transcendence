@@ -10,17 +10,20 @@ by database id (rules, section 9). Every payload in this file follows that.
 """
 
 import asyncio
+from datetime import UTC, datetime
+from typing import Any
 
-from fastapi import HTTPException, WebSocket, status
+from fastapi import FastAPI, HTTPException, WebSocket, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.metrics import track_ws_connection
 from app.game import repo, service
-from app.game.constants import MAX_ID, SNAPSHOT_MESSAGES, label_number
+from app.game.constants import MAX_ID, MESSAGE_MAX_LENGTH, SNAPSHOT_MESSAGES, label_number
 from app.game.models import GameMessage, GameParticipant, GameRoom
 from app.game.schemas import (
+    GameErrorOut,
     GameMessageEventOut,
     GameMessagesPage,
     GameSnapshotOut,
@@ -34,6 +37,7 @@ from app.realtime.schemas import Event
 from app.users.models import User
 
 NOT_A_PARTICIPANT = "Not a participant of this room"
+CHAT_CLOSED = "Chat is open only during the discussion"
 
 
 def message_out(message: GameMessage, author: GameParticipant) -> GameMessageEventOut:
@@ -159,7 +163,8 @@ async def serve_room_socket(websocket: WebSocket, user: User) -> None:
 
 
 async def read_room_frames(websocket: WebSocket, user: User, room_id: int) -> None:
-    """Answer what the browser sends: `ping` gets `pong`. Anything else is ignored."""
+    """Answer what the browser sends: `ping` gets `pong`; `chat_message` goes to the room, or
+    gets a `game_error` that says why not. Anything else is ignored."""
     while True:
         message = await websocket.receive()
         if message["type"] == "websocket.disconnect":
@@ -167,5 +172,70 @@ async def read_room_frames(websocket: WebSocket, user: User, room_id: int) -> No
         frame = realtime_service.parse_frame(message.get("text"))
         if frame is None:
             continue
-        if frame.get("type") == "ping":
+        kind = frame.get("type")
+        if kind == "ping":
             await send(websocket, "pong")
+        elif kind == "chat_message":
+            refusal = await post_message(websocket.app, user, room_id, chat_text(frame))
+            if refusal is not None:
+                await send(websocket, "game_error", GameErrorOut(detail=refusal))
+
+
+def chat_text(frame: dict[str, Any]) -> Any:
+    """The text of a chat_message frame: at the top level ({"type", "text"}, as the frontend
+    client sends it) or inside "payload", like the receipt frames of /ws."""
+    payload = frame.get("payload")
+    if isinstance(payload, dict) and "text" in payload:
+        return payload["text"]
+    return frame.get("text")
+
+
+def text_refusal(text: Any) -> str | None:
+    """Why this chat text cannot be saved, or None when it can."""
+    if not isinstance(text, str) or not text.strip():
+        return "Message is empty"
+    if len(text.strip()) > MESSAGE_MAX_LENGTH:
+        return f"Message is longer than {MESSAGE_MAX_LENGTH} characters"
+    # PostgreSQL text cannot hold a NUL character, and UTF-8 cannot hold a lone surrogate
+    # (JSON can carry both, as "\u0000" and "\ud800"). Refused here, not a database error.
+    if "\x00" in text:
+        return "Message has characters that cannot be saved"
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return "Message has characters that cannot be saved"
+    return None
+
+
+async def post_message(app: FastAPI, user: User, room_id: int, text: Any) -> str | None:
+    """Save a chat message and send it as `game_message` to every human of the room, the
+    author too (so all of the author's tabs show it). Returns why it was refused, or None.
+
+    Bots post their lines from the game's server loop (service._tick_discussion_room) in the
+    same table and with the same event, so players cannot tell them apart.
+    """
+    refusal = text_refusal(text)
+    if refusal is not None:
+        return refusal
+    async with app.state.session_factory() as session:
+        # A shared lock on the room until the commit: the phase cannot change while the
+        # message is saved. Only this lock is taken (no Redis lock), so it cannot deadlock
+        # with the server loop, which takes the Redis lock and then the row.
+        room = await repo.get_room_for_share(session, room_id)
+        author = await repo.get_participant_for_user(session, room_id, user.id)
+        if room is None or author is None:
+            return NOT_A_PARTICIPANT
+        now = datetime.now(UTC)
+        ends_at = service._phase_ends_at(room, app.state.settings)
+        # The server loop moves the room to voting a moment after the 120 s; the clock decides.
+        if room.state != "discussion" or (ends_at is not None and now >= ends_at):
+            return CHAT_CLOSED
+        message = await repo.create_message(
+            session, room_id=room_id, participant_id=author.id, body=text.strip(), sent_at=now
+        )
+        human_ids = await repo.list_human_user_ids(session, room_id)
+        event = message_out(message, author)
+        await session.commit()
+    for user_id in human_ids:
+        await realtime_service.send_to_user(app.state.redis, user_id, "game_message", event)
+    return None
