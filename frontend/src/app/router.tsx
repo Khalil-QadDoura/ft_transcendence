@@ -21,6 +21,7 @@ import { ComponentPreview } from "../features/dev/ComponentPreview";
 import { MyApplicationsPage } from "../features/applications/MyApplicationsPage";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
+import { GameLobbyPage } from "../features/game/GameLobbyPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
 import { StatusPage } from "../features/status/StatusPage";
 import { GameRulesPage } from "../features/game/rules/GameRulesPage";
@@ -102,10 +103,10 @@ export const routes: RouteObject[] = [
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
           { path: "applications", element: <MyApplicationsPage /> },
+          { path: "game", element: <GameLobbyPage /> },
           ...pages([
             ["friends", "routes.friends"],
             ["employer/*", "routes.employer"],
-            ["game", "routes.game"],
             ["game/rooms/:id", "routes.room"],
           ]),
           { path: "chat", element: <ConversationsPage /> },
