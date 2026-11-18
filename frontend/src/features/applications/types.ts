@@ -3,7 +3,13 @@
  */
 
 export type ApplicationStatus =
-  "submitted" | "viewed" | "invited" | "rejected" | "withdrawn";
+  | "submitted"
+  | "viewed"
+  | "shortlisted"
+  | "contacted"
+  | "hired"
+  | "rejected"
+  | "withdrawn";
 
 export interface ApplicationItem {
   id: number;

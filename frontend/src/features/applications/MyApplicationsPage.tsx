@@ -8,7 +8,7 @@ import { ApplicationCard } from "./ApplicationCard";
 import { listMyApplications, withdrawApplication } from "./api";
 import type { ApplicationItem, ApplicationStatus } from "./types";
 
-type StatusFilter = "all" | "active" | "invited" | "withdrawn" | "rejected";
+type StatusFilter = "all" | ApplicationStatus;
 
 export const MyApplicationsPage: React.FC = () => {
   const { t } = useText();
@@ -29,29 +29,17 @@ export const MyApplicationsPage: React.FC = () => {
         }
         setError(null);
 
-        let apiStatus: ApplicationStatus | undefined;
-        if (filter === "invited") apiStatus = "invited";
-        else if (filter === "withdrawn") apiStatus = "withdrawn";
-        else if (filter === "rejected") apiStatus = "rejected";
-
+        const apiStatus = filter === "all" ? undefined : filter;
         const res = await listMyApplications({
           status: apiStatus,
           cursor: cursor ?? undefined,
           limit: 20,
         });
 
-        // If client-side active filter (submitted or viewed)
-        let filteredItems = res.items;
-        if (filter === "active") {
-          filteredItems = res.items.filter(
-            (a) => a.status === "submitted" || a.status === "viewed",
-          );
-        }
-
         if (cursor) {
-          setApplications((prev) => [...prev, ...filteredItems]);
+          setApplications((prev) => [...prev, ...res.items]);
         } else {
-          setApplications(filteredItems);
+          setApplications(res.items);
         }
         setNextCursor(res.next_cursor);
       } catch (err: unknown) {
@@ -80,24 +68,27 @@ export const MyApplicationsPage: React.FC = () => {
 
   const tabs: Array<{ id: StatusFilter; label: string }> = [
     { id: "all", label: t("applications.tabAll") },
-    { id: "active", label: t("applications.tabActive") },
-    { id: "invited", label: t("applications.tabInvited") },
-    { id: "withdrawn", label: t("applications.tabWithdrawn") },
-    { id: "rejected", label: t("applications.tabRejected") },
+    { id: "submitted", label: t("applications.statusSubmitted") },
+    { id: "viewed", label: t("applications.statusViewed") },
+    { id: "shortlisted", label: t("applications.statusShortlisted") },
+    { id: "contacted", label: t("applications.statusContacted") },
+    { id: "hired", label: t("applications.statusHired") },
+    { id: "rejected", label: t("applications.statusRejected") },
+    { id: "withdrawn", label: t("applications.statusWithdrawn") },
   ];
 
   return (
     <div
-      className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8"
+      className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 text-ink"
       data-testid="my-applications-page"
     >
       {/* Header */}
       <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+          <h1 className="text-3xl font-bold tracking-tight text-ink">
             {t("applications.title")}
           </h1>
-          <p className="mt-1 text-base text-gray-600 dark:text-gray-400">
+          <p className="mt-1 text-base text-ink-muted">
             {t("applications.subtitle")}
           </p>
         </div>
@@ -107,7 +98,7 @@ export const MyApplicationsPage: React.FC = () => {
       </div>
 
       {/* Status filter tabs */}
-      <div className="mb-6 flex space-x-2 overflow-x-auto border-b border-gray-200 pb-2 dark:border-gray-800">
+      <div className="mb-6 flex space-x-2 overflow-x-auto border-b border-border pb-2">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -115,8 +106,8 @@ export const MyApplicationsPage: React.FC = () => {
             onClick={() => setStatusFilter(tab.id)}
             className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors ${
               statusFilter === tab.id
-                ? "bg-primary-600 text-white shadow-xs dark:bg-primary-500"
-                : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                ? "bg-ink text-paper shadow-xs"
+                : "text-ink-muted hover:bg-surface-muted"
             }`}
             data-testid={`filter-tab-${tab.id}`}
           >

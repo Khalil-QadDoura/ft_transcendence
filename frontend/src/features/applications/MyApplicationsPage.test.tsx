@@ -38,7 +38,7 @@ const mockApplications: ApplicationItem[] = [
     applicant_id: 5,
     company_id: 14,
     intro_video_id: 20,
-    status: "invited",
+    status: "contacted",
     cover_note: null,
     conversation_id: 42,
     applied_at: "2026-11-11T09:00:00Z",
@@ -106,7 +106,7 @@ describe("MyApplicationsPage Component (FE-15)", () => {
     expect(container.textContent).toContain("Full Stack Developer");
     expect(container.textContent).toContain("Nexus Labs");
     expect(
-      container.querySelector('[data-testid="status-invited"]'),
+      container.querySelector('[data-testid="status-contacted"]'),
     ).not.toBeNull();
 
     // Open Chat button is present for application with conversation_id: 42
@@ -173,18 +173,18 @@ describe("MyApplicationsPage Component (FE-15)", () => {
 
     expect(container.textContent).toContain("Senior React Engineer");
 
-    // Click Invited filter tab
-    const tabInvited = container.querySelector<HTMLButtonElement>(
-      '[data-testid="filter-tab-invited"]',
+    // Click Contacted filter tab
+    const tabContacted = container.querySelector<HTMLButtonElement>(
+      '[data-testid="filter-tab-contacted"]',
     );
-    expect(tabInvited).not.toBeNull();
+    expect(tabContacted).not.toBeNull();
 
     await act(async () => {
-      tabInvited?.click();
+      tabContacted?.click();
     });
 
     expect(api.listMyApplications).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "invited" }),
+      expect.objectContaining({ status: "contacted" }),
     );
     expect(container.textContent).toContain("Full Stack Developer");
   });

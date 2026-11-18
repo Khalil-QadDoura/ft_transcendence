@@ -21,9 +21,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const canWithdraw =
-    application.status === "submitted" ||
-    application.status === "viewed" ||
-    application.status === "invited";
+    application.status === "submitted" || application.status === "shortlisted";
 
   const handleConfirmWithdraw = async () => {
     try {
@@ -49,14 +47,26 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
         );
       case "viewed":
         return (
-          <Badge variant="warning" data-testid="status-viewed">
+          <Badge variant="outline" data-testid="status-viewed">
             {t("applications.statusViewed")}
           </Badge>
         );
-      case "invited":
+      case "shortlisted":
         return (
-          <Badge variant="success" data-testid="status-invited">
-            {t("applications.statusInvited")}
+          <Badge variant="warning" data-testid="status-shortlisted">
+            {t("applications.statusShortlisted")}
+          </Badge>
+        );
+      case "contacted":
+        return (
+          <Badge variant="success" data-testid="status-contacted">
+            {t("applications.statusContacted")}
+          </Badge>
+        );
+      case "hired":
+        return (
+          <Badge variant="success" data-testid="status-hired">
+            {t("applications.statusHired")}
           </Badge>
         );
       case "rejected":

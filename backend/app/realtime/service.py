@@ -4,6 +4,7 @@ import asyncio
 import json
 import secrets
 import uuid
+from collections.abc import Sequence
 from contextlib import suppress
 from typing import Any
 
@@ -125,26 +126,97 @@ async def forward_events(pubsub: PubSub, websocket: WebSocket) -> None:
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
 
 
+def _positive_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
 async def read_frames(websocket: WebSocket, redis: Redis, user_id: int, socket_id: str) -> None:
-    """Answer the client's frames until it disconnects. Only "ping" so far: it keeps the user
-    online for PRESENCE_TTL_SECONDS more and gets "pong". Frames of a type this layer does not
-    know (or not JSON at all) are ignored."""
+    """Answer client WS frames: ping (presence TTL), delivered, and read receipts."""
     while True:
         message = await websocket.receive()
         if message["type"] == "websocket.disconnect":
             return
-        if frame_type(message.get("text")) == "ping":
+        frame = parse_frame(message.get("text"))
+        if frame is None:
+            continue
+        kind = frame.get("type")
+        if kind == "ping":
             await repo.refresh_socket(redis, user_id, socket_id, PRESENCE_TTL_SECONDS)
             await websocket.send_text(Event(type="pong").model_dump_json())
+        elif kind in ("delivered", "read"):
+            await handle_receipt_frame(websocket.app, redis, user_id, kind, frame)
 
 
-def frame_type(text: str | None) -> str | None:
-    """The type of a JSON frame such as {"type": "ping"}; None for anything else."""
+async def handle_receipt_frame(
+    app: FastAPI, redis: Redis, user_id: int, kind: str, frame: dict[str, Any]
+) -> None:
+    """Process client-sent delivered/read WS frames using the same rules as REST (BE-24).
+
+    Accepts parameters both at top level (contract) and inside a `payload` dict (client wrapper).
+    """
+    from app.conversations import service as conversations_service
+
+    payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else frame
+
+    if kind == "delivered":
+        raw_mid = (
+            payload.get("message_id")
+            if payload.get("message_id") is not None
+            else frame.get("message_id")
+        )
+        message_id = _positive_int(raw_mid)
+        if message_id is None:
+            return
+        async with app.state.session_factory() as session:
+            await conversations_service.mark_delivered_and_broadcast(
+                session, redis, user_id=user_id, message_id=message_id
+            )
+        return
+
+    raw_cid = (
+        payload.get("conversation_id")
+        if payload.get("conversation_id") is not None
+        else frame.get("conversation_id")
+    )
+    raw_lmid = (
+        payload.get("last_message_id")
+        if payload.get("last_message_id") is not None
+        else frame.get("last_message_id")
+    )
+    conv_id = _positive_int(raw_cid)
+    last_message_id = _positive_int(raw_lmid)
+    if conv_id is None or last_message_id is None:
+        return
+    try:
+        async with app.state.session_factory() as session:
+            await conversations_service.mark_read_and_broadcast(
+                session,
+                redis,
+                conv_id=conv_id,
+                user_id=user_id,
+                last_message_id=last_message_id,
+            )
+    except (LookupError, PermissionError):
+        log.warning(
+            "ignored invalid read receipt frame",
+            user_id=user_id,
+            conversation_id=conv_id,
+        )
+
+
+def parse_frame(text: str | None) -> dict[str, Any] | None:
+    """Parse a JSON object frame such as {"type": "ping"}; None for anything else."""
     try:
         frame = json.loads(text or "")
     except ValueError:  # not JSON, or a binary frame (no text)
         return None
-    return frame.get("type") if isinstance(frame, dict) else None
+    return frame if isinstance(frame, dict) else None
+
+
+def frame_type(text: str | None) -> str | None:
+    """The type of a JSON frame such as {"type": "ping"}; None for anything else."""
+    frame = parse_frame(text)
+    return frame.get("type") if frame is not None else None
 
 
 async def tell_friends(app: FastAPI, user_id: int, is_online: bool) -> None:
@@ -159,4 +231,20 @@ async def tell_friends(app: FastAPI, user_id: int, is_online: bool) -> None:
 async def is_online(redis: Redis, user_id: int) -> bool:
     """Whether the user has a socket open right now, on any API process. For the is_online
     field of the friends list and the public profile (BE-22)."""
-    return await repo.count_live_sockets(redis, user_id) > 0
+    try:
+        return await repo.count_live_sockets(redis, user_id) > 0
+    except RedisError:
+        log.warning("presence lookup failed", user_id=user_id, exc_info=True)
+        return False
+
+
+async def online_user_ids(redis: Redis, user_ids: Sequence[int]) -> set[int]:
+    """Return the subset of user_ids currently online via one Redis pipeline (BE-22)."""
+    if not user_ids:
+        return set()
+    try:
+        counts = await repo.count_live_sockets_many(redis, user_ids)
+    except RedisError:
+        log.warning("batch presence lookup failed", count=len(user_ids), exc_info=True)
+        return set()
+    return {uid for uid, live in counts.items() if live > 0}
