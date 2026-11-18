@@ -1,3 +1,4 @@
+import { FriendsPage } from "../features/people/FriendsPage";
 import { PublicProfile } from "../features/people/PublicProfile";
 import { ProfilePage } from "../features/profile/ProfilePage";
 import { useText } from "../i18n/useText";
@@ -87,10 +88,10 @@ export const routes: RouteObject[] = [
         children: [
           { path: "settings", element: <AccountSettings /> },
           { path: "profile", element: <ProfilePage /> },
+          { path: "friends", element: <FriendsPage /> },
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
           ...pages([
-            ["friends", "routes.friends"],
             ["chat", "routes.chat"],
             ["chat/:id", "routes.conversation"],
             ["employer/*", "routes.employer"],
