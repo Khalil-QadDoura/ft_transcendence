@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-11-08
+Last updated: 2026-11-17
 
 This policy explains what personal data WOZU Web collects, why, who can see it, how long we keep it and what you can do about it. We wrote it for this service, in plain words. If something is unclear, write to us: burhan.hajili@gmail.com.
 
@@ -59,9 +59,9 @@ If you create a company, we store its name, description, logo, country, city and
 
 ### Technical data
 
-- Technical logs of the service: the time of a request, which page or API was called, the result, a request ID and your IP address. IP addresses appear in the access logs of the front proxy. Logs are kept for up to 15 days.
+- Technical logs of the service: the time of a request, which page or API was called, the result, a request ID and your IP address. IP addresses appear in the access logs of the front proxy. Logs are kept for at most 30 days.
 - Metrics about how the service runs (for example number of requests and errors). They do not contain your content.
-- Your IP address is also used by the front proxy to limit repeated requests (rate limiting), for example repeated sign-in attempts.
+- Your IP address is also used by the service to limit repeated requests (rate limiting), for example repeated sign-in attempts. These counters are kept only in the server's memory for a short time.
 
 ## 3. Why we use your data
 
@@ -86,7 +86,7 @@ We do not use your data for advertising. We do not make decisions about you that
 - **People you chat with:** the messages you send them.
 - **Players in your game room:** your anonymous label and your game messages. They do not see your name or profile. After the game, scores and which labels were bots are shown to the room.
 
-Video files are not public links. The service shows them through short-lived links that expire after a few minutes.
+Avatars and company logos have stable public links: anyone who has the link can download the image without signing in. The storage cannot be listed, so nobody can browse it to find other images. Video files are private. The service shows them only through short-lived links that expire: a link to watch a video works for 5 minutes by default and never for longer than one hour.
 
 ## 5. Third parties
 
@@ -116,10 +116,10 @@ We do not sell your data. We do not share it for advertising. Apart from the ser
 - Videos, avatars and company logos are stored as files in MinIO, an object storage run by us.
 - The service runs on servers operated by the team.
 - We keep your account, profile, videos, applications and chats until you delete them or delete your account.
-- When you delete your account, it happens in two stages. First, at once: your account is deactivated, you can no longer sign in, all your sessions end, and your profile, videos and job posts are hidden from everyone. Second, after 30 days: an automatic job anonymises the account. Your email, name, birth date and bio are erased or replaced, and your avatar and video files are deleted from storage. Applications and game records stay only in anonymised form. Chat messages you already sent stay visible to their recipients, shown as from "Deleted user".
+- When you delete your account, it happens in two stages. First, at once: your account is deactivated, you can no longer sign in, all your sessions end, your profile, videos and job posts are hidden from everyone, and your avatar and your company's logo are no longer publicly available (replacing an avatar or a logo deletes the old file at once). Second, after 30 days: an automatic job anonymises the account. Your email, name, birth date and bio are erased or replaced, and your avatar, logo and video files are deleted from storage. Applications and game records stay only in anonymised form. Chat messages you already sent stay visible to their recipients, shown as from "Deleted user".
 - During those 30 days we keep your data only to handle disputes, abuse reports and legal claims, and only the team can access it. If a complaint or dispute about your account is open, we keep the data needed for it until it is resolved. Deleted data can then stay in a backup for up to 7 more days. Until you delete your account, you can also delete a single video yourself.
 - Backups are kept for 7 days and then overwritten.
-- Technical logs and metrics are kept for up to 15 days.
+- Server logs, which include IP addresses, and service metrics are kept for at most 30 days.
 
 Connections between your browser and WOZU Web use HTTPS. Videos are opened through short-lived links. Passwords are stored as hashes. After repeated requests from one address, the service refuses further requests for a while.
 

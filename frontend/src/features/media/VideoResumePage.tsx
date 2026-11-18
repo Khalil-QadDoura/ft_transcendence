@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useWsEvent } from "../../api/ws";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
@@ -20,8 +20,6 @@ export const VideoResumePage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-
-  const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchVideos = useCallback(
     async (silent = false) => {
@@ -66,16 +64,14 @@ export const VideoResumePage: React.FC = () => {
   );
 
   useEffect(() => {
-    if (hasPendingVideos) {
-      pollingTimerRef.current = setTimeout(() => {
-        void fetchVideos(true);
-      }, POLLING_INTERVAL_MS);
-    }
+    if (!hasPendingVideos) return;
+
+    const intervalId = setInterval(() => {
+      void fetchVideos(true);
+    }, POLLING_INTERVAL_MS);
 
     return () => {
-      if (pollingTimerRef.current) {
-        clearTimeout(pollingTimerRef.current);
-      }
+      clearInterval(intervalId);
     };
   }, [hasPendingVideos, fetchVideos]);
 
@@ -222,7 +218,7 @@ export const VideoResumePage: React.FC = () => {
           className="mb-10 p-10 text-center"
           data-testid="empty-videos-card"
         >
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-50 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-paper-subtle text-ink">
             <svg
               className="h-8 w-8"
               fill="none"
@@ -266,7 +262,7 @@ export const VideoResumePage: React.FC = () => {
                 <Badge variant="lime">{t("media.publishedInFeed")}</Badge>
               </div>
 
-              <Card className="overflow-hidden border-primary-200 dark:border-primary-900 shadow-sm">
+              <Card className="overflow-hidden border-border shadow-sm">
                 <div className="p-6">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center space-x-3">
@@ -300,27 +296,54 @@ export const VideoResumePage: React.FC = () => {
                         ).toLocaleDateString(),
                       })}
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        onClick={() => handleUnpost(postedVideo.id)}
-                        variant="secondary"
-                        size="sm"
-                        disabled={actionLoading === postedVideo.id}
-                        data-testid={`unpost-btn-${postedVideo.id}`}
+                    {confirmDeleteId === postedVideo.id ? (
+                      <div
+                        className="flex items-center space-x-2 rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/50 dark:text-red-300"
+                        data-testid={`delete-confirmation-${postedVideo.id}`}
                       >
-                        {t("media.unpostFromFeed")}
-                      </Button>
-                      <Button
-                        onClick={() => handleDelete(postedVideo.id)}
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700 dark:text-red-400"
-                        disabled={actionLoading === postedVideo.id}
-                        data-testid={`delete-btn-${postedVideo.id}`}
-                      >
-                        {t("media.delete")}
-                      </Button>
-                    </div>
+                        <span>{t("media.confirmDeletePrompt")}</span>
+                        <div className="space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(postedVideo.id)}
+                            disabled={actionLoading === postedVideo.id}
+                            className="font-bold underline hover:text-red-900"
+                            data-testid={`confirm-delete-btn-${postedVideo.id}`}
+                          >
+                            {t("media.delete")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                          >
+                            {t("media.cancel")}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          onClick={() => handleUnpost(postedVideo.id)}
+                          variant="secondary"
+                          size="sm"
+                          disabled={actionLoading === postedVideo.id}
+                          data-testid={`unpost-btn-${postedVideo.id}`}
+                        >
+                          {t("media.unpostFromFeed")}
+                        </Button>
+                        <Button
+                          onClick={() => setConfirmDeleteId(postedVideo.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 dark:text-red-400"
+                          disabled={actionLoading === postedVideo.id}
+                          data-testid={`delete-btn-${postedVideo.id}`}
+                        >
+                          {t("media.delete")}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>

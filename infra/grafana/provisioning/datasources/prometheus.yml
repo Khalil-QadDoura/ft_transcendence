@@ -1,0 +1,23 @@
+# Grafana datasource (INF-09, module M12), provisioned at start: no clicks in the UI.
+# One Prometheus datasource with a fixed uid, so every dashboard panel names it by uid
+# (`"datasource": {"type": "prometheus", "uid": "prometheus"}`) and an import elsewhere
+# keeps working. Grafana's backend sends the queries to Prometheus inside the Docker
+# network (access: proxy); the browser never talks to Prometheus, which has no host port
+# and no proxy route. editable: false, so the UI cannot change it.
+# Grafana reads this file at start only: after a change, `docker compose restart grafana`.
+# Check: `make grafana-check` (infra/grafana/smoke-test.sh).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # The same 15 s as scrape_interval in infra/prometheus/prometheus.yml, so Grafana
+      # never asks for points closer together than Prometheus stores them.
+      timeInterval: 15s
+      httpMethod: POST

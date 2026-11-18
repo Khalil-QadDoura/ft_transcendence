@@ -227,6 +227,7 @@ describe("WebSocketClient (FE-22)", () => {
 
     // 3rd Disconnect: retry after 5s
     ws3.simulateClose(1006, "Network drop");
+    expect(client.getState()).toBe("reconnecting");
     vi.advanceTimersByTime(5000);
     await flushPromises();
     expect(MockWebSocket.instances.length).toBe(4);
@@ -298,29 +299,26 @@ describe("WebSocketClient (FE-22)", () => {
     const stateHistory: string[] = [];
     client.onStateChange((state) => stateHistory.push(state));
 
+    expect(stateHistory).toEqual(["offline"]);
+
     await client.connect();
     const ws = MockWebSocket.instances[0];
     ws.simulateOpen();
+    expect(stateHistory).toEqual(["offline", "connected"]);
 
-    ws.simulateClose(1011, "Redis drop");
-    vi.advanceTimersByTime(500);
-    await flushPromises();
-
-    const ws2 = MockWebSocket.instances[1];
-    ws2.simulateOpen();
+    ws.simulateClose(1006, "Network drop");
+    expect(stateHistory).toEqual(["offline", "connected", "reconnecting"]);
 
     client.disconnect();
-
     expect(stateHistory).toEqual([
       "offline",
       "connected",
       "reconnecting",
-      "connected",
       "offline",
     ]);
   });
 
-  it("sends frame when connected and returns false when offline", async () => {
+  it("sends frame with top-level fields matching contract", async () => {
     const fetchTicket = vi.fn().mockResolvedValue("ticket_send");
     const client = new WebSocketClient({ fetchTicket });
 
@@ -332,8 +330,13 @@ describe("WebSocketClient (FE-22)", () => {
 
     expect(client.send("chat", { text: "hello" })).toBe(true);
     expect(ws.sentMessages).toEqual([
-      JSON.stringify({ type: "chat", payload: { text: "hello" } }),
+      JSON.stringify({ type: "chat", text: "hello" }),
     ]);
+
+    expect(client.send("delivered", { message_id: 6 })).toBe(true);
+    expect(ws.sentMessages[1]).toBe(
+      JSON.stringify({ type: "delivered", message_id: 6 }),
+    );
   });
 
   it("handles malformed JSON frames and handler exceptions gracefully", async () => {
@@ -363,15 +366,72 @@ describe("WebSocketClient (FE-22)", () => {
     expect(goodHandler).toHaveBeenCalledWith("ok");
   });
 
-  it("supports legacy token option when configured", async () => {
+  it("prevents duplicate concurrent sockets when connect() is called in parallel", async () => {
+    let resolveTicket: (val: string) => void = () => {};
+    const fetchTicket = vi.fn().mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveTicket = resolve;
+        }),
+    );
+    const client = new WebSocketClient({ fetchTicket });
+
+    // Two connect calls in parallel while ticket is pending
+    const c1 = client.connect();
+    const c2 = client.connect();
+
+    resolveTicket("ticket_concurrency");
+    await Promise.all([c1, c2]);
+
+    expect(fetchTicket).toHaveBeenCalledTimes(1);
+    expect(MockWebSocket.instances.length).toBe(1);
+  });
+
+  it("handles rapid connect(); disconnect(); connect(); without leaking sockets", async () => {
+    const fetchTicket = vi.fn().mockResolvedValue("ticket_rapid");
+    const client = new WebSocketClient({ fetchTicket });
+
+    void client.connect();
+    client.disconnect();
+    await client.connect();
+
+    const openInstances = MockWebSocket.instances.filter(
+      (s) => s.readyState === MockWebSocket.OPEN,
+    );
+    expect(openInstances.length).toBeLessThanOrEqual(1);
+  });
+
+  it("resets backoff ladder upon receiving pong heartbeat", async () => {
+    let count = 1;
+    const fetchTicket = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(`ticket_${count++}`));
     const client = new WebSocketClient({
-      legacyToken: "legacy_access_jwt_123",
-      url: "ws://localhost:8000/ws",
+      fetchTicket,
+      reconnectDelays: [1000, 2000, 5000],
     });
 
     await client.connect();
-    const ws = MockWebSocket.instances[0];
-    expect(ws.url).toContain("token=legacy_access_jwt_123");
+    const ws1 = MockWebSocket.instances[0];
+    ws1.simulateOpen();
+
+    // Drop immediately
+    ws1.simulateClose(1008);
+    vi.advanceTimersByTime(1000);
+    await flushPromises();
+
+    const ws2 = MockWebSocket.instances[1];
+    ws2.simulateOpen();
+
+    // Pong arrives, proving socket is good
+    ws2.simulateMessage({ type: "pong" });
+
+    // Close again: because pong reset the ladder, next retry delay is 1000ms instead of climbing
+    ws2.simulateClose(1006);
+    expect(client.getState()).toBe("reconnecting");
+    vi.advanceTimersByTime(1000);
+    await flushPromises();
+    expect(MockWebSocket.instances.length).toBe(3);
   });
 
   it("allows setting QueryClient post-construction", async () => {

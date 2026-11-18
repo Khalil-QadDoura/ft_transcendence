@@ -1,7 +1,8 @@
 """App factory: builds the FastAPI app from settings, middleware, error handlers and routers."""
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import structlog
 from fastapi import APIRouter, Depends, FastAPI
@@ -20,6 +21,9 @@ from app.core.redis_client import setup_redis
 from app.core.request_id import request_id_middleware
 from app.core.storage import Storage
 from app.db.session import setup_database
+from app.friends import routes as friends
+from app.game import routes as game
+from app.game import service as game_service
 from app.health import routes as health
 from app.jobs import routes as jobs
 from app.media import routes as media
@@ -28,15 +32,42 @@ from app.users import routes as users
 
 log = structlog.get_logger("app")
 
+# How long the shutdown waits for the game scheduler to stop before it goes on without it.
+SCHEDULER_STOP_TIMEOUT_SEC = 5.0
+
+
+async def stop_scheduler(task: asyncio.Task | None) -> None:
+    """Cancel the game scheduler and wait for it, but never longer than the time limit.
+
+    Not asyncio.wait_for: on a timeout it cancels the task again and waits for it again, with
+    no limit, so a task that ignores the cancel would block the shutdown the same way.
+    """
+    if task is None:  # game_scheduler_enabled=False: nothing was started
+        return
+    task.cancel()
+    done, _ = await asyncio.wait({task}, timeout=SCHEDULER_STOP_TIMEOUT_SEC)
+    if not done:
+        log.warning(f"game scheduler did not stop within {SCHEDULER_STOP_TIMEOUT_SEC:g} s")
+        return
+    with suppress(asyncio.CancelledError):  # the normal end: it stopped on the cancel
+        if error := task.exception():
+            log.error("game scheduler failed", exc_info=error)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Code before `yield` runs once at start-up, code after it once at shutdown."""
     log.info("startup", env=app.state.settings.env)
-    yield
-    await app.state.engine.dispose()  # close this app's pooled database connections
-    await app.state.redis.aclose()  # and its Redis connections
-    log.info("shutdown")
+    scheduler_task = None
+    if app.state.settings.game_scheduler_enabled:
+        scheduler_task = asyncio.create_task(game_service.run_scheduler(app))
+    try:
+        yield
+    finally:
+        await stop_scheduler(scheduler_task)
+        await app.state.engine.dispose()  # close this app's pooled database connections
+        await app.state.redis.aclose()  # and its Redis connections
+        log.info("shutdown")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -68,9 +99,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(health.router)
     api.include_router(auth.router)
     api.include_router(users.router)
+    api.include_router(friends.router)
+    api.include_router(friends.users_router)
     api.include_router(companies.router)
     api.include_router(conversations.router)
     api.include_router(jobs.router)
+    api.include_router(game.router)
     api.include_router(realtime.router)  # POST /api/ws/ticket
     api.include_router(media.router)
     app.include_router(api)

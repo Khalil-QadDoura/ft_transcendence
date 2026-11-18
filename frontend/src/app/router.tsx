@@ -1,4 +1,11 @@
+import { PublicProfile } from "../features/people/PublicProfile";
+import { ProfilePage } from "../features/profile/ProfilePage";
 import { useText } from "../i18n/useText";
+import {
+  ForgotPassword,
+  ResetPassword,
+  AccountSettings,
+} from "../features/account/AccountPages";
 import { LegalPage } from "../features/legal/LegalPage";
 import { Link, type RouteObject } from "react-router-dom";
 import { AuthForm, VerifyEmail } from "../features/auth/AuthScreens";
@@ -6,6 +13,8 @@ import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
+import { JobsPage } from "../features/jobs/JobsPage";
+import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
 function ComingSoon({ title }: { title: string }) {
   const { t } = useText();
@@ -55,10 +64,9 @@ export const routes: RouteObject[] = [
       { index: true, element: <Welcome /> },
       { path: "privacy", element: <LegalPage kind="privacy" /> },
       { path: "terms", element: <LegalPage kind="terms" /> },
+      { path: "jobs", element: <JobsPage /> },
       ...pages([
-        ["jobs", "routes.jobs"],
         ["jobs/:id", "routes.job"],
-        ["users/:id", "routes.person"],
         ["game/rules", "routes.rules"],
         ["status", "routes.status"],
       ]),
@@ -73,24 +81,23 @@ export const routes: RouteObject[] = [
         ],
       },
       { path: "verify-email", element: <VerifyEmail /> },
-      ...pages([
-        ["forgot-password", "routes.forgot"],
-        ["reset-password", "routes.reset"],
-      ]),
+      { path: "forgot-password", element: <ForgotPassword /> },
+      { path: "reset-password", element: <ResetPassword /> },
       {
         element: <RequireSession />,
         children: [
+          { path: "settings", element: <AccountSettings /> },
+          { path: "profile", element: <ProfilePage /> },
+          { path: "users/:id", element: <PublicProfile /> },
+          { path: "videos", element: <VideoResumePage /> },
           ...pages([
-            ["profile", "routes.profile"],
             ["friends", "routes.friends"],
-            ["chat", "routes.chat"],
-            ["chat/:id", "routes.conversation"],
             ["employer/*", "routes.employer"],
             ["game", "routes.game"],
             ["game/rooms/:id", "routes.room"],
-            ["settings", "routes.settings"],
           ]),
-          { path: "videos", element: <VideoResumePage /> },
+          { path: "chat", element: <ConversationsPage /> },
+          { path: "chat/:id", element: <ConversationsPage /> },
         ],
       },
       { path: "*", element: <Missing /> },

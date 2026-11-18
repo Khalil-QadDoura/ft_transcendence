@@ -190,6 +190,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           : copy.yourPeopleYourPossibilitiesPickUpWhereYouLeftOff
       }
     >
+      {!signup && params.get("password") === "updated" && (
+        <p role="status">
+          {copy.yourPasswordWasUpdatedSignInWithYourNewPassword}
+        </p>
+      )}
+      {!signup && params.get("account") === "deleted" && (
+        <p role="status">{copy.yourAccountHasBeenDeactivated}</p>
+      )}
       {params.get("logout") === "local" && (
         <p className="auth-alert" role="alert">
           {copy.youreSignedOutHereButWeCouldntRevokeTheServer}
@@ -252,6 +260,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             )}
           </div>
         ))}
+        {!signup && (
+          <Link
+            className="inline-block min-h-11 py-3 underline"
+            to="/forgot-password"
+          >
+            {copy.forgotPassword}
+          </Link>
+        )}
         {errors.root?.server && (
           <p className="auth-alert" role="alert">
             {fieldMessage(errors.root.server)}

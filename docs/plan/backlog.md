@@ -4,7 +4,7 @@ Nov 4, 2026 · @byul-byul
 
 **Snapshot dated 2026-11-04.** Trello is the live source: https://trello.com/b/E3788fBx/fttranscendence. This file is not updated when cards change; check the board for current status, owners and due dates. How the board works (lists, sprints, labels): [board.md](board.md).
 
-97 cards, grouped by owner. Sprint: S1 Nov 4–10 (list To Do), S2 Nov 11–17, S3 Nov 18–24, S4 Nov 25–28; "Backlog (sprint per due date)" = in Backlog, sprint set by the card's due date; "Tier C" = in Backlog, no due date, starts only if core + tier B are on track on Nov 22. "all", "all BE", "all FE" in "Depends on" mean the card depends on every card in that scope.
+98 cards, grouped by owner. Sprint: S1 Nov 4–10 (list To Do), S2 Nov 11–17, S3 Nov 18–24, S4 Nov 25–28; "Backlog (sprint per due date)" = in Backlog, sprint set by the card's due date; "Tier C" = in Backlog, no due date, starts only if core + tier B are on track on Nov 22. "all", "all BE", "all FE" in "Depends on" mean the card depends on every card in that scope.
 
 ## byul-byul — Product Owner + DevOps (24 cards)
 
@@ -56,7 +56,7 @@ Nov 4, 2026 · @byul-byul
 | TC-01 | Replace template bots with an LLM-driven human-like bot | Backend, M17, P2 | BE-27 | Tier C |
 | TC-02 | Add GDPR data export and deletion with email confirmation (API) | Backend, Security, M19, P2 | BE-04 | Tier C |
 
-## Nader — Backend B (18 cards)
+## Nader — Backend B (19 cards)
 
 | ID | Title | Labels | Depends on | Sprint |
 | --- | --- | --- | --- | --- |
@@ -74,6 +74,7 @@ Nov 4, 2026 · @byul-byul
 | BE-31 | Add /api/health with per-component status | Backend, M14, P2 | BE-01 | S2 |
 | BE-32 | Add a seed script with demo accounts, jobs and videos | Backend, Database, P2 | BE-28 | S4 |
 | BE-33 | Handle game disconnects: seat grace period and peer connection status | Backend, M18, P2 | BE-09 | Backlog (sprint per due date) |
+| BE-35 | Hide database participant ids from game payloads before results | Backend, M7, M8, P1 | BE-27 | S3 |
 | FE-14 | Build the company profile form with logo upload | Frontend, P2 | BE-21, BE-08 | S3 |
 | FE-31 | Build the game lobby: participant count, start now, room countdown | Frontend, M7, M8, P1 | FE-22, BE-27 | S3 |
 | QA-02 | Test multi-user concurrency in chat, game and applications | Backend, Mandatory, P1 | all | S4 |

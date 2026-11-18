@@ -280,6 +280,47 @@ describe("VideoResumePage Component (FE-26)", () => {
     expect(mediaApi.listMyVideos).toHaveBeenCalledTimes(2);
   });
 
+  it("deletes active featured pitch after user confirmation", async () => {
+    vi.mocked(mediaApi.listMyVideos)
+      .mockResolvedValueOnce({ items: mockVideos })
+      .mockResolvedValueOnce({
+        items: [mockVideos[1]],
+      });
+
+    vi.mocked(mediaApi.deleteVideo).mockResolvedValueOnce({
+      id: 1,
+      moderation_status: "approved",
+      lifecycle_status: "deleted",
+    });
+
+    await act(async () => {
+      root.render(<VideoResumePage />);
+    });
+
+    const deleteBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="delete-btn-1"]',
+    );
+    expect(deleteBtn).not.toBeNull();
+
+    await act(async () => {
+      deleteBtn?.click();
+    });
+
+    expect(container.textContent).toContain("Confirm delete?");
+
+    const confirmBtn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-delete-btn-1"]',
+    );
+    expect(confirmBtn).not.toBeNull();
+
+    await act(async () => {
+      confirmBtn?.click();
+    });
+
+    expect(mediaApi.deleteVideo).toHaveBeenCalledWith(1);
+    expect(mediaApi.listMyVideos).toHaveBeenCalledTimes(2);
+  });
+
   it("handles live WebSocket video_moderated event and updates badge", async () => {
     vi.mocked(mediaApi.listMyVideos).mockResolvedValueOnce({
       items: mockVideos,
