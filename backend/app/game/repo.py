@@ -254,3 +254,11 @@ async def save_mark(
         )
     )
     await session.execute(stmt)
+
+
+async def list_marks(session: AsyncSession, room_id: int) -> dict[tuple[int, int], str]:
+    """Every mark sent in the room, keyed by (voter id, target id)."""
+    stmt = select(
+        GameVote.voter_participant_id, GameVote.target_participant_id, GameVote.guess
+    ).where(GameVote.room_id == room_id)
+    return {(voter, target): guess for voter, target, guess in await session.execute(stmt)}

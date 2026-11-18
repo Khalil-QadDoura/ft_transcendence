@@ -16,7 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.game import repo
+from app.game import repo, scoring
 from app.game.constants import (
     BOT_CHAT_TEMPLATES,
     MAX_PARTICIPANTS,
@@ -519,8 +519,26 @@ async def _tick_voting_room(
     human_ids = await repo.list_human_user_ids(session, room.id)
     room.state = "finished"
     room.finished_at = now
+    await _store_scores(session, room.id)
     await session.commit()
-    events.append((human_ids, "game_phase_finished", GameRoomEventOut(room_id=room.id)))
+    events.append(
+        (
+            human_ids,
+            "game_phase_finished",
+            GamePhaseEventOut(room_id=room.id, state="finished", phase_ends_at=None),
+        )
+    )
+
+
+async def _store_scores(session: AsyncSession, room_id: int) -> None:
+    """Score every human on the marks as they stand when voting ends (rules, section 6)."""
+    participants = await repo.list_participants(session, room_id)
+    marks = await repo.list_marks(session, room_id)
+    everyone = [p.id for p in participants]
+    bot_ids = {p.id for p in participants if p.user_id is None}
+    for p in participants:
+        if p.user_id is not None:
+            p.score = scoring.human_score(p.id, everyone, bot_ids, marks)
 
 
 async def tick_all_active_rooms(app: FastAPI) -> None:

@@ -46,9 +46,11 @@ class GameRoomEventOut(BaseModel):
 
 
 class GamePhaseEventOut(BaseModel):
+    """game_started, game_phase_voting and game_phase_finished (no end time once finished)."""
+
     room_id: int
     state: str
-    phase_ends_at: datetime
+    phase_ends_at: datetime | None
 
 
 class GameParticipantEventOut(BaseModel):
