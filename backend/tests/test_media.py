@@ -65,6 +65,8 @@ PASSWORD_HASH = security.hash_password(PASSWORD)
 MP4_START = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2"
 # What a key made by upload-url looks like, for user 1.
 KEY_OF_USER_1 = re.compile(r"users/1/intro/[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}\.mp4")
+# And the key of the copy that confirm keeps of user 1's video.
+VIDEO_KEY_OF_USER_1 = re.compile(r"videos/1/[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}\.mp4")
 
 
 def made_up_mp4(size: int = 2048) -> bytes:
@@ -225,6 +227,12 @@ def new_video(client, account: Account) -> int:
     return response.json()["id"]
 
 
+def saved_key(video_id: int) -> str:
+    """The object_key saved for this video: where its file is kept."""
+    [(object_key,)] = sql("SELECT object_key FROM intro_videos WHERE id = :id", id=video_id)
+    return object_key
+
+
 def moderate(video_id: int, status: str = "approved") -> None:
     """What the moderation worker (BE-29) will do once it has checked the video."""
     sql("UPDATE intro_videos SET moderation_status = :s WHERE id = :id", s=status, id=video_id)
@@ -318,17 +326,19 @@ def test_upload_put_and_confirm_save_a_pending_video_with_its_real_size(client, 
         "lifecycle_status": "loaded",
     }
     assert sql(
-        "SELECT user_id, object_key, duration_sec, size_bytes, content_type, moderation_status,"
+        "SELECT user_id, duration_sec, size_bytes, content_type, moderation_status,"
         " lifecycle_status, video_rating FROM intro_videos"
-    ) == [(1, object_key, 12, 4096, "video/mp4", "pending", "loaded", "B")]
+    ) == [(1, 12, 4096, "video/mp4", "pending", "loaded", "B")]
+    # The video is the copy that confirm made under videos/, not the upload.
+    assert VIDEO_KEY_OF_USER_1.fullmatch(saved_key(1))
 
 
 def test_each_confirm_queues_one_moderation_task(client, ana):
     first, second = upload(client, ana), upload(client, ana)
     assert confirm(client, ana, first).status_code == 201
-    assert take_queued_tasks() == [(MODERATION_TASK, [1, first])]
+    assert take_queued_tasks() == [(MODERATION_TASK, [1, saved_key(1)])]
     assert confirm(client, ana, second).status_code == 201
-    assert take_queued_tasks() == [(MODERATION_TASK, [2, second])]
+    assert take_queued_tasks() == [(MODERATION_TASK, [2, saved_key(2)])]
 
 
 def test_confirm_refuses_another_users_key(client, ana, ben):
@@ -351,6 +361,7 @@ def test_confirm_refuses_another_users_key(client, ana, ben):
         "users/12/intro/{uuid}.mp4",  # starts like user 1's prefix, but is user 12's
         "USERS/1/intro/{uuid}.mp4",
         "avatars/1/{uuid}.mp4",
+        "videos/1/{uuid}.mp4",  # where a confirmed video is kept (mine shows this key)
     ],
 )
 def test_confirm_refuses_keys_that_upload_url_never_makes(client, ana, object_key):
@@ -434,6 +445,12 @@ class StorageForTwo:
     def __init__(self):
         self.both_here = threading.Barrier(2, timeout=10)
 
+    def copy(self, object_key: str, new_key: str, content_type: str) -> bool:
+        return True
+
+    def remove(self, object_key: str) -> None:
+        pass
+
     def size(self, object_key: str) -> int:
         self.both_here.wait()
         return 2048
@@ -473,11 +490,13 @@ def test_two_confirms_at_the_same_time_cannot_make_a_fourth_video(client, ana, m
 def test_the_same_file_cannot_be_confirmed_twice_even_after_a_delete(client, ana):
     object_key = upload(client, ana)
     video_id = confirm(client, ana, object_key).json()["id"]
-    assert confirm(client, ana, object_key).json() == error(409, "This video is already confirmed")
+    # confirm deleted the upload: there is nothing left to confirm at this key.
+    no_file = error(400, "No uploaded file at this object_key: PUT the video to put_url first")
+    assert confirm(client, ana, object_key).json() == no_file
     action(client, ana, video_id, "delete")
-    assert confirm(client, ana, object_key).status_code == 409
+    assert confirm(client, ana, object_key).json() == no_file
     assert sql("SELECT count(*) FROM intro_videos") == [(1,)]
-    assert take_queued_tasks() == [(MODERATION_TASK, [video_id, object_key])]
+    assert take_queued_tasks() == [(MODERATION_TASK, [video_id, saved_key(video_id)])]
 
 
 def test_a_refused_confirm_queues_nothing(client, ana, ben):
@@ -589,9 +608,9 @@ def test_delete_is_a_soft_delete(client, ana):
     assert response.status_code == 200
     expected = {"id": video_id, "moderation_status": "approved", "lifecycle_status": "deleted"}
     assert response.json() == expected
-    # The row and the file stay; the video is only marked "deleted".
+    # The row and the file (the copy confirm made) stay; the video is only marked "deleted".
     assert lifecycles(ana.id) == {video_id: "deleted"}
-    assert minio_client().stat_object(TEST_BUCKET, object_key).size == 2048
+    assert minio_client().stat_object(TEST_BUCKET, saved_key(video_id)).size == 2048
     # From now on it is gone for me: not in my list, and every action is 404.
     assert client.get("/api/media/intro-video/mine", headers=ana.headers).json()["items"] == []
     for name in ("post", "unpost", "delete"):
@@ -848,7 +867,7 @@ def test_a_feed_item_has_its_author_and_a_link_that_downloads_the_file(client, a
         "author_name": "Ana Silva",
         "author_position": "Barista",
     }
-    assert signed_url.startswith(f"{EXTERNAL}/{TEST_BUCKET}/users/{ana.id}/intro/")
+    assert signed_url.startswith(f"{EXTERNAL}/{TEST_BUCKET}/videos/{ana.id}/")
     download = httpx2.get(signed_url)
     assert (download.status_code, download.content) == (200, data)
 
