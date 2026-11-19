@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # make restore BACKUP=<timestamp|latest> (INF-15): puts one backup run back, the database
-# and the bucket of the same moment. Run from the host; the restore itself runs in the
-# backup service, which alone mounts the backups volume. Order:
-#   1. db, minio (with minio-init, which creates the bucket on a new volume) and backup are
-#      started; the api is not, so its migrations never create empty tables first;
+# and the bucket of the same moment. Run from the host; the restore itself runs in one-off
+# containers of the backup service (`compose run --no-deps`), the only service that mounts
+# the backups volume. Order:
+#   1. db and minio (with minio-init, which creates the bucket on a new volume) are started;
+#      the api is not, so its migrations never create empty tables first. The backup
+#      service is stopped: it waits for a healthy api to start, and its loop must take no
+#      catch-up or scheduled copy of the state being replaced;
 #   2. the copy is chosen and shown; the question is asked unless RESTORE_YES=1;
 #   3. api and worker (the writers) are stopped;
 #   4. pg_restore --clean --if-exists --no-owner into POSTGRES_DB, in one transaction;
@@ -38,12 +41,18 @@ if [ -z "${BACKUP:-}" ]; then
 fi
 
 start=$(date +%s)
-echo "restore: starting db, minio and the backup service (not the api)"
-docker compose up -d --build --wait --wait-timeout 300 db minio backup
+echo "restore: starting db and minio (not the api); stopping the backup loop"
+docker compose up -d --wait --wait-timeout 300 db minio
+# A one-shot: `up --wait` fails on a listed service that exits, even with 0.
+docker compose run --rm --no-deps minio-init
+docker compose stop backup
+docker compose build backup
+# backup.sh is the image's entrypoint; --no-deps keeps the api down.
+in_backup() { docker compose run --rm --no-deps -T backup "$@"; }
 
-ts="$(docker compose exec -T backup backup.sh resolve "$BACKUP")"
+ts="$(in_backup resolve "$BACKUP")"
 echo "restore: chosen copy $ts (UTC):"
-docker compose exec -T backup backup.sh list | grep "^$ts " || true
+in_backup list | grep "^$ts " || true
 
 project="${COMPOSE_PROJECT_NAME:-the compose project of docker-compose.yml}"
 cat <<EOF
@@ -69,9 +78,9 @@ echo "restore: stopping the writers (api, worker)"
 docker compose --profile '*' stop api worker
 
 t=$(date +%s)
-docker compose exec -T backup backup.sh restore-db "$ts"
+in_backup restore-db "$ts"
 echo "restore: database in $(($(date +%s) - t))s"
 t=$(date +%s)
-docker compose exec -T backup backup.sh restore-files "$ts"
+in_backup restore-files "$ts"
 echo "restore: bucket in $(($(date +%s) - t))s"
 echo "restore: copy $ts restored in $(($(date +%s) - start))s; starting the stack with make"
