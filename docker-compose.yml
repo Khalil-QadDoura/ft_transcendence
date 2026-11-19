@@ -271,6 +271,46 @@ services:
     restart: "no"
     logging: *logging
 
+  # Daily backups (INF-14, module M14): a pg_dump of POSTGRES_DB and a full mc mirror of
+  # the bucket, once a day at BACKUP_TIME in Asia/Dubai, none at start (a restart would add
+  # a copy), the newest BACKUP_KEEP copies of each kept on the `backups` volume. `make backup`
+  # runs one now, `make restore BACKUP=<timestamp|latest>` puts one back (INF-15); see
+  # infra/backup/backup.sh and docs/disaster-recovery.md. A loop, not cron: no daemon,
+  # non-root (uid 10002). Credentials from .env as for the other services until INF-13.
+  # The image derives from the db image, which declares VOLUME /var/lib/postgresql/data; a
+  # tmpfs takes that place, so no anonymous volume is left behind (as for redis-test).
+  # No port and no proxy route: the copies are reachable only from inside this container.
+  # Health: the loop touches /tmp/heartbeat every minute; healthy while it is younger than
+  # 3 minutes (a hung loop turns unhealthy).
+  backup:
+    build:
+      context: ./infra/backup
+    environment:
+      TZ: Asia/Dubai
+      BACKUP_TIME: ${BACKUP_TIME:-03:00}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    volumes:
+      - backups:/backups
+    tmpfs:
+      - /var/lib/postgresql/data
+    depends_on:
+      db:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/heartbeat) )) -lt 180"]
+    restart: unless-stopped
+    logging: *logging
+
   # Catches every outgoing email. SMTP on mailpit:1025, web inbox at /mail via the proxy.
   # Health: the binary's own `readyz` subcommand (also the image's built-in check).
   mailpit:
@@ -446,3 +486,5 @@ volumes:
   minio-data:
   prometheus-data:
   grafana-data:
+  # Backup copies (INF-14); only the backup service mounts it. `make fclean` removes it too.
+  backups:

@@ -278,6 +278,10 @@ jobs:
       # datasource healthy, both provisioned dashboards with data in every panel, deletion
       # refused, Grafana Live over WebSocket (INF-09).
       - run: make grafana-check
+      # Backups: one run now, the dump valid with every app table, the files copy with the
+      # bucket's object count and checksum, retention 7 on a test directory, the backups
+      # volume neither published nor served by the proxy (INF-14).
+      - run: make backup-check
       - name: Service logs
         if: failure()
         run: |
