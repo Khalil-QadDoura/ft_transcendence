@@ -4,7 +4,8 @@ Backups of the app database and of the file bucket, and how to put them back (IN
 
 ## TL;DR
 
-- **What:** every day at 03:00 Asia/Dubai, the `backup` service writes a `pg_dump -Fc` of the app database (`POSTGRES_DB`) and a full copy of the bucket `files` (videos, avatars, logos) into the named volume `backups`. Each copy is verified before it is kept. The 7 newest copies of each are kept.
+- **What:** every day at 03:00 Asia/Dubai, the `backup` service writes a `pg_dump -Fc` of the app database (`POSTGRES_DB`) and a full copy of the bucket `files` (videos, avatars, logos) into the named volume `backups`. Each copy is verified before it is kept. After each run, copies older than 7 days are deleted, then at most the 7 newest of each kind stay (Privacy Policy section 6: backups are kept for at most 7 days).
+- **On start:** when the newest database copy is 24 hours old or older, or there is none, the service takes one backup at once, then keeps its daily time. A restart within 24 hours of the last copy takes none.
 - **Now:** `make backup` writes one at once and prints its status; `make backup-list` lists the copies.
 - **Restore:** `make restore BACKUP=latest` (or a timestamp from `make backup-list`). It asks first; `RESTORE_YES=1` skips the question.
 - **Check:** `make backup-check` (also in CI).
@@ -42,8 +43,9 @@ Backups of the app database and of the file bucket, and how to put them back (IN
 ## How it runs
 
 - **Service:** `backup` in `docker-compose.yml`, built from `infra/backup/Dockerfile`. The final stage is the pinned `db` image (`imresamu/postgis:15-3.4@sha256:44d4…`), so `pg_dump` and `pg_restore` match the server's major version (15). `mc` is copied from the pinned `minio` image. No new external image; `make images-check` reads both `FROM` lines. The service runs as its own non-root user (uid 10002) and publishes no port. Only this service mounts the `backups` volume.
-- **Schedule:** a `bash` loop, not cron. It runs one backup a day at `BACKUP_TIME` (`HH:MM`, default `03:00`), read in the container's time zone, `TZ=Asia/Dubai`. The card's `BACKUP_CRON` became `BACKUP_TIME`: there is no cron daemon in the container to read a cron line. No backup is taken when the container starts. When the machine sleeps through `BACKUP_TIME`, the loop runs the backup as soon as it wakes. When the stack is down at that time, that day has no backup.
-- **Settings:** `BACKUP_TIME` and `BACKUP_KEEP` in `.env` (`.env.example`, Backups section). An existing `.env` gets both on the next `make` (`init-env.sh` adds missing keys).
+- **Schedule:** a `bash` loop, not cron. It runs one backup a day at `BACKUP_TIME` (`HH:MM`, default `03:00`), read in the container's time zone, `TZ=Asia/Dubai`. The card's `BACKUP_CRON` became `BACKUP_TIME`: there is no cron daemon in the container to read a cron line. When the machine sleeps through `BACKUP_TIME`, the loop runs the backup as soon as it wakes.
+- **Catch-up on start:** when the service starts, it looks at the newest complete database copy, by the timestamp in its name. When that copy is 24 hours old or older, or there is none, it runs one backup at once (log `catch-up: due: …; one backup now`, then `start (catch-up)`; `status` shows `last_run=… (catch-up)`), then waits for the next `BACKUP_TIME` as usual. Otherwise it logs `catch-up: not due: …` and takes none, so restarts within 24 hours of the last copy add no copy. A stack that was down at `BACKUP_TIME` thus gets its copy at the next start. Compose starts the service only once the `api` is healthy, so its migrations have run before a dump; a new stack gets its first copy right after the first `make`.
+- **Settings:** `BACKUP_TIME`, `BACKUP_KEEP` and `BACKUP_MAX_AGE_DAYS` in `.env` (`.env.example`, Backups section). An existing `.env` gets missing ones on the next `make` (`init-env.sh` adds missing keys).
 - **One run** (`backup.sh run`, the same for the schedule and `make backup`):
   1. Takes a lock, so a `make backup` during the scheduled run (or a restore) waits for it.
   2. Database: `pg_dump --format=custom` into `db-<ts>.dump.partial`, then verified:
@@ -56,12 +58,18 @@ Backups of the app database and of the file bucket, and how to put them back (IN
   4. Only a verified copy is renamed to its final name. A copy that fails stays as `.partial`, the run reports `result=FAIL`, and `make backup` exits 1.
   5. Retention (below).
   6. Writes `status`.
-- **Retention:** after each run, the newest `BACKUP_KEEP` (7) complete copies are kept, separately for database dumps and for bucket copies, and older ones are deleted. Copies are ordered by the timestamp in the name, not by file dates. A `.partial` older than a day is a leftover of an interrupted run and is deleted; a younger one may belong to a run in progress and stays.
-  - With one run a day, 7 copies cover one week.
-  - Retention counts copies, not days. On days without a backup (stack down), the oldest copy is older than 7 days. Extra `make backup` runs push old copies out sooner.
+- **Retention:** after each run, by age, then by count, separately for database dumps and for bucket copies:
+  1. complete copies older than `BACKUP_MAX_AGE_DAYS` (7) days are deleted;
+  2. of the rest, at most the newest `BACKUP_KEEP` (7) stay.
+
+  Age and order come from the UTC timestamp in the name, not from file dates. A `.partial` older than a day is a leftover of an interrupted run and is deleted; a younger one may belong to a run in progress and stays.
+  - Why both: the Privacy Policy (section 6) says backups are kept for at most 7 days. The count alone kept older copies after days without a backup (stack down); the age rule deletes them. The count bounds the disk space when extra `make backup` runs add copies within a week; those push old copies out sooner.
+  - Retention runs only after a run. A copy older than 7 days stays until the next run deletes it: the next `BACKUP_TIME`, `make backup`, or the catch-up at the next start, which is due whenever the newest copy is older than 24 hours.
+  - When every run fails for more than 7 days, the age rule leaves no copy at all. `make backup` and `status` show a failed run (`result=FAIL`); check them after a day without a new copy.
+- **Lifetime:** the copies exist only while the `backups` volume exists. `docker compose down -v` or `make fclean` deletes the volume, and every copy with it (see Same-host limitation).
 - **Disk space:** 7 database dumps plus 7 full copies of the bucket, so about 7 times the size of the bucket. Each bucket copy is complete, with no deduplication between days. On 2026-11-19 a copy of the test stack was 83 KB of dump and 878 KB of files.
 - **Health:** the loop touches `/tmp/heartbeat` every minute, also while it waits. The health check wants it younger than 3 minutes, so a stuck loop turns the container unhealthy. Whether the last backup succeeded is in `/backups/status`, not in the health state. `make backup` prints it, with the next scheduled run.
-- **Logs:** start, end, file names, sizes, object counts, retention removals. Never a credential or a row of data.
+- **Logs:** the catch-up decision at start, run start and end, file names, sizes, object counts, retention removals (with the reason: older than 7 days, or beyond the newest 7). Never a credential or a row of data.
 
 ### Secrets
 
@@ -88,13 +96,12 @@ Until then, the secrets in `.env` are what a restore needs.
 The `backups` volume is on the same Docker host and disk as `db-data` and `minio-data`. It protects against:
 - a deleted or corrupted volume;
 - a migration that broke data;
-- a mistaken delete in the app;
-- `docker compose down -v`.
+- a mistaken delete in the app.
 
-It does not protect against:
+The copies exist only while the `backups` volume exists. They do not survive:
 - losing or wiping the machine;
 - a broken Docker Desktop disk image;
-- `make fclean`, which removes the `backups` volume too.
+- `make fclean` or `docker compose down -v`, which remove the `backups` volume with the others.
 
 The production step is an off-machine copy: after each run, copy the newest pair (or the whole volume) to other storage. By hand:
 
@@ -110,7 +117,7 @@ The folder holds personal data (Privacy Policy section 6): keep it encrypted and
 
 What it does (`infra/backup/restore.sh`, then `make`):
 
-1. Starts only `db`, `minio` (with `minio-init`, which creates the bucket and its policy on a new volume) and `backup`. The api is not started. On a new database volume, the api's migrations would otherwise create empty tables before the restore.
+1. Starts only `db` and `minio`, then runs `minio-init`, which creates the bucket and its policy on a new volume. The api is not started. On a new database volume, the api's migrations would otherwise create empty tables before the restore. The `backup` service is stopped: it starts only after a healthy api, and its loop must not take a catch-up or scheduled copy of the state being replaced. Every step below that reads the copies runs in a one-off container of the backup service (`docker compose run --rm --no-deps backup …`), which mounts the same `backups` volume and leaves the api down.
 2. Resolves `BACKUP` to a complete pair and shows it, then shows what will be replaced and asks for `yes`. `RESTORE_YES=1` skips the question. Without a terminal and without `RESTORE_YES=1`, it stops before changing anything.
 3. Stops `api` and `worker`, the services that write.
 4. Database: `pg_restore --clean --if-exists --no-owner --single-transaction` into `POSTGRES_DB`:
@@ -130,11 +137,13 @@ When a step fails, the script stops there, prints why and leaves the api stopped
 **Restore by hand** (the same steps, for one part only), from the repository root:
 
 ```bash
-docker compose up -d --wait db minio backup
-docker compose exec -T backup backup.sh list
+docker compose up -d --wait db minio
+docker compose run --rm --no-deps minio-init
+docker compose stop backup
+docker compose run --rm --no-deps -T backup list
 docker compose --profile '*' stop api worker
-docker compose exec -T backup backup.sh restore-db 20261119T091324Z      # database only
-docker compose exec -T backup backup.sh restore-files 20261119T091324Z   # bucket only
+docker compose run --rm --no-deps -T backup restore-db 20261119T091324Z      # database only
+docker compose run --rm --no-deps -T backup restore-files 20261119T091324Z   # bucket only
 make
 ```
 
@@ -158,12 +167,20 @@ Then log in with an account that existed at the backup time: the profile shows i
 
 `make backup-check` (`infra/backup/smoke-test.sh`, in the CI `stack` job) runs against the running stack and prints one `ok` / `FAIL` line per check:
 
-1. The `backup` container is healthy, runs as a non-root user, and has `BACKUP_KEEP` = 7.
-2. `make backup` exits 0 with `result=ok`, and its copy is the newest complete one. On an empty bucket (CI), one probe object is uploaded first and removed at the end.
-3. The newest dump passes the same verification as a run (every app table listed, read to the end).
-4. The newest files copy has as many files as the bucket has objects. One object, the first by name, has the same sha256 in the copy and in the bucket.
-5. Retention on a test directory inside the container. It gets 9 fake old copies of each kind, a `.partial` of two days ago and a fresh `.partial`. Afterwards exactly 7 copies of each kind must remain (the 7 newest), the old `.partial` must be gone and the fresh one kept. The expected 7 is fixed in the check, so a service started with another `BACKUP_KEEP` fails it.
-6. The `backups` volume:
+1. The `backup` container is healthy, runs as a non-root user, and has `BACKUP_KEEP` = 7 and `BACKUP_MAX_AGE_DAYS` = 7.
+2. Catch-up at start:
+   - since the container started, its log has the decision (`catch-up: due` or `catch-up: not due`); when due, also the `start (catch-up)` line of the backup it ran;
+   - the decision on a test directory: no copy → due; a newest copy of 2 days ago → due; a newest copy of 1 hour ago → not due.
+3. `make backup` exits 0 with `result=ok`, and its copy is the newest complete one. On an empty bucket (CI), one probe object is uploaded first and removed at the end.
+4. The newest dump passes the same verification as a run (every app table listed, read to the end).
+5. The newest files copy has as many files as the bucket has objects. One object, the first by name, has the same sha256 in the copy and in the bucket.
+6. Retention on test directories inside the container, for database and files copies each:
+   - fake copies 1, 3, 6, 8 and 12 days old plus 9 from the last 90 minutes: only the 7 newest remain, none older than 7 days;
+   - the five aged copies alone: those of 1, 3 and 6 days remain (the age rule on its own, below the count);
+   - a `.partial` of two days ago is gone, a fresh `.partial` stays.
+
+   The expected result comes from the decided 7 days and 7 copies, fixed in the check, so a service started with another `BACKUP_KEEP` or `BACKUP_MAX_AGE_DAYS` fails it.
+7. The `backups` volume:
    - the container publishes no host port;
    - no other container mounts the volume;
    - the proxy serves no backup content at `/backups/…`, `/db/…` or `/files/../backups/…` (no `PGDMP` dump, no `status`).
@@ -195,3 +212,24 @@ Negative tests, the same day:
 - `BACKUP_KEEP=3`: retention on the volume left 3 copies of each. `make backup-check` failed on `BACKUP_KEEP = 3, decided: 7` and on retention: `9 -> 3, expected the newest 7`.
 - A copy of the newest dump with its last 100 bytes cut: `pg_restore --list` alone exit 0. `backup.sh verify-db` failed with `the archive does not read to the end: … could not read from input file: end of file`.
 - Both reverted: `BACKUP_KEEP` back to 7; the truncated copy, in the container's `/tmp`, deleted.
+
+### Follow-up test: retention by age, catch-up on start
+
+**2026-11-19, Asia/Dubai, byul-byul with Claude Code.** PO decisions of the same day: copies older than 7 days deleted after each run, then at most 7 kept; one backup at start when the newest database copy is 24 hours old or more, or missing. Throwaway compose project `inf14test` on top of `034b0c2`, from a separate worktree; the main stack was stopped, not changed.
+
+| Step | Time | Result |
+| --- | --- | --- |
+| First `make` on new volumes | 14:09 | The api was healthy at 10:09:17.8Z, the backup service started at 10:09:18.0Z. Log: `catch-up: due: no database copy yet; one backup now`, `start (catch-up), copy 20261119T100918Z`, 18 app tables, `done (ok)`. |
+| Restart within 24 hours | 14:20:04 | `catch-up: not due: newest database copy db-20261119T100918Z.dump is 0 h old (under 24 h)`; no copy added. |
+| Copies shifted 2 days back | 14:20:21 | Both copies renamed to timestamps 48 hours earlier, then `docker compose restart backup`: `catch-up: due: newest database copy db-20261117T102010Z.dump is 48 h old (24 h or more); one backup now`, `start (catch-up), copy 20261119T102021Z`, `done (ok)`. `status`: `last_run=2026-11-19 14:20:21 +0400 (catch-up)`, `result=ok`, 3 copies of each. |
+| Restart again | 14:20:31 | `catch-up: not due: … is 0 h old (under 24 h)`. Still 3 copies; `status` unchanged. |
+| `make backup-check` | 14:21 | All checks passed. Retention: 14 copies (1, 3, 6, 8 and 12 days old, 9 from the last 90 minutes) → the 7 newest, all from the last 70 minutes; the five aged copies alone → those of 1, 3 and 6 days. The log names the reason of each removal: `(older than 7 days)` or `(beyond the newest 7)`. |
+| Restore after loss | 14:22 | A marker user and a marker object, then `make backup` (copy `20261119T102206Z`), then a second user. The `db`, `minio` and `minio-init` containers and the `db-data` and `minio-data` volumes removed. `make restore BACKUP=latest RESTORE_YES=1`: exit 0 in 21 s with `make`; `database done: 18 app tables, 1 users`, `bucket done: 1 objects`. Only the marker user is back, the marker object reads the same. The database restore ended at 10:22:43Z, the api started at 10:22:49Z (no migration), the backup service at 10:22:55Z (`catch-up: not due`). No one-off container left. |
+
+Negative runs, the same day:
+- `BACKUP_MAX_AGE_DAYS=30`, through the shell environment: `make backup-check` failed on `BACKUP_MAX_AGE_DAYS = 30, decided: 7` and on the aged copies alone: `left 12d, 8d, 6d, 3d, 1d, expected 6d, 3d, 1d`. Reverted to 7.
+- Catch-up removed from the loop, with the copies again 2 days old: no backup at start, and `make backup-check` failed on `no catch-up decision in the log since the start`. Reverted; the check passed again.
+
+Also green on `inf14test`: `make test` (ruff, 537 backend tests, 215 frontend tests), `files-check`, `mail-check`, `metrics-check`, `images-check` (21 images); `legal:check` after the Privacy Policy change.
+
+Found and fixed on the way: before this follow-up, a backup run by the loop kept the lock file open in the loop's own shell, so the next `make backup` waited for the lock for up to an hour. The loop ran a backup only at `BACKUP_TIME`, so the restore test above did not meet it; the catch-up at start did. The loop now runs each backup in a subshell, which closes the lock when the run ends. After the 14:20:21 catch-up, the loop held no lock.

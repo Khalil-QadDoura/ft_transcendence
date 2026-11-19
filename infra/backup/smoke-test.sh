@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # Check of the backups (INF-14), against the running stack:
-# - the backup service runs, is healthy (its heartbeat), and keeps BACKUP_KEEP = 7 copies;
+# - the backup service runs, is healthy (its heartbeat), and has BACKUP_KEEP = 7 and
+#   BACKUP_MAX_AGE_DAYS = 7;
+# - catch-up at start: the service logged its decision since it started (and ran the backup
+#   when it was due), and the decision on a test directory: no copy or a newest copy of
+#   2 days ago -> due, a newest copy of 1 hour ago -> not due;
 # - `make backup` writes a copy; result=ok in its status;
 # - the newest dump reads to the end (pg_restore) and lists every app table of the database;
 # - the newest files copy has as many files as the bucket has objects, and one object (the
 #   first by name) has the same sha256 in the copy and in the bucket;
-# - retention on a test directory inside the container: 7 + 2 older fake copies of each
-#   kind, a .partial of two days ago and a fresh one -> exactly the 7 newest of each remain,
-#   the old .partial is gone, the fresh one stays (a run may be writing it); the result is
-#   compared with the decided 7, not with the service's own BACKUP_KEEP;
+# - retention on a test directory inside the container, each kind (db, files) on its own:
+#   fake copies 1, 3, 6, 8 and 12 days old plus 9 from the last 90 minutes -> only the 7
+#   newest remain, none older than 7 days; the five aged copies alone -> those of 1, 3 and
+#   6 days remain (age rule alone); a .partial of two days ago is gone, a fresh one stays (a
+#   run may be writing it). The result is compared with the decided 7 days and 7 copies,
+#   not with the service's own settings;
 # - the backups volume: no host port on the backup container, no other container mounts it,
 #   and the proxy does not serve its files.
 # When the bucket is empty (CI), one probe object is uploaded first, so the copy and the
@@ -20,8 +26,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 CA="$ROOT/infra/proxy/certs/server.crt"
-# The retention decided by the PO (one week of daily copies; Privacy Policy section 6).
+# The retention decided by the PO: at most 7 copies of each kind, none older than 7 days
+# (Privacy Policy section 6: backups are kept for at most 7 days).
 DECIDED_KEEP=7
+DECIDED_MAX_AGE_DAYS=7
 
 for service in proxy db minio backup; do
     if [ -z "$(docker compose ps -q --status running "$service")" ]; then
@@ -47,7 +55,7 @@ cleanup() {
     if [ -n "$probe" ]; then
         in_backup backup.sh mc rm --quiet "store/$bucket/$probe" >/dev/null 2>&1 || true
     fi
-    in_backup rm -rf /tmp/retention-check >/dev/null 2>&1 || true
+    in_backup rm -rf /tmp/retention-check /tmp/catch-up-check >/dev/null 2>&1 || true
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -67,6 +75,12 @@ if [ "$keep" = "$DECIDED_KEEP" ]; then
 else
     fail "BACKUP_KEEP = ${keep:-unset}, decided: $DECIDED_KEEP"
 fi
+max_age="$(in_backup printenv BACKUP_MAX_AGE_DAYS || true)"
+if [ "$max_age" = "$DECIDED_MAX_AGE_DAYS" ]; then
+    pass "BACKUP_MAX_AGE_DAYS = $max_age (decided: $DECIDED_MAX_AGE_DAYS)"
+else
+    fail "BACKUP_MAX_AGE_DAYS = ${max_age:-unset}, decided: $DECIDED_MAX_AGE_DAYS"
+fi
 pass "BACKUP_TIME = $(in_backup printenv BACKUP_TIME || true) in TZ $(in_backup printenv TZ || true)"
 user="$(docker inspect -f '{{.Config.User}}' "$cid")"
 if [ -n "$user" ] && [ "${user%%:*}" != 0 ] && [ "${user%%:*}" != root ]; then
@@ -74,6 +88,54 @@ if [ -n "$user" ] && [ "${user%%:*}" != 0 ] && [ "${user%%:*}" != root ]; then
 else
     fail "runs as user '${user:-root}', expected a non-root user"
 fi
+
+echo "Catch-up at start:"
+started="$(docker inspect -f '{{.State.StartedAt}}' "$cid")"
+docker logs --since "$started" "$cid" > "$work/start.log" 2>&1 || true
+decision="$(grep -E ' backup: catch-up: (due|not due):' "$work/start.log" | sed -n 1p || true)"
+decision="${decision#* backup: catch-up: }"
+case "$decision" in
+    due:*)
+        caught_up="$(grep -E ' backup: start \(catch-up\), copy ' "$work/start.log" | sed -n 1p || true)"
+        if [ -n "$caught_up" ]; then
+            pass "since the start (${started%.*}Z): ${decision%%; one backup now}; ran ${caught_up#* backup: }"
+        else
+            fail "since the start (${started%.*}Z): $decision, but no 'start (catch-up)' line in the log"
+        fi
+        ;;
+    "not due:"*) pass "since the start (${started%.*}Z): $decision, no backup at start" ;;
+    *) fail "no catch-up decision in the log since the start (${started%.*}Z); expected 'catch-up: due' or 'catch-up: not due'" ;;
+esac
+# The decision on a test directory: none, then a newest copy of 2 days ago, then one of 1 hour ago.
+catch_up_case() {
+    in_backup bash -c '
+        set -e
+        root=/tmp/catch-up-check
+        now=$(date +%s)
+        for age in "$@"; do
+            ts="$(date -u -d "@$((now - age))" +%Y%m%dT%H%M%SZ)"
+            echo fake > "$root/db/db-$ts.dump"
+        done
+        backup.sh catch-up-check "$root"
+    ' sh "$@"
+}
+in_backup bash -c 'rm -rf /tmp/catch-up-check && mkdir -p /tmp/catch-up-check/db /tmp/catch-up-check/files'
+for case_ in "none:due" "172800:due" "3600:not due"; do
+    ages="${case_%%:*}"
+    want="${case_#*:}"
+    if [ "$ages" = none ]; then
+        label="no database copy"
+        got="$(catch_up_case || true)"
+    else
+        label="newest database copy $((ages / 3600)) h old"
+        got="$(catch_up_case "$ages" || true)"
+    fi
+    if [ "${got%%:*}" = "$want" ]; then
+        pass "test directory, $label: $got"
+    else
+        fail "test directory, $label: ${got:-no answer}, expected $want"
+    fi
+done
 
 objects="$(in_backup backup.sh mc ls --recursive "store/$bucket" | wc -l | tr -d ' ')"
 if [ "$objects" = 0 ]; then
@@ -133,42 +195,72 @@ if [ -n "$latest" ]; then
     fi
 fi
 
-echo "Retention (test directory /tmp/retention-check in the container):"
-fakes=$((DECIDED_KEEP + 2))
-# Fake copies dated 2000-01-01 .. 2000-01-09, an old and a fresh .partial of each kind.
+echo "Retention (test directories /tmp/retention-check/a and b in the container):"
+# a: fake copies 1, 3, 6, 8 and 12 days old plus 9 from the last 90 minutes (every 10
+#    minutes), an old and a fresh .partial; b: the five aged copies alone. The same for db
+#    and files. Prints "aged <days> <ts>" / "fresh <n> <ts>" for the comparison below.
 in_backup bash -c '
     set -e
-    root=/tmp/retention-check
-    rm -rf "$root"
-    mkdir -p "$root/db" "$root/files"
-    for i in $(seq 1 '"$fakes"'); do
-        ts="200001$(printf %02d "$i")T000000Z"
-        echo fake > "$root/db/db-$ts.dump"
-        mkdir "$root/files/files-$ts"
-        echo fake > "$root/files/files-$ts/object.txt"
+    now=$(date +%s)
+    rm -rf /tmp/retention-check
+    for set_ in a b; do mkdir -p "/tmp/retention-check/$set_/db" "/tmp/retention-check/$set_/files"; done
+    copy() {
+        echo fake > "$1/db/db-$2.dump"
+        mkdir "$1/files/files-$2"
+        echo fake > "$1/files/files-$2/object.txt"
+    }
+    for days in 1 3 6 8 12; do
+        ts="$(date -u -d "@$((now - days * 86400))" +%Y%m%dT%H%M%SZ)"
+        copy /tmp/retention-check/a "$ts"
+        copy /tmp/retention-check/b "$ts"
+        echo "aged $days $ts"
     done
+    for n in 1 2 3 4 5 6 7 8 9; do
+        ts="$(date -u -d "@$((now - n * 600))" +%Y%m%dT%H%M%SZ)"
+        copy /tmp/retention-check/a "$ts"
+        echo "fresh $n $ts"
+    done
+    root=/tmp/retention-check/a
     echo fake > "$root/db/db-19990101T000000Z.dump.partial"
     mkdir "$root/files/files-19990101T000000Z.partial"
     touch -d "2 days ago" "$root/db/db-19990101T000000Z.dump.partial" "$root/files/files-19990101T000000Z.partial"
     echo fake > "$root/db/db-20991231T000000Z.dump.partial"
     mkdir "$root/files/files-20991231T000000Z.partial"
-'
-in_backup backup.sh retention /tmp/retention-check | sed 's/^/        /'
-listing="$(in_backup sh -c 'cd /tmp/retention-check && ls -1 db files')"
-db_left="$(printf '%s\n' "$listing" | grep -Ec '^db-[0-9]{8}T[0-9]{6}Z\.dump$' || true)"
-files_left="$(printf '%s\n' "$listing" | grep -Ec '^files-[0-9]{8}T[0-9]{6}Z$' || true)"
-oldest_kept="$(printf '%s\n' "$listing" | grep -E '^db-[0-9]{8}T[0-9]{6}Z\.dump$' | sort | sed -n 1p)"
-expected_oldest="db-200001$(printf %02d $((fakes - DECIDED_KEEP + 1)))T000000Z.dump"
-if [ "$db_left" = "$DECIDED_KEEP" ] && [ "$oldest_kept" = "$expected_oldest" ]; then
-    pass "database copies: $fakes -> $db_left, the newest kept (oldest left $oldest_kept)"
-else
-    fail "database copies: $fakes -> $db_left (oldest left ${oldest_kept:-none}), expected the newest $DECIDED_KEEP"
-fi
-if [ "$files_left" = "$DECIDED_KEEP" ]; then
-    pass "files copies: $fakes -> $files_left"
-else
-    fail "files copies: $fakes -> $files_left, expected $DECIDED_KEEP"
-fi
+' > "$work/fakes.txt"
+for set_ in a b; do
+    in_backup backup.sh retention "/tmp/retention-check/$set_" | sed 's/^/        /'
+done
+# Expected, from the decided values: a keeps the newest DECIDED_KEEP of the copies at most
+# DECIDED_MAX_AGE_DAYS old; b keeps the aged copies at most DECIDED_MAX_AGE_DAYS old.
+expect_a="$(awk -v max="$DECIDED_MAX_AGE_DAYS" '$1 == "fresh" || ($1 == "aged" && $2 <= max) { print $3 }' "$work/fakes.txt" | sort -r | sed -n "1,${DECIDED_KEEP}p" | sort)"
+expect_b="$(awk -v max="$DECIDED_MAX_AGE_DAYS" '$1 == "aged" && $2 <= max { print $3 }' "$work/fakes.txt" | sort)"
+# kept SET KIND: the timestamps of the complete copies left, oldest first.
+kept() {
+    local re
+    if [ "$2" = db ]; then re='^db-([0-9]{8}T[0-9]{6}Z)\.dump$'; else re='^files-([0-9]{8}T[0-9]{6}Z)$'; fi
+    in_backup sh -c "ls -1 /tmp/retention-check/$1/$2" | sed -n -E "s/$re/\\1/p" | sort
+}
+# labels: the timestamps on stdin as ages (12d, 30min), comma-separated.
+labels() {
+    awk 'NR == FNR { lab[$3] = ($1 == "aged") ? $2 "d" : ($2 * 10) "min"; next }
+         { printf "%s%s", sep, (($1 in lab) ? lab[$1] : $1); sep = ", " } END { print "" }' "$work/fakes.txt" -
+}
+for kind in db files; do
+    if [ "$kind" = db ]; then what="database copies"; else what="files copies"; fi
+    got="$(kept a "$kind")"
+    if [ -n "$got" ] && [ "$got" = "$expect_a" ]; then
+        pass "$what, 1/3/6/8/12 days + 9 fresh: 14 -> $(printf '%s\n' "$got" | wc -l | tr -d ' ') ($(labels <<<"$got")), the newest $DECIDED_KEEP, none older than $DECIDED_MAX_AGE_DAYS days"
+    else
+        fail "$what, 1/3/6/8/12 days + 9 fresh: left ${got:+$(labels <<<"$got")}, expected $(labels <<<"$expect_a")"
+    fi
+    got="$(kept b "$kind")"
+    if [ -n "$got" ] && [ "$got" = "$expect_b" ]; then
+        pass "$what, 1/3/6/8/12 days alone: left $(labels <<<"$got") (age rule: none older than $DECIDED_MAX_AGE_DAYS days)"
+    else
+        fail "$what, 1/3/6/8/12 days alone: left ${got:+$(labels <<<"$got")}, expected $(labels <<<"$expect_b") (none older than $DECIDED_MAX_AGE_DAYS days)"
+    fi
+done
+listing="$(in_backup sh -c 'cd /tmp/retention-check/a && ls -1 db files')"
 if ! printf '%s\n' "$listing" | grep -q '^db-19990101T000000Z\.dump\.partial$' \
     && ! printf '%s\n' "$listing" | grep -q '^files-19990101T000000Z\.partial$'; then
     pass ".partial leftovers older than a day removed"

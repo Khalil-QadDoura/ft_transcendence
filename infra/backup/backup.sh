@@ -5,13 +5,15 @@
 # so pg_dump and pg_restore match the server's major version, plus the mc client of the
 # MinIO image). See docs/disaster-recovery.md.
 #
-#   backup.sh loop            default command: one backup a day at BACKUP_TIME (TZ), none at start
+#   backup.sh loop            default command: one backup a day at BACKUP_TIME (TZ), and one at
+#                             start when the newest database copy is 24 h old or more, or missing
 #   backup.sh run             one backup now (`make backup`); exits 1 when it failed
 #   backup.sh status          the last run and the next scheduled one
 #   backup.sh list            the complete copies, newest first
 #   backup.sh resolve <ts|latest>   the timestamp of a complete pair (database and files)
 #   backup.sh verify-db <file>      the checks a new dump must pass before it is kept
 #   backup.sh retention <dir>       retention on <dir> (db/ and files/ below it), for tests
+#   backup.sh catch-up-check <dir>  whether a start on <dir> takes a catch-up backup, for tests
 #   backup.sh restore-db <ts>       pg_restore into POSTGRES_DB (the api must be stopped)
 #   backup.sh restore-files <ts>    mirror a files copy back into the bucket
 #   backup.sh mc <args>             mc with the alias `store` (the MinIO server) set
@@ -30,6 +32,12 @@ set -euo pipefail
 BACKUP_DIR=/backups
 BACKUP_TIME="${BACKUP_TIME:-03:00}"
 BACKUP_KEEP="${BACKUP_KEEP:-7}"
+# Complete copies older than this (by the UTC timestamp in the name) are deleted after each
+# run: the Privacy Policy (section 6) promises backups are kept for at most 7 days.
+BACKUP_MAX_AGE_DAYS="${BACKUP_MAX_AGE_DAYS:-7}"
+# At start, a backup runs at once when the newest complete database copy is this old or older
+# (or there is none), so a stack that was down at BACKUP_TIME does not skip a day's copy.
+CATCH_UP_AFTER_SEC=86400
 # Touched every minute by the loop; the health check wants it younger than 3 minutes.
 HEARTBEAT=/tmp/heartbeat
 NEXT_RUN_FILE=/tmp/next-run
@@ -55,6 +63,7 @@ log() { printf '%s backup: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*"; }
 die() { log "error: $*" >&2; exit 1; }
 
 valid_keep() { [[ "$BACKUP_KEEP" =~ ^[1-9][0-9]*$ ]] || die "BACKUP_KEEP=$BACKUP_KEEP is not a whole number of 1 or more"; }
+valid_max_age() { [[ "$BACKUP_MAX_AGE_DAYS" =~ ^[1-9][0-9]*$ ]] || die "BACKUP_MAX_AGE_DAYS=$BACKUP_MAX_AGE_DAYS is not a whole number of 1 or more"; }
 valid_time() { [[ "$BACKUP_TIME" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || die "BACKUP_TIME=$BACKUP_TIME is not HH:MM (00:00 to 23:59)"; }
 
 take_lock() {
@@ -107,26 +116,41 @@ verify_dump() {
 bucket_count() { mc ls --recursive "$BUCKET" | wc -l; }
 copy_count() { find "$1" -type f | wc -l; }
 
-# prune DIR REGEX TYPE KEEP: removes the oldest complete copies in DIR beyond KEEP. The
-# timestamp in the name orders them (UTC, fixed width), so a copied or touched file keeps
-# its place.
+# The UTC timestamp in a copy's name (db-<ts>.dump, files-<ts>), as seconds since 1970.
+ts_of() { local ts="${1#*-}"; echo "${ts%.dump}"; }
+ts_epoch() { local ts="$1"; date -u -d "${ts:0:4}-${ts:4:2}-${ts:6:2} ${ts:9:2}:${ts:11:2}:${ts:13:2}" +%s; }
+# Complete copies in DIR (by REGEX and TYPE), oldest first: the timestamp in the name orders
+# them (UTC, fixed width), so a copied or touched file keeps its place.
+copies() { find "$1" -mindepth 1 -maxdepth 1 -type "$3" -printf '%f\n' 2>/dev/null | grep -E "$2" | sort || true; }
+
+# prune DIR REGEX TYPE KEEP: removes the complete copies in DIR older than
+# BACKUP_MAX_AGE_DAYS, then the oldest ones beyond the newest KEEP.
 prune() {
-    local dir="$1" regex="$2" type="$3" keep="$4" names excess i
+    local dir="$1" regex="$2" type="$3" keep="$4" names cutoff name excess i
     [ -d "$dir" ] || return 0
-    mapfile -t names < <(find "$dir" -mindepth 1 -maxdepth 1 -type "$type" -printf '%f\n' | grep -E "$regex" | sort)
+    cutoff=$(($(date +%s) - BACKUP_MAX_AGE_DAYS * 86400))
+    mapfile -t names < <(copies "$dir" "$regex" "$type")
+    for name in "${names[@]}"; do
+        if [ "$(ts_epoch "$(ts_of "$name")")" -lt "$cutoff" ]; then
+            rm -rf -- "${dir:?}/$name"
+            log "retention: removed ${dir##*/}/$name (older than $BACKUP_MAX_AGE_DAYS days)"
+        fi
+    done
+    mapfile -t names < <(copies "$dir" "$regex" "$type")
     excess=$((${#names[@]} - keep))
     for ((i = 0; i < excess; i++)); do
         rm -rf -- "${dir:?}/${names[i]}"
-        log "retention: removed ${dir##*/}/${names[i]}"
+        log "retention: removed ${dir##*/}/${names[i]} (beyond the newest $keep)"
     done
 }
 
-# retention ROOT: keeps the newest BACKUP_KEEP complete copies of each kind under ROOT/db
-# and ROOT/files, and removes .partial leftovers older than a day (a younger one may belong
-# to a run in progress).
+# retention ROOT: under ROOT/db and ROOT/files, each kind on its own, deletes the complete
+# copies older than BACKUP_MAX_AGE_DAYS, then keeps at most the newest BACKUP_KEEP; also
+# removes .partial leftovers older than a day (a younger one may belong to a run in progress).
 retention() {
     local root="$1" dir
     valid_keep
+    valid_max_age
     prune "$root/db" "$DB_NAME_RE" f "$BACKUP_KEEP"
     prune "$root/files" "$FILES_NAME_RE" d "$BACKUP_KEEP"
     for dir in "$root/db" "$root/files"; do
@@ -218,7 +242,7 @@ run_backup() {
         "db=$db_line" \
         "files=$files_line" \
         "duration=$(($(date +%s) - start_epoch))s" \
-        "kept=$(count_copies db "$DB_NAME_RE") database copies, $(count_copies files "$FILES_NAME_RE") files copies (BACKUP_KEEP=$BACKUP_KEEP)"
+        "kept=$(count_copies db "$DB_NAME_RE") database copies, $(count_copies files "$FILES_NAME_RE") files copies (BACKUP_MAX_AGE_DAYS=$BACKUP_MAX_AGE_DAYS, BACKUP_KEEP=$BACKUP_KEEP)"
     log "done ($result) in $(($(date +%s) - start_epoch))s"
     [ "$result" = ok ]
 }
@@ -309,19 +333,54 @@ restore_files() {
     log "restore: bucket done: $got objects"
 }
 
+# catch_up_check ROOT: prints "due: <why>" when the newest complete database copy under
+# ROOT/db is CATCH_UP_AFTER_SEC old or older, or there is none; otherwise "not due: <why>".
+catch_up_check() {
+    local root="$1" newest age
+    newest="$(copies "$root/db" "$DB_NAME_RE" f | sed -n '$p')"
+    if [ -z "$newest" ]; then
+        echo "due: no database copy yet"
+        return 0
+    fi
+    age=$(($(date +%s) - $(ts_epoch "$(ts_of "$newest")")))
+    if [ "$age" -ge "$CATCH_UP_AFTER_SEC" ]; then
+        echo "due: newest database copy $newest is $((age / 3600)) h old (24 h or more)"
+    else
+        echo "not due: newest database copy $newest is $((age / 3600)) h old (under 24 h)"
+    fi
+}
+
 loop() {
-    local next now wait
+    local next now wait why=scheduled decision
     valid_time
     valid_keep
+    valid_max_age
     trap 'log "stopping"; exit 0' TERM INT
     mkdir -p "$BACKUP_DIR/db" "$BACKUP_DIR/files"
-    log "one backup a day at $BACKUP_TIME (TZ=${TZ:-UTC}), keeping $BACKUP_KEEP copies; no backup at start"
+    touch "$HEARTBEAT"
+    log "one backup a day at $BACKUP_TIME (TZ=${TZ:-UTC}), copies kept at most $BACKUP_MAX_AGE_DAYS days and at most $BACKUP_KEEP of each kind"
     next="$(next_run)"
+    # Catch-up: a stack that was down at BACKUP_TIME gets its copy now; a restart within
+    # 24 h of the last copy adds none. compose starts this service once the api is healthy,
+    # so the migrations have run before the dump.
+    decision="$(catch_up_check "$BACKUP_DIR")"
+    case "$decision" in
+        due:*)
+            log "catch-up: $decision; one backup now"
+            next="$(date +%s)"
+            why=catch-up
+            ;;
+        *) log "catch-up: $decision" ;;
+    esac
     while true; do
         touch "$HEARTBEAT"
         now="$(date +%s)"
         if [ "$now" -ge "$next" ]; then
-            run_backup scheduled || log "the scheduled backup failed; see the lines above and status"
+            # In a subshell: its exit closes the lock file, so a later `make backup` does not
+            # wait for a lock this loop would otherwise hold forever, and a failure that
+            # exits (die) ends only this run, not the loop.
+            ( run_backup "$why" ) || log "the $why backup failed; see the lines above and status"
+            why=scheduled
             next="$(next_run)"
             touch "$HEARTBEAT"
             now="$(date +%s)"
@@ -358,8 +417,9 @@ case "$command" in
     resolve) resolve "${1:?resolve needs latest or a timestamp}" ;;
     verify-db) verify_dump "${1:?verify-db needs a file}" ;;
     retention) retention "${1:?retention needs a directory}" ;;
+    catch-up-check) catch_up_check "${1:?catch-up-check needs a directory}" ;;
     restore-db) restore_db "${1:?restore-db needs latest or a timestamp}" ;;
     restore-files) restore_files "${1:?restore-files needs latest or a timestamp}" ;;
     mc) exec mc "$@" ;;
-    *) die "unknown command $command (loop, run, status, list, resolve, verify-db, retention, restore-db, restore-files, mc)" ;;
+    *) die "unknown command $command (loop, run, status, list, resolve, verify-db, retention, catch-up-check, restore-db, restore-files, mc)" ;;
 esac

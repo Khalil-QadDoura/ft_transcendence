@@ -156,9 +156,10 @@ backup-list:
 	$(COMPOSE) exec -T backup backup.sh list
 
 # Runs `make backup`, then: the newest dump valid with every app table, the newest files
-# copy with the bucket's object count and the same sha256 for one object, retention as
-# decided (7) on a test directory, the backups volume neither published nor reachable
-# through the proxy (INF-14).
+# copy with the bucket's object count and the same sha256 for one object, the catch-up
+# decision at start, retention as decided (none older than 7 days, at most 7 copies) on
+# test directories, the backups volume neither published nor reachable through the proxy
+# (INF-14).
 backup-check:
 	@./infra/backup/smoke-test.sh
 
