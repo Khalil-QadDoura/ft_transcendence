@@ -6,12 +6,19 @@
 # - one real series per source: pg_up == 1 (postgres-exporter reaches the database),
 #   redis_up == 1 (redis-exporter reaches Redis), a container CPU and a memory series of the
 #   api service (cAdvisor), an HTTP request counter of the API (BE-30);
-# - Prometheus runs with the retention decided by the PO: 30d and 1GB.
+# - Prometheus runs with the retention decided by the PO: 30d and 1GB;
+# - alert rules (INF-10): `promtool check rules` on alerts.yml and `promtool test rules` on
+#   alerts.test.yml pass, run once with the promtool of the prometheus image inside its
+#   container (both files are mounted read-only in /etc/prometheus); /api/v1/rules reports
+#   the group m12-alerts with exactly the five decided rules, every one with health ok, and
+#   an evaluation interval of 15 s.
 # Prometheus has no host port and no proxy route, so every query runs inside its own
 # container (`docker compose exec -T prometheus wget ...`); the answers are parsed here with
 # python3 (3.9 or newer). Retries for up to 60 s (a fresh stack needs a scrape or two; a
 # run on a healthy stack takes one scrape interval, about 15 s), then prints one ok / FAIL
-# line per check and exits 1 when one failed.
+# line per check and exits 1 when one failed. The two promtool runs do not depend on the
+# stack's state, so they run once, before the retries; their output is printed when they
+# fail.
 # Needs the stack up (`make`). Run it with `make metrics-check`. Works with bash 3.2 (macOS).
 set -euo pipefail
 
@@ -53,6 +60,7 @@ fetch_all() {
     local entry
     prom_get "/api/v1/targets?state=active" targets.json
     prom_get "/api/v1/status/flags" flags.json
+    prom_get "/api/v1/rules" rules.json
     for entry in "${QUERIES[@]}"; do
         prom_get "/api/v1/query?query=$(urlencode "${entry#*|}")" "${entry%%|*}.json"
     done
@@ -84,6 +92,11 @@ def epoch(rfc3339):
 
 
 RETENTION ={"storage.tsdb.retention.time": "30d", "storage.tsdb.retention.size": "1GB"}
+# The alert rules decided for INF-10 (infra/prometheus/alerts.yml), in one group, evaluated
+# every 15 s (evaluation_interval in prometheus.yml).
+RULE_GROUP = "m12-alerts"
+RULES = ["RedisDown", "TargetDown", "ApiHighErrorRate", "ApiHighLatencyP95", "MonitoringDiskAlmostFull"]
+EVALUATION_SEC = 15
 
 
 def load(name):
@@ -189,7 +202,55 @@ for flag, expected in RETENTION.items():
         parse = PARSE[flag]
         line(parse(actual) is not None and parse(actual) == parse(expected),
              f"--{flag}={actual} (decided: {expected})")
+
+# Alert rules as Prometheus loaded them. A rule's health is "unknown" until its first
+# evaluation (at most 15 s after a start), "err" when the evaluation failed.
+rules = load("rules.json")
+if rules is None:
+    line(False, "alert rules: no answer from /api/v1/rules")
+else:
+    groups = [g for g in rules.get("groups", []) if g.get("name") == RULE_GROUP]
+    if not groups:
+        names = ", ".join(g.get("name", "?") for g in rules.get("groups", [])) or "none"
+        line(False, f"rule group {RULE_GROUP}: not loaded (groups loaded: {names}; rule_files in prometheus.yml?)")
+    else:
+        group = groups[0]
+        every = group.get("rules", [])
+        loaded = [r.get("name") for r in every if r.get("type") == "alerting"]
+        others = [r.get("name") for r in every if r.get("type") != "alerting"]
+        exact = len(every) == len(RULES) and sorted(loaded) == sorted(RULES)
+        line(exact, f"rule group {RULE_GROUP} ({group.get('file')}): {len(loaded)} alerting rules"
+                    f" ({', '.join(loaded) or 'none'})"
+                    + (f", other rules: {', '.join(others)}" if others else "")
+                    + ("" if exact else f"; decided: {', '.join(RULES)}"))
+        unhealthy = [r for r in every if r.get("health") != "ok"]
+        line(bool(every) and not unhealthy, f"rule group {RULE_GROUP}: health "
+             + ("ok for every rule" if not unhealthy else "; ".join(
+                 f"{r.get('name')} {r.get('health')} {r.get('lastError') or ''}".strip() for r in unhealthy)))
+        interval = group.get("interval")
+        line(interval == EVALUATION_SEC,
+             f"rule group {RULE_GROUP}: evaluated every {interval}s (decided: {EVALUATION_SEC}s)")
 PY
+}
+
+# promtool_line NAME ARGS...: one promtool run inside the prometheus container; prints an
+# ok line with promtool's SUCCESS line, or a FAIL line followed by promtool's whole output.
+promtool_line() {
+    local name="$1" out rc=0
+    shift
+    out="$(docker compose exec -T prometheus promtool "$@" 2>&1)" || rc=$?
+    if [ "$rc" = 0 ]; then
+        echo "ok    $name: $(printf '%s\n' "$out" | grep -m1 'SUCCESS' | sed 's/^ *//')"
+    else
+        echo "FAIL  $name: exit $rc"
+        printf '%s\n' "$out" | sed 's/^/        /'
+        # A single-file bind mount follows the file the container started with: an editor
+        # or git that replaces the file on the host leaves the container without it.
+        if printf '%s\n' "$out" | grep -q 'no such file or directory'; then
+            echo "        (the file was replaced on the host after prometheus started; recreate it:"
+            echo "        docker compose up -d --force-recreate --wait prometheus)"
+        fi
+    fi
 }
 
 # Prometheus's own clock, so that "scraped since the start" does not depend on the host's.
@@ -199,6 +260,12 @@ if ! started="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))
     echo "metrics-check: no answer from Prometheus at $PROM inside its container" >&2
     exit 1
 fi
+
+{
+    promtool_line "promtool check rules alerts.yml" check rules /etc/prometheus/alerts.yml
+    promtool_line "promtool test rules alerts.test.yml" test rules /etc/prometheus/alerts.test.yml
+} >"$work/promtool"
+promtool_failures="$(grep -c '^FAIL' "$work/promtool" || true)"
 
 deadline=$(($(date +%s) + WAIT_SEC))
 while :; do
@@ -212,7 +279,8 @@ while :; do
     sleep "$RETRY_SEC"
 done
 
-sed 's/^/  /' "$work/result"
+sed 's/^/  /' "$work/promtool" "$work/result"
+failures=$((failures + promtool_failures))
 if [ "$failures" != 0 ]; then
     echo "metrics-check: $failures checks failed"
     exit 1
