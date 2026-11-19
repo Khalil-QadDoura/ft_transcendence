@@ -1,0 +1,116 @@
+{
+  "eyebrow": "Turing Düellosu",
+  "title": "Oyun kuralları",
+  "intro": "Odanızdaki oyuncuların bazıları bot olabilir. Onlarla sohbet edin, ardından diğer her oyuncu için karar verin: bot mu, insan mı? Doğru tahminler puan kazandırır, yanlış tahminler puan kaybettirir.",
+  "contents": "Bu sayfada",
+  "player": "Oyuncu {{number}}",
+  "units": {
+    "minutes_one": "{{value}} dakika",
+    "minutes_other": "{{value}} dakika",
+    "seconds_one": "{{value}} saniye",
+    "seconds_other": "{{value}} saniye"
+  },
+  "idea": {
+    "title": "Fikir",
+    "body": "Bir odada en fazla {{max}} katılımcı bulunur. Bazıları gerçek insanlardır, bazıları bot olabilir ve herkes anonimdir. Kısa bir sohbetten sonra her insan, diğer her katılımcı için tahminde bulunur: bot mu, insan mı? En çok puanı toplayan insan kazanır."
+  },
+  "rooms": {
+    "title": "Odalar ve katılımcılar",
+    "capacity": "Bir odada en fazla {{max}} katılımcı bulunur ve bunlardan en az {{minHumans}} tanesi insandır.",
+    "join": "Lobiden yeni bir oda oluşturursunuz ya da açık bir odaya katılırsınız.",
+    "labels": "Herkes yalnızca bir etiketle görünür: “Oyuncu {{first}}” ile “Oyuncu {{last}}” arası. Oyunun hiçbir yerinde gerçek ad, avatar veya profil bağlantısı yoktur.",
+    "randomLabel": "Katıldığınızda size {{first}} ile {{last}} arasında rastgele boş bir numara verilir; katılım sırasındaki bir sonraki numara değil. “Oyuncu {{first}}”, odayı kimin oluşturduğunu ya da kimin insan olduğunu göstermez ve numaralar arasında boşluklar olabilir.",
+    "stable": "Etiket oda boyunca aynı kalır. Kendi etiketiniz “Siz” olarak işaretlenir.",
+    "bots": "Bir odada hiç bot olmayabilir ya da {{min}} ile {{max}} arasında bot olabilir. Oyun, sonuçlara kadar hangi katılımcıların bot olduğunu, hatta odada bot olup olmadığını asla söylemez.",
+    "lookAlike": "Botlar insanlar gibi görünür ve davranır: aynı tür etiket, aynı katılma biçimi, aynı sohbet biçimi."
+  },
+  "waiting": {
+    "title": "Bekleme odası",
+    "timer": "Oda oluşturulduğunda {{duration}} süreli tek bir oda zamanlayıcısı başlar. Kim katılırsa katılsın, zamanlayıcı asla yeniden başlamaz.",
+    "joining": "Katılımcılar birer birer katılır. Odada bot varsa, insanların arasında rastgele anlarda katılırlar.",
+    "shows": "Bekleme odasında katılımcı sayısı, mevcut etiketler, oda zamanlayıcısı ve odada {{min}} ile {{max}} arasında katılımcı olduğu sürece “Şimdi başlat” düğmesi görünür.",
+    "noChat": "Bekleme odasında sohbet yoktur. Sohbet, tartışma aşamasında açılır.",
+    "counts": "Her katılımcı sayısına botlar da insanlar da dahildir.",
+    "startTitle": "Oyun ne zaman başlar",
+    "startIntro": "Aşağıdakilerden biri gerçekleştiği anda oyun başlar:",
+    "startFull": "Odadaki katılımcı sayısı {{max}} olur.",
+    "startNow": "Bir insan “Şimdi başlat” düğmesine basar (odada {{min}} ile {{max}} arasında katılımcı varken görünür). İlk basış, oyunu o anda odada bulunan herkes için başlatır; sonraki basışlar dikkate alınmaz.",
+    "startTimer": "Oda zamanlayıcısı dolar ve odada {{min}} veya daha fazla katılımcı vardır.",
+    "late": "Oyun başladığında katılmamış olan biri sonradan katılamaz.",
+    "leaveTitle": "Bekleme odasından ayrılmak",
+    "leave": "Oyun başlamadan önce odadan ayrılabilirsiniz. Etiketiniz havuza geri döner, katılımcı sayısı bir azalır ve oda zamanlayıcısı çalışmaya devam eder. Odada hiç insan kalmazsa oda hemen kapanır.",
+    "leaveLate": "Oyun başladıktan sonra ayrılmak, bağlantı kopması sayılır.",
+    "closeTitle": "Oda ne zaman kapanır",
+    "close": "Oda zamanlayıcısı dolduğunda odada yalnızca {{participants}} katılımcı varsa oda kapanır. Lobiye dönersiniz ve yeni bir oda oluşturabilir ya da başka bir odaya katılabilirsiniz."
+  },
+  "discussion": {
+    "title": "Tartışma aşaması: {{duration}}",
+    "body": "Katılımcılar odada sohbet eder. Mesajlarda yalnızca gönderenin etiketi görünür."
+  },
+  "voting": {
+    "title": "Oylama aşaması: {{duration}}",
+    "who": "Her insan, diğer her katılımcıyı “bot” veya “insan” olarak işaretler. Kendinizi işaretleyemezsiniz; botlar oy vermez.",
+    "preset": "Oylama başladığında diğer her katılımcı zaten “insan” olarak işaretlenmiştir.",
+    "change": "{{duration}} dolana kadar herhangi bir işareti “insan” ile “bot” arasında istediğiniz kadar değiştirebilirsiniz.",
+    "final": "Oylama aşamasının sonundaki işaretler sayılır. “Tahmin yok” diye bir seçenek yoktur: “insan” olarak bırakılan bir işaret de diğerleri gibi sayılır."
+  },
+  "scoring": {
+    "title": "Puanlama",
+    "correct": "Doğru tahmin (bot “bot”, insan “insan” olarak işaretlenmiş): {{points}} puan",
+    "wrong": "Yanlış tahmin (bot “insan”, insan “bot” olarak işaretlenmiş): {{points}} puan",
+    "sum": "Puanınız tüm tahminlerinizin toplamıdır: diğer her katılımcı için, oylama bittiğindeki hâliyle bir işaret. Bir insanı “insan” olarak işaretlemek bir puan kazandırır; {{zero}} puan değildir."
+  },
+  "outcome": {
+    "title": "Galibiyet, beraberlik ve mağlubiyet",
+    "many": "{{min}} veya daha fazla insan varken: en yüksek puanı alan insan kazanır, bu puan {{zero}} ya da negatif olsa bile. Oyun görecelidir: diğer insanlardan daha iyi yapmanız yeterlidir. En yüksek puan paylaşılırsa bu oyuncular berabere kalır. Diğer herkes kaybeder.",
+    "single": "Odada yalnızca {{humans}} insan varken (siz ve botlar): {{threshold}} üzerindeki puan galibiyet, tam {{threshold}} beraberlik, {{threshold}} altındaki puan mağlubiyettir.",
+    "humansOnly": "Galibiyet, beraberlik ve mağlubiyet yalnızca insanlar için geçerlidir. Botların puanı da sonucu da yoktur.",
+    "draw": "Beraberlikte kimse kazanan ilan edilmez. En yüksek puanı paylaşan oyuncular beraberlik alır."
+  },
+  "disconnect": {
+    "title": "Bir oyuncunun bağlantısı koparsa",
+    "keep": "Bağlantısı kopan oyuncu, o andaki işaretlerini (hâlâ “insan” olanlar dahil) korur ve bu işaretler oylama bittiğinde sayılır. Oylama başlamadan önce bağlantısı kopan oyuncunun tüm işaretleri “insan” olarak kalır.",
+    "counts": "Bağlantısı kopan oyuncu, kazanan belirlenirken yine insanlardan biri sayılır ve diğer insanlar gibi puan ve sonuç alır.",
+    "back": "Oylama bitmeden geri dönen oyuncu işaretlerini yine değiştirebilir."
+  },
+  "results": {
+    "title": "Sonuçlar",
+    "intro": "Sonuçlar yalnızca oyun bittikten sonra görünür. Sonuçlarda şunlar gösterilir:",
+    "bots": "hangi etiketlerin bot olduğu;",
+    "scores": "her insanın puanı ve sonucu (galibiyet, beraberlik veya mağlubiyet);",
+    "rate": "her botun aldatma oranı: oylama bittiğinde o bota “insan” işareti koymuş insanların sayısı (ön ayarda bırakılan işaret de sayılır), oyundaki insan sayısına (bağlantısı kopanlar dahil) bölünür ve yüzde olarak gösterilir."
+  },
+  "examples": {
+    "title": "Çözümlü örnekler",
+    "mark": {
+      "human": "insan",
+      "bot": "bot"
+    },
+    "correct": "doğru",
+    "wrong": "yanlış",
+    "self": "(kendisi)",
+    "score": "Puan",
+    "outcome": "Sonuç",
+    "outcomes": {
+      "win": "Galibiyet",
+      "draw": "Beraberlik",
+      "loss": "Mağlubiyet"
+    },
+    "a": {
+      "title": "Örnek A: {{humans}} insan ve {{bots}} bot",
+      "setup": "{{size}} kişilik oda. İnsanlar: {{humanLabels}}. Botlar: {{botLabels}}. Her insan diğer {{others}} katılımcıyı işaretler.",
+      "caption": "Örnek A: işaretler, puanlar ve sonuçlar",
+      "markedBy": "İşaretleyen",
+      "deceptionTitle": "Botların aldatma oranları",
+      "deception": "{{player}}: {{humans}} insandan {{fooled}} tanesi “insan” olarak işaretledi, aldatma oranı {{rate}}.",
+      "tie": "{{player}} da {{score}} puan almış olsaydı, {{humans}} insanın hepsi en yüksek puanı paylaşır ve hepsi berabere kalırdı."
+    },
+    "b": {
+      "title": "Örnek B: {{humans}} insan ve {{bots}} bot",
+      "setup": "{{size}} kişilik oda. İnsan: {{humanLabel}}. Botlar: {{botLabels}}. İnsanın üç olası tahmin seti:",
+      "caption": "Örnek B: üç olası tahmin seti",
+      "guesses": "{{player}} tahminleri"
+    }
+  },
+  "lobby": "Lobiye git"
+}
