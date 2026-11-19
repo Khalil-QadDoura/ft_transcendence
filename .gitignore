@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 scripts/*.local
+scripts/*.local.*
 
 # Dependencies and build output
 node_modules/
