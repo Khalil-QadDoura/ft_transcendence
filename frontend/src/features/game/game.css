@@ -143,3 +143,195 @@
     padding: 24px;
   }
 }
+
+/* FE-32: Game Room Styles */
+.game-room-page {
+  max-width: 1080px;
+  margin: auto;
+  padding: 32px 24px 64px;
+}
+.game-room-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block-end: 24px;
+  border-block-end: 1px solid var(--color-border);
+  margin-block-end: 32px;
+}
+.game-room-header-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.game-room-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+.game-room-header-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.game-room-rules-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-ink-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: underline;
+  min-height: 44px;
+}
+.game-room-rules-link:hover {
+  color: var(--color-ink);
+}
+.game-room-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.game-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 540px;
+}
+.game-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  margin-block-end: 16px;
+}
+.game-chat-bubble {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  align-self: flex-start;
+}
+.game-chat-bubble.is-own {
+  align-self: flex-end;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-color: var(--color-ink);
+}
+.game-chat-sender {
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-block-end: 4px;
+  opacity: 0.8;
+}
+.game-chat-text {
+  word-break: break-word;
+}
+.game-chat-input-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.game-voting-grid {
+  display: grid;
+  gap: 16px;
+  margin-block-start: 20px;
+}
+.game-voting-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+}
+.game-voting-options {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.game-btn-toggle {
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 40px;
+}
+.game-btn-toggle:hover:not(:disabled) {
+  border-color: var(--color-ink);
+}
+.game-btn-toggle.is-active {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-color: var(--color-ink);
+}
+.game-results-banner {
+  border-radius: 20px;
+  padding: 24px 32px;
+  margin-block-end: 24px;
+  text-align: center;
+}
+.game-results-banner.is-win {
+  background: var(--color-ink);
+  color: var(--color-lime);
+}
+.game-results-banner.is-draw {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+.game-results-banner.is-loss {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-ink);
+}
+.game-results-list {
+  display: grid;
+  gap: 14px;
+  margin-block-end: 24px;
+}
+.game-result-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+}
+.game-result-row.is-winner {
+  border-color: var(--color-lime);
+}
+@media (max-width: 768px) {
+  .game-room-page {
+    padding: 24px 16px 48px;
+  }
+  .game-room-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .game-chat-container {
+    height: 440px;
+  }
+}

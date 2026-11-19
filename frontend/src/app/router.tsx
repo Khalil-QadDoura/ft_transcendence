@@ -22,6 +22,7 @@ import { MyApplicationsPage } from "../features/applications/MyApplicationsPage"
 import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { GameLobbyPage } from "../features/game/GameLobbyPage";
+import { GameRoomPage } from "../features/game/GameRoomPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
 import { StatusPage } from "../features/status/StatusPage";
 import { GameRulesPage } from "../features/game/rules/GameRulesPage";
@@ -104,10 +105,10 @@ export const routes: RouteObject[] = [
           { path: "videos", element: <VideoResumePage /> },
           { path: "applications", element: <MyApplicationsPage /> },
           { path: "game", element: <GameLobbyPage /> },
+          { path: "game/rooms/:id", element: <GameRoomPage /> },
           ...pages([
             ["friends", "routes.friends"],
             ["employer/*", "routes.employer"],
-            ["game/rooms/:id", "routes.room"],
           ]),
           { path: "chat", element: <ConversationsPage /> },
           { path: "chat/:id", element: <ConversationsPage /> },
