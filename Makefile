@@ -14,7 +14,7 @@ s ?=
 days ?=
 
 .PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
-	mail-check metrics-check grafana-check schema-diagram anonymise-deleted fclean re
+	mail-check metrics-check grafana-check schema-diagram anonymise-deleted alert-demo fclean re
 
 all: env up
 
@@ -140,8 +140,10 @@ mail-check:
 # Monitoring against the running stack: every Prometheus target up (prometheus, api,
 # postgres, redis, cadvisor), one real series per source (pg_up, redis_up, the api
 # container's CPU and memory, the API's request counter) and the retention decided for
-# metrics (30d, 1GB). Queries Prometheus inside its container, which has no host port;
-# retries for up to 60 s (INF-08).
+# metrics (30d, 1GB) (INF-08); the alert rules: promtool check rules and promtool test rules
+# (infra/prometheus/alerts.yml, alerts.test.yml), and the five rules loaded, healthy,
+# evaluated every 15 s (INF-10). Queries Prometheus inside its container, which has no host
+# port; retries for up to 60 s.
 metrics-check:
 	@./infra/prometheus/smoke-test.sh
 
@@ -149,7 +151,9 @@ metrics-check:
 # the login on the public origin, health 200, no anonymous access or sign-up, the security
 # settings as decided (public dashboards and snapshots off among them), the
 # Prometheus datasource healthy, both dashboards in the folder WOZU with every panel query
-# returning data (dashboard variables at their saved value), deletion refused, Grafana Live (WebSocket) 101 and a
+# returning data (dashboard variables at their saved value), the Firing alerts panel with
+# one series and the five Prometheus alert rules listed by Grafana (INF-10), deletion
+# refused, Grafana Live (WebSocket) 101 and a
 # wrong password 401 (for the non-existent user grafana-check-nobody, so admin is never
 # locked, however often it runs). Logs in as admin with the password from the grafana
 # container, never printed; retries for up to 60 s (INF-09).
@@ -162,6 +166,12 @@ grafana-check:
 # deleted account at once (the demo). Accounts on retention hold are always skipped.
 anonymise-deleted:
 	$(COMPOSE) exec -T worker python -m app.worker.tasks.anonymise $(if $(days),--older-than-days $(days))
+
+# Live alert demo, manual only (not in CI): stops Redis, waits until the RedisDown alert
+# fires (prints the seconds; fails after 120 s), starts Redis again and waits until the
+# alert is resolved (fails after 120 s). Redis is started again however it ends (INF-10).
+alert-demo:
+	@./infra/prometheus/alert-demo.sh
 
 # Removes containers, volumes (database, files), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
