@@ -1,0 +1,116 @@
+{
+  "eyebrow": "Turing Duel",
+  "title": "Game rules",
+  "intro": "Some of the players in your room may be bots. Chat with them, then decide for every other player: bot or human? Right guesses earn points, wrong guesses cost points.",
+  "contents": "On this page",
+  "player": "Player {{number}}",
+  "units": {
+    "minutes_one": "{{value}} minute",
+    "minutes_other": "{{value}} minutes",
+    "seconds_one": "{{value}} second",
+    "seconds_other": "{{value}} seconds"
+  },
+  "idea": {
+    "title": "The idea",
+    "body": "A room holds up to {{max}} participants. Some of them are real people, some may be bots, and everyone is anonymous. After a short chat, every human guesses for each other participant: bot or human? The human with the most points wins."
+  },
+  "rooms": {
+    "title": "Rooms and participants",
+    "capacity": "A room holds up to {{max}} participants, and at least {{minHumans}} of them is a human.",
+    "join": "You create a new room or join an open one from the lobby.",
+    "labels": "Everyone appears only as a label, from “Player {{first}}” to “Player {{last}}”. There are no real names, no avatars and no profile links anywhere in the game.",
+    "randomLabel": "When you join, you get a random free number from {{first}} to {{last}}, not the next number in join order. “Player {{first}}” says nothing about who created the room or who is human, and labels can have gaps.",
+    "stable": "A label stays the same for the whole room. Your own label is marked “You”.",
+    "bots": "A room has no bots, or {{min}} to {{max}} of them. The game never says which participants are bots, or whether the room has any, until the results.",
+    "lookAlike": "Bots look and act like humans: the same kind of label, the same way of joining, the same way of chatting."
+  },
+  "waiting": {
+    "title": "Waiting room",
+    "timer": "One room timer of {{duration}} starts when the room is created. It never restarts, whoever joins.",
+    "joining": "Participants join one by one. Bots, if the room has any, join at random moments between the humans.",
+    "shows": "The waiting room shows the number of participants, the labels present, the room timer and, while the room has {{min}} to {{max}} participants, a “Start now” button.",
+    "noChat": "There is no chat in the waiting room. Chat opens in the discussion phase.",
+    "counts": "Every participant count includes bots as well as humans.",
+    "startTitle": "When the game starts",
+    "startIntro": "The game starts as soon as one of these happens:",
+    "startFull": "The room reaches {{max}} participants.",
+    "startNow": "A human presses “Start now” (shown while the room has {{min}} to {{max}} participants). The first press starts the game for everyone present at that moment; later presses are ignored.",
+    "startTimer": "The room timer runs out and the room has {{min}} or more participants.",
+    "late": "Anyone who has not joined when the game starts cannot join later.",
+    "leaveTitle": "Leaving the waiting room",
+    "leave": "You may leave the room before the game starts. Your label goes back to the pool, the participant count drops by one and the room timer keeps running. If no human is left, the room closes at once.",
+    "leaveLate": "Leaving after the game has started counts as a disconnect: you keep the marks you had at that moment and can come back to the room and change them until voting ends.",
+    "closeTitle": "When the room closes",
+    "close": "If the room timer runs out with only {{participants}} participant in the room, the room closes. You go back to the lobby and can create or join a new room."
+  },
+  "discussion": {
+    "title": "Discussion phase: {{duration}}",
+    "body": "Participants chat in the room. Messages show only the sender's label."
+  },
+  "voting": {
+    "title": "Voting phase: {{duration}}",
+    "who": "Each human marks every other participant as “bot” or “human”. You cannot mark yourself, and bots do not vote.",
+    "preset": "When voting starts, every other participant is already marked “human”.",
+    "change": "You can switch any mark between “human” and “bot” as often as you like until the {{duration}} end.",
+    "final": "The marks at the end of the voting phase are the ones that count. There is no “no guess”: a mark left at “human” counts like any other."
+  },
+  "scoring": {
+    "title": "Scoring",
+    "correct": "Correct guess (a bot marked bot, a human marked human): {{points}} point",
+    "wrong": "Wrong guess (a bot marked human, a human marked bot): {{points}} point",
+    "sum": "Your score is the sum of all your guesses: one mark for each other participant, as it stands when voting ends. Marking a human as human earns a point; it is not worth {{zero}}."
+  },
+  "outcome": {
+    "title": "Win, draw and loss",
+    "many": "With {{min}} or more humans: the human with the highest score wins, even if that score is {{zero}} or negative. The game is relative: you only have to do better than the other humans. If the top score is shared, those players draw. Everyone else loses.",
+    "single": "With exactly {{humans}} human in the room (you plus bots): a score above {{threshold}} is a win, exactly {{threshold}} is a draw, below {{threshold}} is a loss.",
+    "humansOnly": "Win, draw and loss apply to humans only. Bots have no score and no outcome.",
+    "draw": "On a draw nobody is named the winner. The players who share the top score get a draw."
+  },
+  "disconnect": {
+    "title": "If a player disconnects",
+    "keep": "A player who disconnects keeps the marks they had at that moment, including the ones still at “human”, and those marks count when voting ends. A player who disconnects before voting starts keeps every mark at “human”.",
+    "counts": "A disconnected player still counts as one of the humans when the winner is decided, and gets a score and an outcome like every other human.",
+    "back": "A player who comes back before voting ends can still change their marks."
+  },
+  "results": {
+    "title": "Results",
+    "intro": "Results appear only after the game has ended. They show:",
+    "bots": "which labels were bots;",
+    "scores": "every human's score and outcome (win, draw or loss);",
+    "rate": "each bot's deception rate: the number of humans whose mark on that bot was “human” when voting ended (a mark left at the preset counts), divided by the number of humans in the game (disconnected players included), as a percentage."
+  },
+  "examples": {
+    "title": "Worked examples",
+    "mark": {
+      "human": "human",
+      "bot": "bot"
+    },
+    "correct": "correct",
+    "wrong": "wrong",
+    "self": "(self)",
+    "score": "Score",
+    "outcome": "Outcome",
+    "outcomes": {
+      "win": "Win",
+      "draw": "Draw",
+      "loss": "Loss"
+    },
+    "a": {
+      "title": "Example A: {{humans}} humans and {{bots}} bots",
+      "setup": "Room of {{size}}. The humans are {{humanLabels}}. The bots are {{botLabels}}. Each human marks the {{others}} other participants.",
+      "caption": "Example A: marks, scores and outcomes",
+      "markedBy": "Marked by",
+      "deceptionTitle": "Bot deception rates",
+      "deception": "{{player}}: marked “human” by {{fooled}} of {{humans}} humans, a deception rate of {{rate}}.",
+      "tie": "If {{player}} had also scored {{score}}, all {{humans}} humans would share the top score and all of them would draw."
+    },
+    "b": {
+      "title": "Example B: {{humans}} human and {{bots}} bots",
+      "setup": "Room of {{size}}. The human is {{humanLabel}}. The bots are {{botLabels}}. Three possible sets of guesses by the human:",
+      "caption": "Example B: three possible sets of guesses",
+      "guesses": "Guesses by {{player}}"
+    }
+  },
+  "lobby": "Go to the lobby"
+}

@@ -5,6 +5,7 @@ import { useContext, useEffect, useRef, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { LogoutButton } from "../features/auth/AuthScreens";
 import { SessionContext } from "./session";
+import { GAME_RULES_PATH } from "../features/game/rules/paths";
 export function Layout({
   languageSlot,
   unreadSlot,
@@ -75,6 +76,7 @@ export function Layout({
         <nav aria-label={t("legalNavigation")}>
           <Link to="/privacy">{t("privacy")}</Link>
           <Link to="/terms">{t("terms")}</Link>
+          <Link to={GAME_RULES_PATH}>{t("gameRules")}</Link>
           <Link to="/status">{t("status")}</Link>
         </nav>
         <small>

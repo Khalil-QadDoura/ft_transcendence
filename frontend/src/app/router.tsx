@@ -18,6 +18,8 @@ import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
 import { StatusPage } from "../features/status/StatusPage";
+import { GameRulesPage } from "../features/game/rules/GameRulesPage";
+import { GAME_RULES_PATH } from "../features/game/rules/paths";
 function ComingSoon({ title }: { title: string }) {
   const { t } = useText();
   return (
@@ -69,10 +71,9 @@ export const routes: RouteObject[] = [
       { path: "jobs", element: <JobsPage /> },
       // Public (INF-16): outside RequireSession, works for logged-out visitors.
       { path: "status", element: <StatusPage /> },
-      ...pages([
-        ["jobs/:id", "routes.job"],
-        ["game/rules", "routes.rules"],
-      ]),
+      // Public (FE-34): outside RequireSession, works for logged-out visitors.
+      { path: GAME_RULES_PATH, element: <GameRulesPage /> },
+      ...pages([["jobs/:id", "routes.job"]]),
       {
         element: <GuestOnly />,
         children: [

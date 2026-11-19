@@ -53,7 +53,8 @@ jobs:
             backend=false frontend=false stack=false
             if touched '^(backend/|\.github/workflows/)'; then backend=true; fi
             # docs/legal: npm run legal:check compares the rendered pages with these files.
-            if touched '^(frontend/|docs/legal/|\.github/workflows/)'; then frontend=true; fi
+            # docs/game: npm run rules:check compares the game rules page with the rules file.
+            if touched '^(frontend/|docs/legal/|docs/game/|\.github/workflows/)'; then frontend=true; fi
             if touched '^(infra/|scripts/|backend/|frontend/|\.github/workflows/)|^(docker-)?compose[^/]*\.ya?ml$|^Makefile$|^\.env\.example$'; then stack=true; fi
           else
             files="(push to main: every job runs)"
@@ -177,6 +178,7 @@ jobs:
       - run: npm run format:check
       - run: npm run i18n:check
       - run: npm run legal:check
+      - run: npm run rules:check
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
