@@ -519,9 +519,20 @@ For INF-11, from INF-07 (PO decision, byul-byul, 2026-11-17): the audit log part
 **M14 — Health checks, status page, backups, disaster recovery (Minor, 1, buffer)**
 
 - [x] Health checks for every service in compose (the reference has them for API, DB, Redis, MinIO); INF-07, see Images, health checks and logs
-- [ ] Public status page showing each component green / red, fed by `/api/health` (without internal details)
+- [x] Public status page showing each component green / red, fed by `/api/health` (without internal details); INF-16, see "Status page (INF-16)" below
 - [ ] Automated daily `pg_dump` and bucket mirror, 7 copies kept
 - [ ] Restore runbook in `docs/disaster-recovery.md`, tested: drop the DB volume, restore, app works
+
+**Status page (INF-16).** `https://localhost/status`, a public React route (outside `RequireSession`, no login), linked as "Status" next to the legal links in the footer. Code in `frontend/src/features/status/`.
+
+- Polling: TanStack Query with `refetchInterval` `STATUS_POLL_INTERVAL_MS` = 15 s (`useHealthStatus.ts`); a hidden tab does not poll, and coming back to the tab checks at once. Each request times out after `STATUS_REQUEST_TIMEOUT_MS` = 5 s (`api.ts`). The request is anonymous: no `Authorization` header, `credentials: "omit"`.
+- Own `fetch`, not the FE-20 `apiClient`: the shared client throws on any non-2xx and keeps only `error`/`detail`, but `/api/health` answers 503 with a full health body when the database or Redis is down, and the page must show that body.
+- Whitelist: the page shows exactly five components in this order, mapped from the BE-31 keys: API (no key; up whenever a parseable health body arrives), Database (`db`), Redis (`redis`), File storage (`minio`), Background worker (`worker`). `"ok"` is up (green, ✓), `"down"` is down (red, ✕), anything else or a missing key is unknown (grey, ?); every state has a text label too. Other keys and fields, and the top-level `status`, are never rendered.
+- Overall line (`aria-live="polite"`): "All systems operational" when all five are up; "Degraded" when the API answers but a component is down or unknown; "API unreachable" on a network error, a timeout or a body that is not JSON with a `components` object (for example the proxy's HTML 502/504), with API down and the other four unknown.
+- "Last checked" is the time the last check completed (success or failure), formatted with `Intl.DateTimeFormat` in the active language. Strings live in the `status` i18n namespace, translated in all five languages (`npm run i18n:check` enforces the keys).
+- On `main` the worker shows red and the overall line "Degraded" until BE-29 (#69) adds the worker service. To see another component turn red by hand: `docker compose stop redis` (Redis red within 15 s; `/api/health` answers 503 with its body, still shown), then `docker compose up -d --wait redis`.
+- Metrics: the instrumentator excludes only `/metrics`, so every `/api/health` call lands in `http_request_duration_seconds` and in the route-less `http_request_duration_highr_seconds` that ApiHighLatencyP95 reads. One open status tab adds 4 requests per minute to the healthcheck's 2; while the worker is off, each takes about 0.5 s (see the ApiHighLatencyP95 known issue of INF-10, PR #81), so an open tab keeps the p95 high but does not change whether the alert fires. After BE-29 the health call takes a few ms.
+- The page sends no personal data and sets no cookie or storage of its own; the Privacy Policy needs no change.
 
 **Mandatory (no points, but rejection if missing):** HTTPS everywhere, one-command start, `.env` handling, mail catcher, pinned images, no secrets in Git.
 
