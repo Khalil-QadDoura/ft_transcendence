@@ -294,7 +294,8 @@ services:
   # Monitoring (INF-08, module M12). Prometheus pulls /metrics from the api and the exporters
   # every 15 s (infra/prometheus/prometheus.yml). No host port, no proxy route: only the
   # Docker network reaches it (Grafana, INF-09). It needs no other service to start; a
-  # target that is not up yet shows as down until the next scrape.
+  # target that is not up yet shows as down until the next scrape. Alert rules (INF-10):
+  # infra/prometheus/alerts.yml, evaluated by Prometheus itself; no Alertmanager.
   # Retention (PO decision 2026-11-12): metrics are kept at most 30 days and the TSDB is
   # capped at 1 GB, whichever comes first, as the Privacy Policy says (logs and metrics
   # kept at most 30 days, since #38). The command replaces the image's default
@@ -309,6 +310,10 @@ services:
       - --storage.tsdb.retention.size=1GB
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Alert rules (INF-10) and their unit tests, which `make metrics-check` runs with the
+      # image's promtool.
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./infra/prometheus/alerts.test.yml:/etc/prometheus/alerts.test.yml:ro
       - prometheus-data:/prometheus
     healthcheck:
       <<: *healthcheck

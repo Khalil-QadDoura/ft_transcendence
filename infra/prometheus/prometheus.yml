@@ -2,6 +2,8 @@
 # Pull model: Prometheus asks each target for its /metrics every 15 s; no target pushes and
 # none is reachable from the host or through the proxy. Retention (30 days, at most 1 GB) is
 # set by the command-line flags in docker-compose.yml, not here.
+# Alert rules (INF-10): alerts.yml, evaluated every 15 s (evaluation_interval); unit tests in
+# alerts.test.yml. No Alertmanager: alerts show in Prometheus and Grafana only.
 # Check: `make metrics-check` (infra/prometheus/smoke-test.sh). Details: "M12 — Monitoring"
 # in docs/infra/infrastructure.md.
 
@@ -9,6 +11,10 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   scrape_timeout: 10s
+
+# Mounted read-only next to this file (docker-compose.yml, service prometheus).
+rule_files:
+  - /etc/prometheus/alerts.yml
 
 scrape_configs:
   # Prometheus itself: TSDB size, scrape durations, rule evaluation.
