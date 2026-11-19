@@ -1,7 +1,7 @@
 {
   "uid": "wozu-infra",
   "title": "WOZU Infrastructure",
-  "description": "Scrape target health, PostgreSQL connections, Redis memory and CPU / memory of every container of one compose project (variable project, default this stack) by compose service (INF-09, module M12). Sources: Prometheus itself (up), postgres-exporter, redis-exporter, cAdvisor. Provisioned from infra/grafana/dashboards/infrastructure.json; edit the file, not the UI.",
+  "description": "Scrape target health, the number of firing Prometheus alerts (INF-10), PostgreSQL connections, Redis memory and CPU / memory of every container of one compose project (variable project, default this stack) by compose service (INF-09, module M12). Sources: Prometheus itself (up, ALERTS), postgres-exporter, redis-exporter, cAdvisor. Provisioned from infra/grafana/dashboards/infrastructure.json; edit the file, not the UI.",
   "tags": ["wozu", "m12", "infra"],
   "editable": false,
   "graphTooltip": 1,
@@ -46,7 +46,7 @@
       "title": "Target health",
       "description": "One box per Prometheus scrape job: up is 1 when the last scrape of the target worked, 0 when it failed. Stopping an exporter (docker compose stop redis-exporter) turns its box red within one scrape (15 s).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
+      "gridPos": { "x": 0, "y": 0, "w": 18, "h": 4 },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
@@ -73,6 +73,40 @@
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "up",
           "legendFormat": "{{job}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Firing alerts",
+      "description": "How many Prometheus alerts are firing now (INF-10, rules in infra/prometheus/alerts.yml): RedisDown, TargetDown, ApiHighErrorRate, ApiHighLatencyP95, MonitoringDiskAlmostFull. 0 is green, 1 or more red. ALERTS is the series Prometheus writes for every pending or firing alert; 'or vector(0)' makes it read 0, not 'No data', when none fires. Which alert and since when: Alerting > Alert rules (data source-managed, Prometheus). Demo: make alert-demo (stops Redis: RedisDown fires within about 75 s).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)",
+          "legendFormat": "firing",
           "range": true
         }
       ]
