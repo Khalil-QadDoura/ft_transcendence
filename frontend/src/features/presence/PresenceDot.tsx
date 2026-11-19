@@ -55,4 +55,3 @@ export const PresenceDot: React.FC<PresenceDotProps> = ({
     />
   );
 };
-
