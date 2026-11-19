@@ -39,7 +39,7 @@
     "late": "Anyone who has not joined when the game starts cannot join later.",
     "leaveTitle": "Leaving the waiting room",
     "leave": "You may leave the room before the game starts. Your label goes back to the pool, the participant count drops by one and the room timer keeps running. If no human is left, the room closes at once.",
-    "leaveLate": "Leaving after the game has started counts as a disconnect.",
+    "leaveLate": "Leaving after the game has started counts as a disconnect: you keep the marks you had at that moment and can come back to the room and change them until voting ends.",
     "closeTitle": "When the room closes",
     "close": "If the room timer runs out with only {{participants}} participant in the room, the room closes. You go back to the lobby and can create or join a new room."
   },

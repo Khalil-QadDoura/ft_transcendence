@@ -39,7 +39,7 @@
     "late": "Oyun başlayanda qoşulmamış olan sonra qoşula bilməz.",
     "leaveTitle": "Gözləmə otağından çıxmaq",
     "leave": "Oyun başlamazdan əvvəl otaqdan çıxa bilərsiniz. Etiketiniz ümumi hovuza qayıdır, iştirakçıların sayı bir azalır və otaq taymeri işləməyə davam edir. Otaqda heç bir insan qalmazsa, otaq dərhal bağlanır.",
-    "leaveLate": "Oyun başladıqdan sonra çıxmaq bağlantının kəsilməsi sayılır.",
+    "leaveLate": "Oyun başladıqdan sonra çıxmaq bağlantının kəsilməsi sayılır: həmin andakı işarələriniz saxlanılır və səsvermə bitənə qədər otağa qayıdıb onları dəyişə bilərsiniz.",
     "closeTitle": "Otaq nə vaxt bağlanır",
     "close": "Otaq taymeri bitəndə otaqda cəmi {{participants}} iştirakçı varsa, otaq bağlanır. Lobbiyə qayıdırsınız və yeni otaq yarada və ya başqa otağa qoşula bilərsiniz."
   },

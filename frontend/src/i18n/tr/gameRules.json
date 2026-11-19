@@ -39,7 +39,7 @@
     "late": "Oyun başladığında katılmamış olan biri sonradan katılamaz.",
     "leaveTitle": "Bekleme odasından ayrılmak",
     "leave": "Oyun başlamadan önce odadan ayrılabilirsiniz. Etiketiniz havuza geri döner, katılımcı sayısı bir azalır ve oda zamanlayıcısı çalışmaya devam eder. Odada hiç insan kalmazsa oda hemen kapanır.",
-    "leaveLate": "Oyun başladıktan sonra ayrılmak, bağlantı kopması sayılır.",
+    "leaveLate": "Oyun başladıktan sonra ayrılmak, bağlantı kopması sayılır: o andaki işaretlerinizi korursunuz ve oylama bitene kadar odaya geri dönüp onları değiştirebilirsiniz.",
     "closeTitle": "Oda ne zaman kapanır",
     "close": "Oda zamanlayıcısı dolduğunda odada yalnızca {{participants}} katılımcı varsa oda kapanır. Lobiye dönersiniz ve yeni bir oda oluşturabilir ya da başka bir odaya katılabilirsiniz."
   },
@@ -103,7 +103,7 @@
       "markedBy": "İşaretleyen",
       "deceptionTitle": "Botların aldatma oranları",
       "deception": "{{player}}: {{humans}} insandan {{fooled}} tanesi “insan” olarak işaretledi, aldatma oranı {{rate}}.",
-      "tie": "{{player}} da {{score}} puan almış olsaydı, {{humans}} insanın hepsi en yüksek puanı paylaşır ve hepsi berabere kalırdı."
+      "tie": "{{player}} de {{score}} puan almış olsaydı, {{humans}} insanın hepsi en yüksek puanı paylaşır ve hepsi berabere kalırdı."
     },
     "b": {
       "title": "Örnek B: {{humans}} insan ve {{bots}} bot",
