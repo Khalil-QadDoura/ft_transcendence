@@ -26,7 +26,7 @@ test.each(["privacy", "terms"] as const)(
     expect(router.state.location.pathname).toBe(`/${kind}`);
     expect(container.querySelectorAll("h1")).toHaveLength(1);
     expect(container.querySelector("time")?.dateTime).toBe(
-      kind === "privacy" ? "2026-11-17" : "2026-11-13",
+      kind === "privacy" ? "2026-11-19" : "2026-11-13",
     );
     expect(
       container.querySelector("article")!.textContent!.length,

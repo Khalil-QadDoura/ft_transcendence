@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-11-17
+Last updated: 2026-11-19
 
 This policy explains what personal data WOZU Web collects, why, who can see it, how long we keep it and what you can do about it. We wrote it for this service, in plain words. If something is unclear, write to us: burhan.hajili@gmail.com.
 
@@ -118,7 +118,7 @@ We do not sell your data. We do not share it for advertising. Apart from the ser
 - We keep your account, profile, videos, applications and chats until you delete them or delete your account.
 - When you delete your account, it happens in two stages. First, at once: your account is deactivated, you can no longer sign in, all your sessions end, your profile, videos and job posts are hidden from everyone, and your avatar and your company's logo are no longer publicly available (replacing an avatar or a logo deletes the old file at once). Second, after 30 days: an automatic job anonymises the account. Your email, name, birth date and bio are erased or replaced, and your avatar, logo and video files are deleted from storage. Applications and game records stay only in anonymised form. Chat messages you already sent stay visible to their recipients, shown as from "Deleted user".
 - During those 30 days we keep your data only to handle disputes, abuse reports and legal claims, and only the team can access it. If a complaint or dispute about your account is open, we keep the data needed for it until it is resolved. Deleted data can then stay in a backup for up to 7 more days. Until you delete your account, you can also delete a single video yourself.
-- Backups are kept for 7 days and then overwritten.
+- Backups are kept for at most 7 days and then deleted.
 - Server logs, which include IP addresses, and service metrics are kept for at most 30 days.
 
 Connections between your browser and WOZU Web use HTTPS. Videos are opened through short-lived links. Passwords are stored as hashes. After repeated requests from one address, the service refuses further requests for a while.
