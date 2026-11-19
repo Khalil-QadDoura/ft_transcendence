@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useText } from "../../i18n/useText";
+import { useUserPresence } from "../presence";
 import { ConversationList } from "./ConversationList";
 import type { ConversationItem } from "./types";
 
@@ -11,6 +12,7 @@ export const ConversationsPage: React.FC = () => {
   const selectedConvId = id ? parseInt(id, 10) : null;
   const [selectedConversation, setSelectedConversation] =
     useState<ConversationItem | null>(null);
+  const isPeerOnline = useUserPresence(selectedConversation?.peer?.id);
 
   const handleSelect = (conv: ConversationItem) => {
     setSelectedConversation(conv);
@@ -71,13 +73,39 @@ export const ConversationsPage: React.FC = () => {
                   </svg>
                 </button>
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
-                    {selectedConversation?.peer?.display_name ||
-                      selectedConversation?.title ||
-                      t("chat.conversationFallback", { id: selectedConvId })}
-                  </h3>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
+                      {selectedConversation?.peer?.display_name ||
+                        selectedConversation?.title ||
+                        t("chat.conversationFallback", { id: selectedConvId })}
+                    </h3>
+                    {selectedConversation?.peer && (
+                      <span
+                        className="inline-flex items-center space-x-1"
+                        data-testid="chat-header-presence"
+                      >
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${
+                            isPeerOnline ? "bg-emerald-500" : "bg-gray-400"
+                          }`}
+                          aria-hidden="true"
+                          data-testid="chat-header-presence-dot"
+                        />
+                        <span
+                          className="text-xs text-gray-500 dark:text-gray-400"
+                          data-testid="chat-header-presence-label"
+                        >
+                          {t(
+                            isPeerOnline
+                              ? "controls.online"
+                              : "controls.offline",
+                          )}
+                        </span>
+                      </span>
+                    )}
+                  </div>
                   {selectedConversation?.job_title && (
-                    <p className="truncate text-xs text-primary-600 dark:text-primary-400">
+                    <p className="truncate text-xs text-ink-muted">
                       {t("chat.appliedFor", {
                         job: selectedConversation.job_title,
                       })}
@@ -88,7 +116,7 @@ export const ConversationsPage: React.FC = () => {
 
               {/* Chat Thread Placeholder / Message History (FE-30) */}
               <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-paper-subtle text-ink">
                   <svg
                     className="h-6 w-6"
                     fill="none"
