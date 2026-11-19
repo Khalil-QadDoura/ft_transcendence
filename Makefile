@@ -10,9 +10,12 @@ COMPOSE := docker compose
 COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
+# `make restore BACKUP=<timestamp|latest>`; RESTORE_YES=1 skips the question (INF-15).
+BACKUP ?=
+RESTORE_YES ?=
 
 .PHONY: all env certs up down logs logs-reset test https-check images-check files-check mail-check metrics-check \
-	grafana-check fclean re
+	grafana-check backup backup-list backup-check restore fclean re
 
 all: env up
 
@@ -140,7 +143,36 @@ metrics-check:
 grafana-check:
 	@./infra/grafana/smoke-test.sh
 
-# Removes containers, volumes (database, files), images built here and the certificate.
+# One backup now, inside the running backup service (INF-14): a pg_dump of the app database
+# and a copy of the bucket, verified, then retention; prints what was written (status).
+backup:
+	@if [ -z "$$($(COMPOSE) ps -q --status running backup)" ]; then \
+		echo "backup: the backup service is not running; start the stack with make" >&2; exit 1; fi
+	$(COMPOSE) exec -T backup backup.sh run
+
+# The complete copies (database and files of the same run), newest first, with the
+# timestamps `make restore BACKUP=...` takes.
+backup-list:
+	$(COMPOSE) exec -T backup backup.sh list
+
+# Runs `make backup`, then: the newest dump valid with every app table, the newest files
+# copy with the bucket's object count and the same sha256 for one object, the catch-up
+# decision at start, retention as decided (none older than 7 days, at most 7 copies) on
+# test directories, the backups volume neither published nor reachable through the proxy
+# (INF-14).
+backup-check:
+	@./infra/backup/smoke-test.sh
+
+# Puts a backup back (INF-15): stops api and worker, restores the database (pg_restore)
+# and the bucket (mc mirror) of one run, then starts the stack with `make`. The restore
+# runs before the api starts, so its migrations never meet an empty database. Asks first,
+# unless RESTORE_YES=1. See docs/disaster-recovery.md.
+restore:
+	@BACKUP="$(BACKUP)" RESTORE_YES="$(RESTORE_YES)" ./infra/backup/restore.sh
+	@$(MAKE) --no-print-directory all
+	@./infra/backup/restore.sh --next-checks
+
+# Removes containers, volumes (database, files, backups), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
 fclean:
 	$(COMPOSE_ALL) down -v --rmi local --remove-orphans
