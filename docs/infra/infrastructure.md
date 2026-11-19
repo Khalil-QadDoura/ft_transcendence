@@ -282,7 +282,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 
 ## One-command start and secrets
 
-`make` must take a fresh clone to a running site: it creates `.env` from `.env.example` with random secrets when missing, then builds and starts the stack. The only value a human must add is `OPENAI_API_KEY` (moderation module).
+`make` must take a fresh clone to a running site: it creates `.env` from `.env.example` with random secrets when missing, then builds and starts the stack. The only value a human must add is `OPENAI_API_KEY` (moderation module); `FT_CLIENT_ID` and `FT_CLIENT_SECRET` are added by hand too, for login with 42 (BE-11), which stays off while they are empty.
 
 | Target | What it does |
 | --- | --- |
@@ -331,6 +331,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `GRAFANA_ADMIN_PASSWORD` | generated | grafana: password of the user `admin`, set when the `grafana-data` volume is new; compose stops with an error when it is missing |
 | `OPENAI_API_KEY` | empty, filled by hand | worker |
 | `MODERATION_FAIL_OPEN` | `false` on defense day | worker |
+| `FT_CLIENT_ID` / `FT_CLIENT_SECRET` | empty, filled by hand from the 42 intra app settings (UID / SECRET) | api only: login with 42 (BE-11); empty = `/api/auth/oauth/42/start` answers 503; the secret moves to Vault with INF-13 |
 
 Compose passes each service only the variables it needs (`environment:`), not the whole `.env`. Addresses inside the Docker network are written in `docker-compose.yml`, not `.env`: the `db` host in `DATABASE_URL`, `MINIO_ENDPOINT=minio:9000`, and `REDIS_URL=redis://redis:6379/0` for api and worker (`x-backend-env`). The backend's `settings.redis_url` defaults to the same value and is read from `REDIS_URL` (the app's Redis client, the Celery broker). The variable is still written in compose: an earlier `realtime/connection_manager.py` (removed since) fell back to `localhost`, which inside a container is the container itself, so a published event was lost without an error and never reached the other user's `/ws` (found by Khalil in #24).
 

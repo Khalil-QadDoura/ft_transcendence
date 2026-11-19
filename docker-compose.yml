@@ -133,7 +133,12 @@ services:
     build:
       context: ./backend
       target: runtime
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      # Login with 42 (BE-11): the keys of our 42 intra app, added to .env by hand. Only the
+      # api uses them, so they are not in x-backend-env. Empty turns login with 42 off.
+      FT_CLIENT_ID: ${FT_CLIENT_ID:-}
+      FT_CLIENT_SECRET: ${FT_CLIENT_SECRET:-}
     depends_on:
       db:
         condition: service_healthy
