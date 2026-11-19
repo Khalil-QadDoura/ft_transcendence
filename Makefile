@@ -15,7 +15,8 @@ s ?=
 days ?=
 
 .PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
-	mail-check metrics-check grafana-check schema-diagram anonymise-deleted alert-demo vault-init vault-check fclean re
+	mail-check metrics-check grafana-check schema-diagram anonymise-deleted alert-demo vault-init vault-check \
+	backup backup-list backup-check fclean re
 
 all: env up
 
@@ -198,7 +199,26 @@ alert-demo:
 vault-check:
 	@./infra/vault/smoke-test.sh
 
-# Removes containers, volumes (database, files, Vault), images built here and the certificate.
+# One backup now, inside the running backup service (INF-14): a pg_dump of the app database
+# and a copy of the bucket, verified, then retention; prints what was written (status).
+backup:
+	@if [ -z "$$($(COMPOSE) ps -q --status running backup)" ]; then \
+		echo "backup: the backup service is not running; start the stack with make" >&2; exit 1; fi
+	$(COMPOSE) exec -T backup backup.sh run
+
+# The complete copies (database and files of the same run), newest first, with the
+# timestamps `make restore BACKUP=...` takes.
+backup-list:
+	$(COMPOSE) exec -T backup backup.sh list
+
+# Runs `make backup`, then: the newest dump valid with every app table, the newest files
+# copy with the bucket's object count and the same sha256 for one object, retention as
+# decided (7) on a test directory, the backups volume neither published nor reachable
+# through the proxy (INF-14).
+backup-check:
+	@./infra/backup/smoke-test.sh
+
+# Removes containers, volumes (database, files, Vault, backups), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
 # The Vault keys file belongs to the Vault just removed: it is moved aside to
 # scripts/vault-keys.local.stale-<UTC time>, as `make` does with a keys file whose Vault is gone.
