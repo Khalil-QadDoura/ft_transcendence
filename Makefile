@@ -13,10 +13,13 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 s ?=
 # Optional: `make anonymise-deleted days=0` anonymises every deleted account at once.
 days ?=
+# `make restore BACKUP=<timestamp|latest>`; RESTORE_YES=1 skips the question (INF-15).
+BACKUP ?=
+RESTORE_YES ?=
 
 .PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
 	mail-check metrics-check grafana-check schema-diagram anonymise-deleted alert-demo vault-init vault-check \
-	backup backup-list backup-check fclean re
+	backup backup-list backup-check restore fclean re
 
 all: env up
 
@@ -217,6 +220,15 @@ backup-list:
 # through the proxy (INF-14).
 backup-check:
 	@./infra/backup/smoke-test.sh
+
+# Puts a backup back (INF-15): stops api and worker, restores the database (pg_restore)
+# and the bucket (mc mirror) of one run, then starts the stack with `make`. The restore
+# runs before the api starts, so its migrations never meet an empty database. Asks first,
+# unless RESTORE_YES=1. See docs/disaster-recovery.md.
+restore:
+	@BACKUP="$(BACKUP)" RESTORE_YES="$(RESTORE_YES)" ./infra/backup/restore.sh
+	@$(MAKE) --no-print-directory all
+	@./infra/backup/restore.sh --next-checks
 
 # Removes containers, volumes (database, files, Vault, backups), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
