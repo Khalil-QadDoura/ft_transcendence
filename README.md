@@ -23,7 +23,7 @@ Planning documents (roles, module plan, API contract, infrastructure) are in [do
 
 <!-- TODO DOC-05 (byul-byul): prerequisites (software, tools, versions), .env setup, step-by-step run with make, Mailpit at /mail. Only commands that work. -->
 
-**Prerequisites:** Docker Engine 25 or newer (the health checks use `start_interval`) with Docker Compose v2, make, bash and openssl.
+**Prerequisites:** Docker Engine 25 or newer (the health checks use `start_interval`) with Docker Compose v2, make, bash, openssl and python3 3.9 or newer (`make` reads Vault's answers with it while it initializes and unseals Vault).
 
 ## Resources
 
