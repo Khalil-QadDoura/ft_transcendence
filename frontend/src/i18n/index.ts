@@ -8,6 +8,11 @@ import ar from "./ar/common.json";
 import az from "./az/common.json";
 import tr from "./tr/common.json";
 import ru from "./ru/common.json";
+import statusEn from "./en/status.json";
+import statusAr from "./ar/status.json";
+import statusAz from "./az/status.json";
+import statusTr from "./tr/status.json";
+import statusRu from "./ru/status.json";
 
 export const languages = ["en", "ar", "az", "tr", "ru"] as const;
 export type Language = (typeof languages)[number];
@@ -50,14 +55,14 @@ void i18next.init({
   fallbackLng: "en",
   supportedLngs: [...languages],
   resources: {
-    en: { common: en, screens, profile, people },
-    ar: { common: ar },
-    az: { common: az },
-    tr: { common: tr },
-    ru: { common: ru },
+    en: { common: en, screens, profile, people, status: statusEn },
+    ar: { common: ar, status: statusAr },
+    az: { common: az, status: statusAz },
+    tr: { common: tr, status: statusTr },
+    ru: { common: ru, status: statusRu },
   },
   defaultNS: "common",
-  ns: ["common", "screens", "profile", "people"],
+  ns: ["common", "screens", "profile", "people", "status"],
   initAsync: false,
   interpolation: { escapeValue: false },
 });

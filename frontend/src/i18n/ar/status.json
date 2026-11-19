@@ -1,0 +1,25 @@
+{
+  "title": "حالة الخدمة",
+  "intro": "الحالة المباشرة لخدمات WOZU. تُعيد هذه الصفحة الفحص كل {{seconds}} ثانية.",
+  "overall": {
+    "checking": "جارٍ الفحص…",
+    "operational": "جميع الأنظمة تعمل",
+    "degraded": "تعمل جزئيًا",
+    "unreachable": "تعذّر الوصول إلى واجهة API"
+  },
+  "componentsHeading": "المكوّنات",
+  "component": {
+    "api": "واجهة API",
+    "database": "قاعدة البيانات",
+    "redis": "Redis",
+    "storage": "تخزين الملفات",
+    "worker": "معالج المهام الخلفية"
+  },
+  "state": {
+    "up": "يعمل",
+    "down": "متوقف",
+    "unknown": "غير معروف"
+  },
+  "lastChecked": "آخر فحص:",
+  "notChecked": "لم يُجرَ الفحص بعد"
+}
