@@ -259,6 +259,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: make (fresh .env and certificate, build, start, wait until healthy)
         run: make
+      # Vault: initialized and unsealed by make (fresh keys file, never printed), server mode
+      # with file storage, KV v2, AppRole, policies, audit device, each role's token limited
+      # to its own path, no host port (INF-12).
+      - run: make vault-check
       - name: docker compose config (every variable reference resolves)
         run: docker compose config -q
       - run: make test
