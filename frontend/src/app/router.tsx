@@ -13,6 +13,7 @@ import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
+import { MyApplicationsPage } from "../features/applications/MyApplicationsPage";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
@@ -90,6 +91,7 @@ export const routes: RouteObject[] = [
           { path: "profile", element: <ProfilePage /> },
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
+          { path: "applications", element: <MyApplicationsPage /> },
           ...pages([
             ["friends", "routes.friends"],
             ["employer/*", "routes.employer"],
