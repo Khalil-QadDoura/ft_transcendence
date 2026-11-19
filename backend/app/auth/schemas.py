@@ -63,3 +63,11 @@ class ForgotPasswordIn(BaseModel):
 class ResetPasswordIn(BaseModel):
     token: str  # from the email's link: <FRONTEND_BASE_URL>/reset-password?token=...
     new_password: NewPassword
+
+
+class FtProfile(BaseModel):
+    """The part of 42's GET /v2/me answer that we use (BE-11); the other fields are ignored."""
+
+    email: Email  # required: an answer without a valid email cannot log anyone in
+    first_name: str | None = None
+    last_name: str | None = None
