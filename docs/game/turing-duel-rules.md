@@ -1,5 +1,7 @@
 # Turing Duel: rules and scoring
 
+Shown in the app at /game/rules; numbers are checked by `npm run rules:check` (`frontend/scripts/game-rules.drift.ts`).
+
 Rules of the Turing Duel mini-game, as decided by the Product Owner on 2026-11-04. The game rules page (FE-34) shows this text, the translation cards (FE-07) translate it, and the room, scoring and UI cards (BE-27, BE-10, FE-31, FE-32) implement exactly this text. Changing a rule means changing this file first.
 
 Sections 1 to 8 are written for players. Section 9 is for implementers.
