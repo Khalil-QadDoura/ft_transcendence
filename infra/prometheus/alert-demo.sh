@@ -10,8 +10,8 @@
 # redis-exporter stays up while Redis is stopped and reports redis_up 0, so RedisDown
 # (redis_up == 0 for 30 s, infra/prometheus/alerts.yml) fires: one scrape (at most 15 s) +
 # one evaluation (at most 15 s) + 30 s = about 45 to 75 s. While it fires, the "Firing
-# alerts" panel of the WOZU Infrastructure dashboard reads 1 and Grafana's Alerting > Alert
-# rules page shows RedisDown as firing.
+# alerts" panel of the WOZU Infrastructure dashboard goes up by one and Grafana's
+# Alerting > Alert rules page shows RedisDown as firing.
 # Redis is started again whenever the script ends after stopping it (failure or Ctrl-C
 # included), so the stack is never left without Redis.
 # Prometheus has no host port, so it is asked inside its container, as metrics-check does.
