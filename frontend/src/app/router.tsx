@@ -17,6 +17,7 @@ import { MyApplicationsPage } from "../features/applications/MyApplicationsPage"
 import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
+import { StatusPage } from "../features/status/StatusPage";
 function ComingSoon({ title }: { title: string }) {
   const { t } = useText();
   return (
@@ -66,10 +67,11 @@ export const routes: RouteObject[] = [
       { path: "privacy", element: <LegalPage kind="privacy" /> },
       { path: "terms", element: <LegalPage kind="terms" /> },
       { path: "jobs", element: <JobsPage /> },
+      // Public (INF-16): outside RequireSession, works for logged-out visitors.
+      { path: "status", element: <StatusPage /> },
       ...pages([
         ["jobs/:id", "routes.job"],
         ["game/rules", "routes.rules"],
-        ["status", "routes.status"],
       ]),
       {
         element: <GuestOnly />,
