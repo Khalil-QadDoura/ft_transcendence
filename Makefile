@@ -1,9 +1,10 @@
 # One command from a fresh clone to a running site: `make`.
 # Everything runs in containers; the host needs Docker Engine 25+ (health checks use
-# start_interval, which Engine 24 refuses) with compose v2, make, bash and openssl.
-# The checks against the running stack (https-check, files-check, mail-check, metrics-check,
-# grafana-check) also use curl, and metrics-check and grafana-check python3 3.9+ (macOS
-# command line tools; the ubuntu runner).
+# start_interval, which Engine 24 refuses) with compose v2, make, bash, openssl and python3
+# 3.9+ (scripts/vault-init.sh reads Vault's JSON answers with it; macOS command line tools,
+# the ubuntu runner). The checks against the running stack (https-check, files-check,
+# mail-check, metrics-check, grafana-check) also use curl; metrics-check, grafana-check and
+# vault-check use python3 too.
 
 COMPOSE := docker compose
 # Every profile, so down and fclean also reach services with profiles (api-test, redis-test).
@@ -14,7 +15,7 @@ s ?=
 days ?=
 
 .PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
-	mail-check metrics-check grafana-check schema-diagram anonymise-deleted alert-demo fclean re
+	mail-check metrics-check grafana-check schema-diagram anonymise-deleted alert-demo vault-init vault-check fclean re
 
 all: env up
 
@@ -27,9 +28,17 @@ env:
 certs:
 	@./infra/proxy/scripts/gen-cert.sh
 
+# Vault first (INF-12): the vault service alone, then scripts/vault-init.sh initializes it on
+# the first run, unseals it after every start and applies its configuration; one line when
+# there is nothing to do. The key shares and the root token stay in scripts/vault-keys.local
+# (Git-ignored, mode 600); nothing secret is printed. See docs/infra/vault.md.
+vault-init: env
+	@$(COMPOSE) up -d --wait --wait-timeout 120 vault
+	@./scripts/vault-init.sh
+
 # --wait returns once every service is running (healthy where it has a health check),
 # and fails if one of them exits.
-up: env certs
+up: env certs vault-init
 	$(COMPOSE) up -d --build --wait --wait-timeout 300
 	@port=$$(sed -n 's/^HTTPS_PORT=//p' .env); \
 	if [ -z "$$port" ] || [ "$$port" = 443 ]; then url=https://localhost/; else url=https://localhost:$$port/; fi; \
@@ -51,6 +60,8 @@ logs:
 # runs again as the api's). Mailpit keeps its inbox inside its container, so the inbox is
 # emptied too. Logs are kept at most 30 days (Privacy Policy, PO decision 2026-11-13); the
 # operator runs this at least weekly, see "Logs and retention" in docs/infra/infrastructure.md.
+# Vault's audit log is its container log too. A new vault container starts sealed, so
+# scripts/vault-init.sh unseals it again (INF-12).
 logs-reset:
 	@running="$$($(COMPOSE_ALL) ps --services --status running | sort | tr '\n' ' ')"; \
 	stopped="$$($(COMPOSE_ALL) ps --services --status exited --status created --status dead \
@@ -60,6 +71,7 @@ logs-reset:
 	if [ -n "$$running" ]; then \
 		$(COMPOSE_ALL) up -d --force-recreate --wait --wait-timeout 300 $$running || exit 1; \
 	fi; \
+	case " $$running" in *" vault "*) ./scripts/vault-init.sh || exit 1 ;; esac; \
 	echo "logs-reset: stopped containers removed: $${stopped:-none}"; \
 	echo "logs-reset: recreated with empty logs: $${running:-none}"
 
@@ -175,10 +187,24 @@ anonymise-deleted:
 alert-demo:
 	@./infra/prometheus/alert-demo.sh
 
-# Removes containers, volumes (database, files), images built here and the certificate.
+# Vault against the running stack (INF-12): initialized and unsealed (3 key shares,
+# threshold 2), server mode with file storage, non-root with its memory locked, KV v2 at
+# secret/, AppRole with the roles api and worker, the policies as in infra/vault/policies/,
+# the audit device; then isolation with throwaway values and one-use AppRole logins (each
+# role reads its own path and gets 403 on the other role's path and on writing its own),
+# the audit log without these credentials in clear, everything removed again; the keys file
+# Git-ignored and untracked; no host port. Uses the root token from scripts/vault-keys.local,
+# never printed (docs/infra/vault.md).
+vault-check:
+	@./infra/vault/smoke-test.sh
+
+# Removes containers, volumes (database, files, Vault), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
+# The Vault keys file belongs to the Vault just removed: it is moved aside to
+# scripts/vault-keys.local.stale-<UTC time>, as `make` does with a keys file whose Vault is gone.
 fclean:
 	$(COMPOSE_ALL) down -v --rmi local --remove-orphans
+	@./scripts/vault-init.sh --retire-keys
 	@docker image rm wozu-frontend-test >/dev/null 2>&1 || true
 	rm -rf infra/proxy/certs
 

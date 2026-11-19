@@ -26,7 +26,7 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
 ### Prerequisites
 
 - **Docker Engine 25 or newer** (the health checks use `start_interval`, which Engine 24 refuses) with **Docker Compose v2** (`docker compose`). Docker Desktop for Mac or Windows includes both.
-- **make**, **bash** and **openssl** (`make` uses openssl to generate the secrets and the certificate).
+- **make**, **bash**, **openssl** (`make` uses openssl to generate the secrets and the certificate) and **python3 3.9 or newer** (`make` reads Vault's answers with it while it initializes and unseals Vault).
 - Free host ports **443** (HTTPS) and **80** (redirect to HTTPS). Only the proxy publishes ports. If one is taken, set `HTTPS_PORT` or `HTTP_PORT` in `.env` (for example `HTTPS_PORT=8443`), and every URL below then needs `:8443`.
 - Resources: about 1 GB of memory for the running stack (13 containers, measured at about 0.9 GB idle); give Docker at least 4 GB, because building the images needs more than running them. Allow several GB of disk for images and volumes. The first `make` downloads the images and builds the frontend and backend, so it needs internet access and takes a few minutes.
 
