@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { routes } from "./router";
 import { safeNext, SessionContext } from "./session";
 
@@ -24,11 +25,17 @@ async function render(
   session: "anonymous" | "authenticated" | "loading" = "anonymous",
 ) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
+  // The public status page (INF-16) reads /api/health through TanStack Query.
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   await act(() =>
     root.render(
-      <SessionContext value={session}>
-        <RouterProvider router={router} />
-      </SessionContext>,
+      <QueryClientProvider client={queries}>
+        <SessionContext value={session}>
+          <RouterProvider router={router} />
+        </SessionContext>
+      </QueryClientProvider>,
     ),
   );
   return router;

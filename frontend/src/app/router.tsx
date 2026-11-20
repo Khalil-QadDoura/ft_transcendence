@@ -13,10 +13,14 @@ import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
+import { MyApplicationsPage } from "../features/applications/MyApplicationsPage";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { JobDetailPage } from "../features/jobs/JobDetailPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
+import { StatusPage } from "../features/status/StatusPage";
+import { GameRulesPage } from "../features/game/rules/GameRulesPage";
+import { GAME_RULES_PATH } from "../features/game/rules/paths";
 function ComingSoon({ title }: { title: string }) {
   const { t } = useText();
   return (
@@ -66,11 +70,11 @@ export const routes: RouteObject[] = [
       { path: "privacy", element: <LegalPage kind="privacy" /> },
       { path: "terms", element: <LegalPage kind="terms" /> },
       { path: "jobs", element: <JobsPage /> },
+      // Public (INF-16): outside RequireSession, works for logged-out visitors.
+      { path: "status", element: <StatusPage /> },
+      // Public (FE-34): outside RequireSession, works for logged-out visitors.
+      { path: GAME_RULES_PATH, element: <GameRulesPage /> },
       { path: "jobs/:id", element: <JobDetailPage /> },
-      ...pages([
-        ["game/rules", "routes.rules"],
-        ["status", "routes.status"],
-      ]),
       {
         element: <GuestOnly />,
         children: [
@@ -91,6 +95,7 @@ export const routes: RouteObject[] = [
           { path: "profile", element: <ProfilePage /> },
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
+          { path: "applications", element: <MyApplicationsPage /> },
           ...pages([
             ["friends", "routes.friends"],
             ["employer/*", "routes.employer"],

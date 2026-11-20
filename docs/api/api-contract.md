@@ -181,7 +181,7 @@ Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/g
 | POST | `/game/rooms/{id}/votes` | Bearer (participant) | `{target_participant_id, guess: "bot" or "human"}` | 201 `{message}` | 400 self, 409 not voting phase / already voted, 422 |
 | GET | `/game/rooms/{id}/results` | Bearer (participant) | — | 200 `{room_id, state, participants: [{participant_id, display_label, is_bot, score (humans), deception_rate (bots)}]}` | 409 not finished |
 
-Room states (BE-27): `waiting (180 s max) → discussion (120 s) → voting (45 s) → finished`, or `closed` if timer expires with 1 participant or the last human leaves `waiting`. Every participant payload before results exposes only `{id, display_label, is_you}` identically for humans and bots.
+Room states (BE-27): `waiting (180 s max) → discussion (120 s) → voting (45 s) → finished`, or `closed` if timer expires with 1 participant or the last human leaves `waiting`. Every participant payload before results exposes only `{id, display_label, is_you}` identically for humans and bots, where `id` and `my_participant_id` are the participant's stable room label number (1–5, e.g. 2 for "Player 2"), never database participant ids (BE-35).
 
 ## System
 
@@ -225,11 +225,11 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
 | server → client | `game_room_formed` | `{room_id}` | Matchmaking put me in a room |
-| server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room |
-| server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room |
+| server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room (`participant.id` is label number 1–5, BE-35) |
+| server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room (`participant.id` is label number 1–5, BE-35) |
 | server → client | `game_started` | `{room_id, state: "discussion", phase_ends_at}` | Waiting room transitioned to discussion |
 | server → client | `game_room_closed` | `{room_id}` | Waiting room expired with 1 participant |
-| server → client | `game_message` | `{id, participant_id, display_label, text}` | Room message from a player or a bot |
+| server → client | `game_message` | `{id, participant_id, display_label, text}` | Room message from a player or a bot (`participant_id` is label number 1–5, BE-35) |
 | server → client | `game_phase_voting` | `{room_id, state: "voting", phase_ends_at}` | Discussion ended |
 | server → client | `game_phase_finished` | `{room_id}` | Voting ended, results ready |
 
@@ -257,7 +257,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[ \] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
 | \[ \] | Game votes: `POST /game/rooms/{id}/votes` names its target by label number (1–5) instead of `target_participant_id`. A vote request replaces the voter's mark for that target: it is idempotent and allowed any number of times until voting ends, so there is no "already voted" error. A target without a mark counts as `human`. BE-10 owns the final field names and errors. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5, 6 and 9 | Marks preset to human and changeable until voting ends; no database ids before results (DOC-08 follow-up, BE-10) |
-| \[ \] | Game payloads before the results name each participant by its label number (1–5, "Player N"), the same field as in the votes row above, never by the database participant id: `GET /game/rooms/{id}` (`my_participant_id` and `participants[].id`), `game_participant_joined` and `game_participant_left` (`participant.id`), and `game_message` (`participant_id`). `display_label` stays. Database participant ids appear only in `GET /game/rooms/{id}/results`. BE-35 (Nader, new card: hide database participant ids from game payloads before results) owns the REST room state and the room events; BE-09 owns `game_message` on `/ws/game`. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), section 9 | No database ids before results, so ids cannot hint at join order or at bots (DOC-08 follow-up, BE-35, BE-09) |
+| [x] | Game payloads before the results name each participant by its label number (1–5, "Player N"), the same field as in the votes row above, never by the database participant id: `GET /game/rooms/{id}` (`my_participant_id` and `participants[].id`), `game_participant_joined` and `game_participant_left` (`participant.id`), and `game_message` (`participant_id`). `display_label` stays. Database participant ids appear only in `GET /game/rooms/{id}/results`. BE-35 (Nader, new card: hide database participant ids from game payloads before results) owns the REST room state and the room events; BE-09 owns `game_message` on `/ws/game`. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), section 9 | No database ids before results, so ids cannot hint at join order or at bots (DOC-08 follow-up, BE-35, BE-09) |
 | \[ \] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |

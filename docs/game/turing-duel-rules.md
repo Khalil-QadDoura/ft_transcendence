@@ -1,12 +1,14 @@
 # Turing Duel: rules and scoring
 
+Shown in the app at /game/rules; numbers are checked by `npm run rules:check` (`frontend/scripts/game-rules.drift.ts`).
+
 Rules of the Turing Duel mini-game, as decided by the Product Owner on 2026-11-04. The game rules page (FE-34) shows this text, the translation cards (FE-07) translate it, and the room, scoring and UI cards (BE-27, BE-10, FE-31, FE-32) implement exactly this text. Changing a rule means changing this file first.
 
 Sections 1 to 8 are written for players. Section 9 is for implementers.
 
 ## 1. The idea
 
-A room holds up to 5 participants. Some of them are real people, some may be bots. Everyone is anonymous. After a short chat, every human has to guess for each other participant: bot or human? Right guesses earn points, wrong guesses cost points. The human with the most points wins.
+A room holds up to 5 participants. Some of them are real people, some may be bots. Everyone is anonymous. After a short chat, every human has to guess for each other participant: bot or human? Right guesses earn points, wrong guesses cost points. The human with the most points wins (draws and rooms with a single human: see section 6).
 
 ## 2. Rooms and participants
 
@@ -39,9 +41,9 @@ Participants who have not joined when the game starts do not join later.
 
 ### Leaving the waiting room
 
-A human may leave the room before the game starts. Their label goes back to the pool and the participant count drops by one. The room timer keeps running. If no human is left in the room, the room closes at once and any bots that were planned for it are dropped.
+A human may leave the room before the game starts. Their label goes back to the pool and the participant count drops by one. The room timer keeps running. If no human is left in the room, the room closes at once.
 
-Leaving after the game has started counts as a disconnect (section 6).
+Leaving after the game has started counts as a disconnect and is treated exactly like one (section 6, "If a player disconnects"): the player keeps the marks set at that moment, still counts as one of the humans for scoring and the outcome, and can come back to the room and change marks until voting ends.
 
 ### When the room closes
 
@@ -132,7 +134,6 @@ Results appear only after the game has ended. They show:
 | Discussion phase | 120 seconds |
 | Voting phase | 45 seconds |
 | Points per guess | +1 correct, −1 wrong; every mark starts at "human" and counts |
-| Bot join delay | random, for example 10 to 30 seconds, configurable |
 
 ## 9. No bot leak (for implementers)
 
@@ -144,9 +145,9 @@ Rules for implementers (BE-27, BE-10, BE-09, FE-31, FE-32):
 - **Labels** are drawn from the same random pool for bots and humans. Label order never follows join order or the bot / human split.
 - **Identity before results**: clients know a participant only by its label number ("Player N", 1 to 5, stable for the room), never by the database participant id. This holds in the room state, chat messages, votes and every WebSocket event. A vote names its target by label number, and a chat message names its author by label number. Database ids may appear only in the results.
 - **Default marks**: when voting starts, every other participant is marked "human" for each human voter, bots and humans alike. The server does not need to store this default: a target without a stored mark counts as "human". Nothing sent during voting differs between a bot target and a human target.
-- **Join events** for bots and humans are the same event with the same shape. Bots join at random delays interleaved with humans; no bot joins in a burst or at a fixed offset from room creation.
+- **Join events** for bots and humans are the same event with the same shape. Bots join one at a time at random delays interleaved with humans (for example 10 to 30 seconds, configurable); no bot joins in a burst or at a fixed offset from room creation.
 - **Counts** shown to players (participants present, "Start now" visibility, start conditions) always include bots. A count of humans only is never exposed.
-- **The last human leaves**: when the last human leaves the waiting room, the room just closes. Nothing sent to any client reveals whether the room had bots or planned any.
+- **The last human leaves**: when the last human leaves the waiting room, the room just closes and any bots planned for it are dropped. Nothing sent to any client reveals whether the room had bots or planned any.
 - **The bot plan** (whether the room has bots, how many, when they join) is chosen on the server, kept on the server and never sent to a client before the results. A planned bot that has not joined when the game starts is dropped silently; nothing tells a client that a bot was planned.
 - **Timing and behaviour**: bot chat messages go through the same event and the same fields as human messages, with typing delays and message rates in the range of human behaviour. Bots have no profile, so no profile link or avatar exists for any participant.
 - **Waiting room and phase events** carry the same data in every room, whether or not it has bots.
@@ -164,3 +165,9 @@ Rules for implementers (BE-27, BE-10, BE-09, FE-31, FE-32):
 
 4. **Disconnected players**: a player who disconnects still counts as one of the humans when the winner is decided and gets a score and an outcome; a player who comes back before voting ends can still change their marks (section 6).
 5. **Deception rate**: humans whose mark on the bot was "human" when voting ended (preset marks count), divided by all humans in the game. The "—" case is gone: every game has a human, and every human has a mark on every bot (sections 6 and 7).
+
+**2026-11-19**, decided by byul-byul (PO); clarifications after FE-34, no rule, number or worked example changed:
+
+6. **Winner pointer**: the overview points to section 6 for draws and rooms with a single human (section 1).
+7. **Leaving after the start**: treated exactly like a disconnect; the player keeps the marks set at that moment, still counts as a human, and can come back and change marks until voting ends (section 3).
+8. **Bot plan details**: the bot join delay and the dropping of planned bots that have not joined moved from the player sections to the implementer notes (sections 3, 8 and 9).

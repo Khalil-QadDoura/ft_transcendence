@@ -9,7 +9,7 @@ Every member reads `plan/overview.md` first, then `plan/board.md`, then the doc 
 | [plan/backlog.md](plan/backlog.md) | Everyone | Snapshot of every Trello card per owner as of 2026-11-04; Trello is the live source |
 | [api/api-contract.md](api/api-contract.md) | Frontend + backend | Living: every endpoint, WebSocket events, planned changes |
 | [api/wozu-reference-openapi.json](api/wozu-reference-openapi.json) | Frontend + backend | Snapshot of the WOZU reference API (OpenAPI 3.1), do not edit |
-| [game/turing-duel-rules.md](game/turing-duel-rules.md) | Everyone | Living: Turing Duel rules, scoring, outcomes, "No bot leak" |
+| [game/turing-duel-rules.md](game/turing-duel-rules.md) | Everyone | Living: Turing Duel rules, scoring, outcomes, "No bot leak"; shown at `/game/rules`, numbers checked by `npm run rules:check` |
 | [infra/infrastructure.md](infra/infrastructure.md) | Infrastructure | Living: services, HTTPS routing, storage, email, infra modules |
 | [reference/wozu-backend.md](reference/wozu-backend.md) | Backend | Snapshot of the WOZU backend as of 2026-10-27, do not edit |
 | [legal/privacy-policy.md](legal/privacy-policy.md) | Users, evaluators, frontend | Living: Privacy Policy text shown on the app's privacy page (FE-13) |
