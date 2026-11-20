@@ -14,7 +14,9 @@ PLAYER_LABELS = tuple(f"Player {n}" for n in range(1, MAX_PARTICIPANTS + 1))
 
 
 def label_number(display_label: str) -> int:
-    """Extract 1-based seat number from label like 'Player 3' -> 3."""
+    """The number of a label: 3 for 'Player 3'. Before the results, players know each other
+    only by this number, never by the database id (rules, section 9).
+    """
     try:
         return int(display_label.rsplit(" ", 1)[-1])
     except (ValueError, IndexError):
@@ -26,6 +28,39 @@ MATCHMAKING_LOCK_KEY = "game:lock:matchmaking"
 ROOM_LOCK_KEY_PREFIX = "game:lock:room:"
 LOCK_TTL_SECONDS = 10
 LOCK_BLOCKING_TIMEOUT_SECONDS = 5
+
+# Room chat (BE-09): the longest message, how many recent messages the snapshot on (re)connect
+# carries, and the page sizes of GET /api/game/rooms/{id}/messages.
+MESSAGE_MAX_LENGTH = 500
+SNAPSHOT_MESSAGES = 50
+HISTORY_PAGE_DEFAULT = 50
+HISTORY_PAGE_MAX = 100
+
+# Disconnects and grace period (BE-33): on socket close, a participant keeps their seat for
+# DISCONNECT_GRACE_SEC (30 s). Redis keys per participant track the grace TTL, disconnect
+# timestamp, and expired state.
+DISCONNECT_GRACE_SEC = 30
+DISCONNECT_GRACE_KEY_PREFIX = "game:disconnect:"
+DISCONNECT_AT_KEY_PREFIX = "game:disconnect:at:"
+DISCONNECT_EXPIRED_KEY_PREFIX = "game:disconnect:expired:"
+ROOM_PRESENCE_KEY_PREFIX = "game:presence:"
+
+
+def disconnect_grace_key(room_id: int, participant_id: int) -> str:
+    return f"{DISCONNECT_GRACE_KEY_PREFIX}{room_id}:{participant_id}"
+
+
+def disconnect_at_key(room_id: int, participant_id: int) -> str:
+    return f"{DISCONNECT_AT_KEY_PREFIX}{room_id}:{participant_id}"
+
+
+def disconnect_expired_key(room_id: int, participant_id: int) -> str:
+    return f"{DISCONNECT_EXPIRED_KEY_PREFIX}{room_id}:{participant_id}"
+
+
+def room_presence_key(room_id: int, user_id: int) -> str:
+    return f"{ROOM_PRESENCE_KEY_PREFIX}{room_id}:{user_id}"
+
 
 # Template discussion lines used by bots with simulated typing delays until TC-01.
 BOT_CHAT_TEMPLATES = (

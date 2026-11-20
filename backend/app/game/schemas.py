@@ -116,3 +116,60 @@ class GameMessageEventOut(BaseModel):
                 "text": getattr(data, "text", ""),
             }
         return data
+
+
+class GameMessagesPage(BaseModel):
+    """GET /api/game/rooms/{id}/messages: oldest to newest. `prev_before_id` asks for the
+    page before this one; null means this page starts the chat."""
+
+    items: list[GameMessageEventOut]
+    prev_before_id: int | None
+
+
+class MyVoteOut(BaseModel):
+    """One mark I saved: the label number of the participant I marked, and my guess."""
+
+    target_participant_id: int
+    guess: str
+
+
+class GameSnapshotOut(BaseModel):
+    """The first frame of every /ws/game connection: the room as it is now, so a reload or a
+    lost connection loses nothing. Like every payload before the results, it names each
+    participant by label number 1-5 and has no bot flag."""
+
+    room: RoomOut
+    messages: list[GameMessageEventOut]
+    my_votes: list[MyVoteOut]
+
+
+class GameErrorOut(BaseModel):
+    """Why the server refused a frame sent on /ws/game, e.g. chat outside the discussion."""
+
+    detail: str
+
+
+class PlayerConnectionEventOut(BaseModel):
+    """A peer in the room disconnected or reconnected (BE-33). Like every payload before results,
+    it names the participant by their label number (1-5), never by the internal database id.
+    """
+
+    participant_id: int
+    connected: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def _enforce_label_number(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            label = data.get("display_label")
+            if label and "participant_id" not in data:
+                data = dict(data)
+                data["participant_id"] = label_number(str(label))
+            return data
+        label = getattr(data, "display_label", None)
+        if label is not None and not hasattr(data, "participant_id"):
+            return {
+                "participant_id": label_number(str(label)),
+                "connected": bool(getattr(data, "connected", False)),
+            }
+        return data
