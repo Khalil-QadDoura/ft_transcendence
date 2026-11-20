@@ -23,6 +23,7 @@ from app.game.constants import (
     PLAYER_LABELS,
     START_NOW_MAX_PARTICIPANTS,
     START_NOW_MIN_PARTICIPANTS,
+    label_number,
 )
 from app.game.models import GameParticipant, GameRoom
 from app.game.schemas import (
@@ -112,12 +113,12 @@ def _serialize_room(
         state=room.state,
         target_size=room.target_size,
         participant_count=len(participants),
-        my_participant_id=me.id,
+        my_participant_id=label_number(me.display_label),
         room_expires_at=room.room_expires_at,
         phase_ends_at=_phase_ends_at(room, settings),
         participants=[
             RoomParticipantOut(
-                id=p.id,
+                id=label_number(p.display_label),
                 display_label=p.display_label,
                 is_you=(p.id == me.id),
             )
@@ -459,7 +460,7 @@ async def _tick_discussion_room(
                 "game_message",
                 GameMessageEventOut(
                     id=message.id,
-                    participant_id=bot.id,
+                    participant_id=label_number(bot.display_label),
                     display_label=bot.display_label,
                     text=message.text,
                 ),

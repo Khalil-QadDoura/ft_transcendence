@@ -34,8 +34,14 @@ from app.auth import security
 from app.core.config import Settings
 from app.game import repo as game_repo
 from app.game import service as game_service
-from app.game.constants import MAX_ID, PLAYER_LABELS
+from app.game.constants import MAX_ID, MAX_PARTICIPANTS, PLAYER_LABELS, label_number
 from app.game.models import GameParticipant, GameRoom
+from app.game.schemas import (
+    GameMessageEventOut,
+    GameParticipantEventOut,
+    ParticipantOut,
+    RoomParticipantOut,
+)
 
 PASSWORD = "correct horse battery"
 PASSWORD_HASH = security.hash_password(PASSWORD)
@@ -126,10 +132,13 @@ def collect_events_until(
 def assert_no_bot_leak_in_room_payload(data: dict) -> None:
     forbidden = {"is_bot", "bot_plan", "bot_count", "user_id"}
     assert forbidden.isdisjoint(data.keys()), f"Bot leak in room keys: {data.keys()}"
+    assert 1 <= data["my_participant_id"] <= MAX_PARTICIPANTS
     for participant in data["participants"]:
         assert set(participant.keys()) == {"id", "display_label", "is_you"}
         assert isinstance(participant["id"], int)
         assert participant["display_label"] in PLAYER_LABELS
+        assert 1 <= participant["id"] <= MAX_PARTICIPANTS
+        assert participant["id"] == int(participant["display_label"].rsplit(" ", 1)[-1])
         assert isinstance(participant["is_you"], bool)
 
 
@@ -142,6 +151,12 @@ def assert_no_bot_leak_in_ws_event(frame: dict) -> None:
         participant = payload.get("participant")
         if isinstance(participant, dict):
             assert set(participant.keys()) == {"id", "display_label"}
+            assert 1 <= participant["id"] <= MAX_PARTICIPANTS
+            assert participant["id"] == int(participant["display_label"].rsplit(" ", 1)[-1])
+        if "participant_id" in payload:
+            assert 1 <= payload["participant_id"] <= MAX_PARTICIPANTS
+            if "display_label" in payload:
+                assert payload["participant_id"] == int(payload["display_label"].rsplit(" ", 1)[-1])
 
 
 # Unit & validation tests (no DB or Redis required) --------------------------------------
@@ -203,10 +218,90 @@ def test_bot_plan_respects_probability_and_serializer_has_no_leak() -> None:
     bot = GameParticipant(id=12, room_id=9, user_id=None, display_label="Player 4")
     out = game_service._serialize_room(room, [human, bot], human, s_yes).model_dump()
     assert_no_bot_leak_in_room_payload(out)
-    assert out["my_participant_id"] == 11
+    assert out["my_participant_id"] == 2
     assert out["participant_count"] == 2
+    assert out["participants"][0]["id"] == 2
     assert out["participants"][0]["is_you"] is True
+    assert out["participants"][1]["id"] == 4
     assert out["participants"][1]["is_you"] is False
+
+
+def test_label_numbers_hide_database_participant_ids() -> None:
+    """BE-35: clients see participants only by 1-based label number (1–5), never DB PK."""
+    # 1. label_number helper
+    assert label_number("Player 1") == 1
+    assert label_number("Player 3") == 3
+    assert label_number("Player 5") == 5
+    assert label_number("Unknown") == 0
+    assert label_number("") == 0
+
+    # 2. ParticipantOut hides DB PK in favor of label number
+    p_human = GameParticipant(id=999, room_id=1, user_id=42, display_label="Player 3")
+    out_p = ParticipantOut.model_validate(p_human)
+    assert out_p.id == 3
+    assert out_p.display_label == "Player 3"
+    assert out_p.model_dump() == {"id": 3, "display_label": "Player 3"}
+
+    # 3. RoomParticipantOut hides DB PK in favor of label number
+    out_rp = RoomParticipantOut.model_validate(
+        {"id": 888, "display_label": "Player 1", "is_you": True}
+    )
+    assert out_rp.id == 1
+    assert out_rp.display_label == "Player 1"
+    assert out_rp.is_you is True
+    assert out_rp.model_dump() == {"id": 1, "display_label": "Player 1", "is_you": True}
+
+    # 4. GameMessageEventOut hides DB PK in favor of label number
+    out_msg = GameMessageEventOut.model_validate(
+        {"id": 42, "participant_id": 777, "display_label": "Player 5", "text": "hello"}
+    )
+    assert out_msg.participant_id == 5
+    assert out_msg.id == 42
+    assert out_msg.display_label == "Player 5"
+    assert out_msg.text == "hello"
+
+    # 5. GameParticipantEventOut validates participant with label number
+    out_event = GameParticipantEventOut(
+        room_id=1,
+        participant=ParticipantOut.model_validate(p_human),
+        participant_count=2,
+        room_expires_at=None,
+    )
+    assert out_event.participant.id == 3
+    assert out_event.participant.display_label == "Player 3"
+
+    # 6. _serialize_room with 5 participants having DB PKs != label numbers
+    now = datetime.now(UTC)
+    settings = Settings(
+        database_url="postgresql+asyncpg://test:test@localhost:5432/test",
+        jwt_secret="0" * 32,
+    )
+    room = GameRoom(
+        id=1,
+        target_size=5,
+        state="discussion",
+        discussion_started_at=now,
+    )
+    participants = [
+        GameParticipant(id=101, room_id=1, user_id=1, display_label="Player 3"),
+        GameParticipant(id=102, room_id=1, user_id=2, display_label="Player 1"),
+        GameParticipant(id=103, room_id=1, user_id=None, display_label="Player 5"),
+        GameParticipant(id=104, room_id=1, user_id=4, display_label="Player 2"),
+        GameParticipant(id=105, room_id=1, user_id=None, display_label="Player 4"),
+    ]
+    me = participants[0]  # Player 3 (DB id 101)
+    room_out = game_service._serialize_room(room, participants, me, settings).model_dump()
+    assert_no_bot_leak_in_room_payload(room_out)
+    assert room_out["my_participant_id"] == 3
+    assert room_out["participants"][0]["id"] == 3
+    assert room_out["participants"][0]["is_you"] is True
+    assert room_out["participants"][1]["id"] == 1
+    assert room_out["participants"][1]["is_you"] is False
+    assert room_out["participants"][2]["id"] == 5
+    assert room_out["participants"][3]["id"] == 2
+    assert room_out["participants"][4]["id"] == 4
+    for p in room_out["participants"]:
+        assert p["id"] not in {101, 102, 103, 104, 105}
 
 
 # Integration tests (real Postgres + Redis + uvicorn) -------------------------------------
@@ -700,6 +795,10 @@ def test_discussion_bot_chat_and_server_phase_loop(
                 "display_label",
                 "text",
             }
+            assert 1 <= bot_msg["payload"]["participant_id"] <= MAX_PARTICIPANTS
+            assert bot_msg["payload"]["participant_id"] == int(
+                bot_msg["payload"]["display_label"].rsplit(" ", 1)[-1]
+            )
 
             room = httpx2.get(
                 f"http://{srv}/api/game/rooms/{room_id}", headers=auth_headers(tok)
