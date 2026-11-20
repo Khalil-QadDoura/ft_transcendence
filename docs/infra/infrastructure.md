@@ -79,6 +79,7 @@ We skip ELK: Elasticsearch is memory-hungry and risky on an evaluation laptop; P
 | Reference `backend/fastapi` (one stage, test requirements and ffmpeg installed) | 1.58 GB (371 MB) |
 | api before INF-07 (BE-01 multi-stage, unnamed runtime stage) | 465 MB (99 MB) |
 | api `runtime` after INF-07 | 466 MB (99 MB) |
+| `worker` stage (runtime + ffmpeg) | ~880 MB |
 | `api-test` (`test` stage) | 522 MB (114 MB) |
 
 The runtime image is 70 % smaller than the reference; the slimming came with BE-01 (Khalil), and INF-07 keeps it, names the stage and moves the test tools into their own stage. The 1 MB is the newer Python patch release in the pinned base. `websockets` is in the runtime image as a dependency of `uvicorn[standard]`, not from `requirements-dev.txt`. The reference image has ffmpeg; ours does not, which BE-29 must check for the moderation worker.
@@ -98,6 +99,7 @@ The runtime image is 70 % smaller than the reference; the slimming came with BE-
 | `postgres-exporter` | `wget -q -O /dev/null http://127.0.0.1:9187/` (its landing page) | the exporter serves; whether it reaches the database is `pg_up`, checked by `make metrics-check` | `db`: healthy |
 | `cadvisor` | `wget -q -O /dev/null http://127.0.0.1:8080/healthz` (what the image's own check asks) | cAdvisor runs and serves | — |
 | `grafana` | `wget -q -O /dev/null http://127.0.0.1:3000/api/health` (busybox wget in the image) | Grafana serves and reaches its database (the SQLite file in `grafana-data`); whether the datasource answers is checked by `make grafana-check` | `prometheus`: healthy |
+| `worker` | `python -c "import os, redis, sys; r = redis.Redis.from_url(os.environ['REDIS_URL'], socket_timeout=2); sys.exit(0 if r.get('worker:heartbeat') else 1)"` | Celery worker and beat loop are active, writing `worker:heartbeat` in Redis (BE-29) | `db`, `redis`: healthy; `minio-init`: completed successfully |
 
 `depends_on` with `condition: service_healthy` is used where the order matters: the api runs its migrations at start and needs the database and Redis; `minio-init` needs a live MinIO; the proxy could start without its upstreams (it resolves them per request) but then answers 502 until they are up, so it waits and the site works as soon as `make` returns. `service_completed_successfully` is for the one-shot `minio-init`: the api hands out URLs for the bucket it creates, and `docker compose up --wait` accepts an exited container only when another service waits for it this way. `make up` runs `docker compose up -d --build --wait --wait-timeout 300`, so `make` fails if a service is not healthy within 5 minutes or exits.
 
@@ -108,7 +110,6 @@ The runtime image is 70 % smaller than the reference; the slimming came with BE-
 | `minio-init` | One-shot job: exits 0 after creating the bucket; the api waits for that exit code instead |
 | `api-test` | One-shot: `make test` runs it with `compose run --rm` and removes it |
 | `redis-exporter` | The image is built `FROM scratch`: only the exporter binary, no shell and no HTTP client, and the binary has no check subcommand; nothing is added to it (INF-08). `make metrics-check` covers it: the `redis` target must be up and `redis_up` must be 1. It starts once `redis` is healthy |
-| `worker` | Off by default (profile `worker`) because there is no task to run until BE-29 adds the moderation task; the Celery app exists since BE-07 (`backend/app/worker/celery_app.py`), and with `--profile worker` the worker starts on the runtime image as uid 10001 and reaches ready. No health check until it runs by default; then it gets one, e.g. `celery -A app.worker.celery_app inspect ping -d celery@$HOSTNAME` |
 
 **Logs.** Every service logs to stdout / stderr, kept by Docker's `json-file` driver; one compose anchor `x-logging` gives every service the same rotation: `max-size: 10m`, `max-file: 3`, at most 30 MB per container. Docker deletes the oldest file when the third is full, so the caps bound the disk use, not the age: on a quiet stack the files fill slowly and lines can stay longer than 30 days. They go away when the container is removed: `make down`, a `make` that recreates the container (only one whose image or configuration changed), or `make logs-reset`, which recreates them all. The Privacy Policy's "at most 30 days" for logs (PO decision of 2026-11-13) is kept by the rotation plus `make logs-reset`, which the operator runs at least weekly (INF-07 follow-up, 2026-11-17); see Logs and retention below. The proxy access log holds client IP addresses. `docker inspect --format '{{json .HostConfig.LogConfig}}' <container>` shows the caps.
 

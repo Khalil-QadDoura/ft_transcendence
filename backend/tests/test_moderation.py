@@ -305,6 +305,13 @@ def test_moderation_pipeline_all_outcomes_and_live_ws_events():
     vid_fail_open = _seed_video(user_id, object_key=f"users/{user_id}/intro/open.mp4")
     vid_no_key_strict = _seed_video(user_id, object_key=f"users/{user_id}/intro/nokey_strict.mp4")
     vid_no_key_dev = _seed_video(user_id, object_key=f"users/{user_id}/intro/nokey_dev.mp4")
+    vid_whisper_fail_strict = _seed_video(
+        user_id, object_key=f"users/{user_id}/intro/whisper_strict.mp4"
+    )
+    vid_whisper_fail_open = _seed_video(
+        user_id, object_key=f"users/{user_id}/intro/whisper_open.mp4"
+    )
+    vid_no_frames = _seed_video(user_id, object_key=f"users/{user_id}/intro/no_frames.mp4")
     vid_deleted = _seed_video(
         user_id,
         object_key=f"users/{user_id}/intro/deleted.mp4",
@@ -321,9 +328,9 @@ def test_moderation_pipeline_all_outcomes_and_live_ws_events():
         headers = {"Authorization": f"Bearer {tok}"}
 
         with _open_ws(base, headers) as ws:
-            # 1. Approved video (internal download, Whisper fails gracefully, frame check passes)
+            # 1. Approved video (internal download, clean moderation, frame check passes)
             storage_ok = FakeStorage()
-            mod_ok = FakeModerator(whisper_error=RuntimeError("whisper transient"))
+            mod_ok = FakeModerator()
             res = asyncio.run(
                 run_moderation(
                     vid_ok,
@@ -493,6 +500,73 @@ def test_moderation_pipeline_all_outcomes_and_live_ws_events():
             assert res == "approved"
             assert _fetch_video_row(vid_deleted)[:2] == ("pending", "deleted")
             assert _fetch_video_row(vid_no_key_dev)[1] == "posted"
+
+            # 9. Whisper error with fail_open=False -> moderation_error "Transcription API error"
+            res = asyncio.run(
+                run_moderation(
+                    vid_whisper_fail_strict,
+                    f"users/{user_id}/intro/whisper_strict.mp4",
+                    settings=_test_settings(moderation_fail_open=False),
+                    storage=FakeStorage(),
+                    moderator=FakeModerator(whisper_error=RuntimeError("Whisper unreachable")),
+                    duration_fn=lambda _: 10.0,
+                    frames_fn=_fake_frames,
+                    audio_fn=_fake_audio,
+                )
+            )
+            assert res == "moderation_error"
+            assert _fetch_video_row(vid_whisper_fail_strict)[2] == "Transcription API error"
+            assert _wait_event(ws, EVENT_VIDEO_MODERATED)["id"] == vid_whisper_fail_strict
+
+            # 10. Whisper error with fail_open=True -> approved (falls back to frame-only check)
+            res = asyncio.run(
+                run_moderation(
+                    vid_whisper_fail_open,
+                    f"users/{user_id}/intro/whisper_open.mp4",
+                    settings=_test_settings(moderation_fail_open=True),
+                    storage=FakeStorage(),
+                    moderator=FakeModerator(whisper_error=RuntimeError("Whisper unreachable")),
+                    duration_fn=lambda _: 10.0,
+                    frames_fn=_fake_frames,
+                    audio_fn=_fake_audio,
+                )
+            )
+            assert res == "approved"
+            assert _fetch_video_row(vid_whisper_fail_open)[:2] == ("approved", "posted")
+            assert _wait_event(ws, EVENT_VIDEO_MODERATED)["id"] == vid_whisper_fail_open
+
+            # 11. Empty frames extracted -> moderation_error "Processing failed"
+            res = asyncio.run(
+                run_moderation(
+                    vid_no_frames,
+                    f"users/{user_id}/intro/no_frames.mp4",
+                    settings=_test_settings(),
+                    storage=FakeStorage(),
+                    moderator=FakeModerator(),
+                    duration_fn=lambda _: 10.0,
+                    frames_fn=lambda _v, _t, _d: [],
+                    audio_fn=_fake_audio,
+                )
+            )
+            assert res == "moderation_error"
+            assert _fetch_video_row(vid_no_frames)[2] == "Processing failed"
+            assert _wait_event(ws, EVENT_VIDEO_MODERATED)["id"] == vid_no_frames
+
+            # 12. Duplicate moderation task / beat redelivery ignores non-pending videos
+            res = asyncio.run(
+                run_moderation(
+                    vid_ok,
+                    f"users/{user_id}/intro/ok.mp4",
+                    settings=_test_settings(),
+                    storage=FakeStorage(),
+                    moderator=FakeModerator(flagged=["violence"]),
+                    duration_fn=lambda _: 14.6,
+                    frames_fn=_fake_frames,
+                    audio_fn=_fake_audio,
+                )
+            )
+            # vid_ok was already approved, so it stays approved (and unposted)
+            assert _fetch_video_row(vid_ok)[:2] == ("approved", "unposted")
 
 
 @needs_database
