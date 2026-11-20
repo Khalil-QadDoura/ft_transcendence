@@ -16,6 +16,7 @@ from app.applications.schemas import (
     StatusUpdateRequest,
 )
 from app.auth.deps import CurrentUser, OptionalUser
+from app.core.limiter import client_ip
 from app.core.redis_client import get_redis
 from app.core.storage import Storage, get_storage
 from app.db.session import get_session
@@ -64,13 +65,13 @@ async def record_job_view(
     viewer: OptionalUser,
 ) -> None:
     """Record a unique view for an open job (deduplicated per viewer per 24 hours)."""
-    client_ip = request.client.host if request.client else None
+    ip = client_ip(request)
     await service.record_job_view(
         session,
         redis,
         job_id=job_id,
         viewer_id=viewer.id if viewer else None,
-        client_ip=client_ip,
+        client_ip=ip,
     )
 
 
