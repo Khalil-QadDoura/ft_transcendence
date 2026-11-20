@@ -655,9 +655,26 @@ def test_applications_full_lifecycle_guards_events_and_views_on_postgres():
         assert test_client.post(f"/api/jobs/{open_job_id}/view", headers=cand1_h).status_code == 204
         assert test_client.post(f"/api/jobs/{open_job_id}/view", headers=cand1_h).status_code == 204
         assert test_client.post(f"/api/jobs/{open_job_id}/view", headers=cand2_h).status_code == 204
-        assert test_client.post(f"/api/jobs/{open_job_id}/view").status_code == 204
-        assert test_client.post(f"/api/jobs/{open_job_id}/view").status_code == 204
-        assert sql("SELECT COUNT(*) FROM job_views WHERE job_id = :jid", jid=open_job_id)[0][0] == 3
+        # Anonymous views with distinct X-Real-IP headers count separately; duplicate IPs dedup
+        assert (
+            test_client.post(
+                f"/api/jobs/{open_job_id}/view", headers={"X-Real-IP": "203.0.113.10"}
+            ).status_code
+            == 204
+        )
+        assert (
+            test_client.post(
+                f"/api/jobs/{open_job_id}/view", headers={"X-Real-IP": "203.0.113.10"}
+            ).status_code
+            == 204
+        )
+        assert (
+            test_client.post(
+                f"/api/jobs/{open_job_id}/view", headers={"X-Real-IP": "198.51.100.20"}
+            ).status_code
+            == 204
+        )
+        assert sql("SELECT COUNT(*) FROM job_views WHERE job_id = :jid", jid=open_job_id)[0][0] == 4
         assert test_client.post("/api/jobs/999999/view", headers=cand1_h).status_code == 404
 
         # 4. Successful applications + duplicate 409
@@ -690,7 +707,7 @@ def test_applications_full_lifecycle_guards_events_and_views_on_postgres():
 
         # 5. Owner job counters reflect views + applications + submitted (new) applications
         my_jobs = {j["id"]: j for j in test_client.get("/api/jobs/mine", headers=emp_h).json()}
-        assert my_jobs[open_job_id]["views_count"] == 3
+        assert my_jobs[open_job_id]["views_count"] == 4
         assert my_jobs[open_job_id]["applications_count"] == 2
         assert my_jobs[open_job_id]["new_applications_count"] == 2
 
