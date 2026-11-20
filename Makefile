@@ -6,7 +6,7 @@
 # command line tools; the ubuntu runner).
 
 COMPOSE := docker compose
-# Every profile, so down and fclean also reach services that are off by default (worker).
+# Every profile, so down and fclean also reach services with profiles (api-test, redis-test).
 COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=

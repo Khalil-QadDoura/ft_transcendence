@@ -66,32 +66,85 @@ def probe_duration(video_path: str) -> float:
     return duration
 
 
+def probe_video_stream_duration(video_path: str) -> float | None:
+    """Measure duration of the video stream (v:0) specifically using ffprobe."""
+    try:
+        res = _run_cmd(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                video_path,
+            ]
+        )
+        raw = res.stdout.decode().strip()
+        duration = float(raw)
+        return duration if duration > 0 else None
+    except Exception:
+        return None
+
+
 def extract_frames(video_path: str, out_dir: str, duration: float) -> list[str]:
-    """Extract PNG frames at 5s/15s/25s, or one midpoint frame for videos shorter than 5s."""
-    timestamps: list[float] = [float(ts) for ts in MODERATION_FRAME_TIMESTAMPS if ts < duration]
+    """Extract PNG frames at 5s/15s/25s, or at least one frame from the video stream."""
+    v_dur = probe_video_stream_duration(video_path) or duration
+    timestamps: list[float] = [float(ts) for ts in MODERATION_FRAME_TIMESTAMPS if ts < v_dur]
     if not timestamps:
-        timestamps = [round(max(0.0, min(1.0, duration / 2.0)), 2)]
+        timestamps = [0.0 if v_dur <= 0 else round(min(v_dur / 2.0, 1.0), 2)]
 
     paths: list[str] = []
     for idx, ts in enumerate(timestamps):
         out = os.path.join(out_dir, f"frame_{idx}.png")
-        _run_cmd(
-            [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(ts),
-                "-i",
-                video_path,
-                "-frames:v",
-                "1",
-                "-q:v",
-                "2",
-                out,
-            ]
-        )
-        if os.path.exists(out) and os.path.getsize(out) > 0:
-            paths.append(out)
+        try:
+            _run_cmd(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    str(ts),
+                    "-i",
+                    video_path,
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
+                    out,
+                ]
+            )
+            if os.path.exists(out) and os.path.getsize(out) > 0:
+                paths.append(out)
+        except Exception:
+            pass
+
+    # If no frames could be extracted from chosen timestamps, fallback to 0.0s
+    if not paths:
+        fallback_out = os.path.join(out_dir, "frame_fallback_0.png")
+        try:
+            _run_cmd(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    "0",
+                    "-i",
+                    video_path,
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
+                    fallback_out,
+                ]
+            )
+            if os.path.exists(fallback_out) and os.path.getsize(fallback_out) > 0:
+                paths.append(fallback_out)
+        except Exception:
+            pass
+
     return paths
 
 
@@ -189,7 +242,7 @@ class OpenAIModerator:
         for path in frame_paths:
             tasks.append(asyncio.to_thread(self.moderate_frame, path))
         if not tasks:
-            return True, ""
+            return False, "Processing failed"
 
         results = await asyncio.gather(*tasks)
         all_flagged = sorted({category for batch in results for category in batch})
@@ -222,6 +275,9 @@ async def apply_moderation_result(
     if video is None or video.lifecycle_status == "deleted":
         await session.rollback()
         return None
+    if video.moderation_status != "pending":
+        await session.rollback()
+        return video
 
     video.moderation_status = moderation_status
     video.rejected_reason = rejected_reason
@@ -319,6 +375,12 @@ async def run_moderation(
                 log.exception("moderation ffmpeg failed", video_id=video_id)
                 return await _finish("moderation_error", "Processing failed")
 
+            if not frame_paths:
+                log.error("moderation extracted zero frames", video_id=video_id)
+                return await _finish(
+                    "moderation_error", "Processing failed", duration_sec=real_duration_sec
+                )
+
             # 3. Dev fallback when OPENAI_API_KEY is unset (respects MODERATION_FAIL_OPEN).
             active_moderator = moderator
             if active_moderator is None:
@@ -347,6 +409,12 @@ async def run_moderation(
                     transcript = await asyncio.to_thread(active_moderator.transcribe, audio_path)
                 except Exception:
                     log.warning("moderation whisper failed", video_id=video_id, exc_info=True)
+                    if not cfg.moderation_fail_open:
+                        return await _finish(
+                            "moderation_error",
+                            "Transcription API error",
+                            duration_sec=real_duration_sec,
+                        )
 
             # 5. Run OpenAI Omni-Moderation on transcript and extracted frames.
             try:
