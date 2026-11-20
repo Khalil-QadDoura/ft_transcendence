@@ -10,17 +10,30 @@ by database id (rules, section 9). Every payload in this file follows that.
 """
 
 import asyncio
+import time
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, status
 from pydantic import BaseModel
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.metrics import track_ws_connection
 from app.game import repo, service
-from app.game.constants import MAX_ID, MESSAGE_MAX_LENGTH, SNAPSHOT_MESSAGES, label_number
+from app.game.constants import (
+    DISCONNECT_GRACE_SEC,
+    MAX_ID,
+    MESSAGE_MAX_LENGTH,
+    SNAPSHOT_MESSAGES,
+    disconnect_at_key,
+    disconnect_expired_key,
+    disconnect_grace_key,
+    label_number,
+    room_presence_key,
+)
 from app.game.models import GameMessage, GameParticipant, GameRoom
 from app.game.schemas import (
     GameErrorOut,
@@ -28,6 +41,7 @@ from app.game.schemas import (
     GameMessagesPage,
     GameSnapshotOut,
     MyVoteOut,
+    PlayerConnectionEventOut,
     RoomOut,
     RoomParticipantOut,
 )
@@ -128,6 +142,129 @@ async def send(websocket: WebSocket, event_type: str, payload: BaseModel | None 
     await websocket.send_text(Event(type=event_type, payload=payload).model_dump_json())
 
 
+async def add_room_socket(
+    redis: Redis, room_id: int, user_id: int, socket_id: str, ttl_seconds: int = 3600
+) -> int:
+    """Track this socket in the user's room presence key. Returns the number of open sockets for
+    this user in this room (1 means this is the first).
+    """
+    key = room_presence_key(room_id, user_id)
+    now = time.time()
+    async with redis.pipeline(transaction=True) as steps:
+        steps.zremrangebyscore(key, "-inf", now)
+        steps.zadd(key, {socket_id: now + ttl_seconds})
+        steps.expire(key, ttl_seconds)
+        steps.zcard(key)
+        *_, live = await steps.execute()
+    return live
+
+
+async def refresh_room_socket(
+    redis: Redis, room_id: int, user_id: int, socket_id: str, ttl_seconds: int = 3600
+) -> None:
+    """Keep this room socket alive on ping."""
+    key = room_presence_key(room_id, user_id)
+    async with redis.pipeline(transaction=True) as steps:
+        steps.zadd(key, {socket_id: time.time() + ttl_seconds})
+        steps.expire(key, ttl_seconds)
+        await steps.execute()
+
+
+async def remove_room_socket(redis: Redis, room_id: int, user_id: int, socket_id: str) -> int:
+    """Remove this socket from the user's room presence key. Returns how many open sockets remain
+    (0 means this was the last socket).
+    """
+    key = room_presence_key(room_id, user_id)
+    async with redis.pipeline(transaction=True) as steps:
+        steps.zrem(key, socket_id)
+        steps.zremrangebyscore(key, "-inf", time.time())
+        steps.zcard(key)
+        *_, live = await steps.execute()
+    return live
+
+
+async def is_disconnect_expired(
+    redis: Redis, room_id: int, participant_id: int, label_num: int
+) -> bool:
+    """True if this participant disconnected and their 30 s grace period has expired."""
+    if await redis.exists(disconnect_expired_key(room_id, participant_id)) or await redis.exists(
+        disconnect_expired_key(room_id, label_num)
+    ):
+        return True
+    if await redis.exists(disconnect_at_key(room_id, participant_id)) or await redis.exists(
+        disconnect_at_key(room_id, label_num)
+    ):
+        if not (
+            await redis.exists(disconnect_grace_key(room_id, participant_id))
+            or await redis.exists(disconnect_grace_key(room_id, label_num))
+        ):
+            return True
+    return False
+
+
+async def on_participant_connected(
+    redis: Redis, room_id: int, me: GameParticipant, peers: list[int], user_id: int
+) -> None:
+    """Called when a user opens their first /ws/game socket in this room."""
+    lbl_num = label_number(me.display_label)
+    is_already_expired = bool(
+        await redis.exists(disconnect_expired_key(room_id, me.id))
+        or await redis.exists(disconnect_expired_key(room_id, lbl_num))
+    )
+    had_grace = bool(
+        await redis.exists(disconnect_grace_key(room_id, me.id))
+        or await redis.exists(disconnect_grace_key(room_id, lbl_num))
+    )
+    had_disconnect_at = bool(
+        await redis.exists(disconnect_at_key(room_id, me.id))
+        or await redis.exists(disconnect_at_key(room_id, lbl_num))
+    )
+
+    if is_already_expired:
+        pass
+    elif had_grace:
+        await redis.delete(
+            disconnect_grace_key(room_id, me.id),
+            disconnect_grace_key(room_id, lbl_num),
+            disconnect_at_key(room_id, me.id),
+            disconnect_at_key(room_id, lbl_num),
+        )
+    elif had_disconnect_at:
+        await redis.set(disconnect_expired_key(room_id, me.id), "1", ex=3600)
+        await redis.set(disconnect_expired_key(room_id, lbl_num), "1", ex=3600)
+        await redis.delete(
+            disconnect_at_key(room_id, me.id),
+            disconnect_at_key(room_id, lbl_num),
+        )
+
+    event = PlayerConnectionEventOut(participant_id=lbl_num, connected=True)
+    for peer_id in peers:
+        if peer_id != user_id:
+            await realtime_service.send_to_user(redis, peer_id, "player_connection", event)
+
+
+async def on_participant_disconnected(
+    redis: Redis, room_id: int, me: GameParticipant, peers: list[int], user_id: int
+) -> None:
+    """Called when a user closes their last /ws/game socket in this room during an active game."""
+    lbl_num = label_number(me.display_label)
+    now_ts = str(time.time())
+    is_already_expired = bool(
+        await redis.exists(disconnect_expired_key(room_id, me.id))
+        or await redis.exists(disconnect_expired_key(room_id, lbl_num))
+    )
+    if not is_already_expired:
+        await redis.set(disconnect_grace_key(room_id, me.id), "1", ex=DISCONNECT_GRACE_SEC)
+        await redis.set(disconnect_grace_key(room_id, lbl_num), "1", ex=DISCONNECT_GRACE_SEC)
+        await redis.set(disconnect_at_key(room_id, me.id), now_ts, ex=3600)
+        await redis.set(disconnect_at_key(room_id, lbl_num), now_ts, ex=3600)
+
+    event = PlayerConnectionEventOut(participant_id=lbl_num, connected=False)
+    for peer_id in peers:
+        if peer_id != user_id:
+            await realtime_service.send_to_user(redis, peer_id, "player_connection", event)
+
+
 async def serve_room_socket(websocket: WebSocket, user: User) -> None:
     """The life of one /ws/game socket, after the ticket check, until the client goes away.
 
@@ -145,24 +282,48 @@ async def serve_room_socket(websocket: WebSocket, user: User) -> None:
     # an event may repeat something the snapshot already has; the client keeps one (same id).
     await pubsub.subscribe(realtime_repo.user_channel(user.id))
     forwarding = None
+    socket_id = uuid.uuid4().hex
     try:
         async with app.state.session_factory() as session:
             snapshot = await build_snapshot(session, app.state.settings, room_id, user.id)
-        if snapshot is None:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=NOT_A_PARTICIPANT)
-            return
+            if snapshot is None:
+                await websocket.close(
+                    code=status.WS_1008_POLICY_VIOLATION, reason=NOT_A_PARTICIPANT
+                )
+                return
+            room = await repo.get_room(session, room_id)
+            me = await repo.get_participant_for_user(session, room_id, user.id)
+            peers = await repo.list_human_user_ids(session, room_id)
+
         async with track_ws_connection(app):
+            live = await add_room_socket(app.state.redis, room_id, user.id, socket_id)
+            if (
+                live == 1
+                and room is not None
+                and me is not None
+                and room.state not in ("finished", "closed")
+            ):
+                await on_participant_connected(app.state.redis, room_id, me, peers, user.id)
+
             await send(websocket, "game_snapshot", snapshot)
             forwarding = asyncio.create_task(realtime_service.forward_events(pubsub, websocket))
-            await read_room_frames(websocket, user, room_id)
+            await read_room_frames(websocket, user, room_id, socket_id)
     finally:
         if forwarding is not None:
             forwarding.cancel()
             await asyncio.wait({forwarding})  # until it has really stopped
         await pubsub.aclose()
+        live = await remove_room_socket(app.state.redis, room_id, user.id, socket_id)
+        if live == 0:
+            async with app.state.session_factory() as session:
+                room = await repo.get_room(session, room_id)
+                me = await repo.get_participant_for_user(session, room_id, user.id)
+                peers = await repo.list_human_user_ids(session, room_id)
+            if room is not None and me is not None and room.state not in ("finished", "closed"):
+                await on_participant_disconnected(app.state.redis, room_id, me, peers, user.id)
 
 
-async def read_room_frames(websocket: WebSocket, user: User, room_id: int) -> None:
+async def read_room_frames(websocket: WebSocket, user: User, room_id: int, socket_id: str) -> None:
     """Answer what the browser sends: `ping` gets `pong`; `chat_message` goes to the room, or
     gets a `game_error` that says why not. Anything else is ignored."""
     while True:
@@ -174,6 +335,7 @@ async def read_room_frames(websocket: WebSocket, user: User, room_id: int) -> No
             continue
         kind = frame.get("type")
         if kind == "ping":
+            await refresh_room_socket(websocket.app.state.redis, room_id, user.id, socket_id)
             await send(websocket, "pong")
         elif kind == "chat_message":
             refusal = await post_message(websocket.app, user, room_id, chat_text(frame))
@@ -225,6 +387,10 @@ async def post_message(app: FastAPI, user: User, room_id: int, text: Any) -> str
         author = await repo.get_participant_for_user(session, room_id, user.id)
         if room is None or author is None:
             return NOT_A_PARTICIPANT
+        if await is_disconnect_expired(
+            app.state.redis, room_id, author.id, label_number(author.display_label)
+        ):
+            return "Grace period expired"
         now = datetime.now(UTC)
         ends_at = service._phase_ends_at(room, app.state.settings)
         # The server loop moves the room to voting a moment after the 120 s; the clock decides.

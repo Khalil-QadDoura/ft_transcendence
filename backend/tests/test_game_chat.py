@@ -488,7 +488,13 @@ def test_chat_outside_the_discussion_is_refused_and_not_saved(server):
                     "type": "game_error",
                     "payload": {"detail": "Chat is open only during the discussion"},
                 }, state
-        assert nothing_arrives(bob_ws)
+        # Drain player_connection events from Alice; no chat message arrives.
+        while True:
+            try:
+                frame = json.loads(bob_ws.recv(timeout=0.2))
+                assert frame["type"] == "player_connection"
+            except TimeoutError:
+                break
     assert saved_messages(room_id) == []
 
 

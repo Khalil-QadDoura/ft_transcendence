@@ -36,6 +36,32 @@ SNAPSHOT_MESSAGES = 50
 HISTORY_PAGE_DEFAULT = 50
 HISTORY_PAGE_MAX = 100
 
+# Disconnects and grace period (BE-33): on socket close, a participant keeps their seat for
+# DISCONNECT_GRACE_SEC (30 s). Redis keys per participant track the grace TTL, disconnect
+# timestamp, and expired state.
+DISCONNECT_GRACE_SEC = 30
+DISCONNECT_GRACE_KEY_PREFIX = "game:disconnect:"
+DISCONNECT_AT_KEY_PREFIX = "game:disconnect:at:"
+DISCONNECT_EXPIRED_KEY_PREFIX = "game:disconnect:expired:"
+ROOM_PRESENCE_KEY_PREFIX = "game:presence:"
+
+
+def disconnect_grace_key(room_id: int, participant_id: int) -> str:
+    return f"{DISCONNECT_GRACE_KEY_PREFIX}{room_id}:{participant_id}"
+
+
+def disconnect_at_key(room_id: int, participant_id: int) -> str:
+    return f"{DISCONNECT_AT_KEY_PREFIX}{room_id}:{participant_id}"
+
+
+def disconnect_expired_key(room_id: int, participant_id: int) -> str:
+    return f"{DISCONNECT_EXPIRED_KEY_PREFIX}{room_id}:{participant_id}"
+
+
+def room_presence_key(room_id: int, user_id: int) -> str:
+    return f"{ROOM_PRESENCE_KEY_PREFIX}{room_id}:{user_id}"
+
+
 # Template discussion lines used by bots with simulated typing delays until TC-01.
 BOT_CHAT_TEMPLATES = (
     "hey everyone, good luck figuring this out",

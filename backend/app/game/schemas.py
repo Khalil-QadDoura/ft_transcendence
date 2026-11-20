@@ -147,3 +147,29 @@ class GameErrorOut(BaseModel):
     """Why the server refused a frame sent on /ws/game, e.g. chat outside the discussion."""
 
     detail: str
+
+
+class PlayerConnectionEventOut(BaseModel):
+    """A peer in the room disconnected or reconnected (BE-33). Like every payload before results,
+    it names the participant by their label number (1-5), never by the internal database id.
+    """
+
+    participant_id: int
+    connected: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def _enforce_label_number(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            label = data.get("display_label")
+            if label and "participant_id" not in data:
+                data = dict(data)
+                data["participant_id"] = label_number(str(label))
+            return data
+        label = getattr(data, "display_label", None)
+        if label is not None and not hasattr(data, "participant_id"):
+            return {
+                "participant_id": label_number(str(label)),
+                "connected": bool(getattr(data, "connected", False)),
+            }
+        return data
