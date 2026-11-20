@@ -3,7 +3,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ApiError, clearTokens, setTokens } from "../../api/client";
-import { wsClient, type WsEventHandler } from "../../api/ws";
+import {
+  wsClient,
+  type WsConnectionState,
+  type WsEventHandler,
+} from "../../api/ws";
 import { gameApi } from "./api";
 import { GameLobbyPage } from "./GameLobbyPage";
 import type { GameRoom } from "./types";
@@ -300,4 +304,138 @@ test("logging out while waiting leaves the room with the captured access token",
   expect(
     container.querySelector('[data-testid="find-game-btn"]'),
   ).not.toBeNull();
+});
+
+test("joinQueue returning 409 shows match already started error and does not render leave button", async () => {
+  vi.spyOn(gameApi, "joinQueue").mockRejectedValue(
+    new ApiError(409, "409", "Active room already in progress"),
+  );
+
+  await renderLobby();
+  await clickTestId("find-game-btn");
+
+  expect(container.textContent).toContain("Your match has already started.");
+  expect(
+    container.querySelector('[data-testid="find-game-btn"]'),
+  ).not.toBeNull();
+  expect(container.textContent).not.toContain("Leave previous room");
+});
+
+test("pagehide event leaves queue and pageshow with persisted resets waiting room view", async () => {
+  vi.spyOn(gameApi, "joinQueue").mockResolvedValue({
+    message: "queued",
+    room_id: 61,
+  });
+  vi.spyOn(gameApi, "getRoom").mockResolvedValue(makeRoom({ id: 61 }));
+  const leaveSpy = vi.spyOn(gameApi, "leaveQueue").mockResolvedValue(undefined);
+
+  await renderLobby();
+  await clickTestId("find-game-btn");
+  expect(
+    container.querySelector('[data-testid="game-waiting-room"]'),
+  ).not.toBeNull();
+
+  // Dispatch pagehide
+  await act(async () => {
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  expect(leaveSpy).toHaveBeenCalledTimes(1);
+  expect(
+    container.querySelector('[data-testid="game-waiting-room"]'),
+  ).toBeNull();
+
+  // Dispatch pageshow with persisted (bfcache return)
+  await act(async () => {
+    const pageShowEvent = new Event("pageshow") as PageTransitionEvent;
+    Object.defineProperty(pageShowEvent, "persisted", { value: true });
+    window.dispatchEvent(pageShowEvent);
+  });
+  expect(
+    container.querySelector('[data-testid="game-waiting-room"]'),
+  ).toBeNull();
+  expect(
+    container.querySelector('[data-testid="find-game-btn"]'),
+  ).not.toBeNull();
+});
+
+test("reconnect resync returning 403 resets waiting room view to lobby", async () => {
+  let stateCallback: ((state: WsConnectionState) => void) | undefined;
+  vi.spyOn(wsClient, "getState").mockReturnValue("reconnecting");
+  vi.spyOn(wsClient, "onStateChange").mockImplementation((cb) => {
+    stateCallback = cb;
+    return () => {};
+  });
+
+  vi.spyOn(gameApi, "joinQueue").mockResolvedValue({
+    message: "queued",
+    room_id: 63,
+  });
+  vi.spyOn(gameApi, "getRoom")
+    .mockResolvedValueOnce(makeRoom({ id: 63 }))
+    .mockRejectedValueOnce(new ApiError(403, "403", "Forbidden"));
+
+  await renderLobby();
+  await clickTestId("find-game-btn");
+  expect(
+    container.querySelector('[data-testid="game-waiting-room"]'),
+  ).not.toBeNull();
+
+  // Simulate WS reconnect
+  await act(async () => {
+    stateCallback?.("connected");
+  });
+
+  expect(
+    container.querySelector('[data-testid="game-waiting-room"]'),
+  ).toBeNull();
+  expect(
+    container.querySelector('[data-testid="find-game-btn"]'),
+  ).not.toBeNull();
+});
+
+test("participant joins are sorted by display_label", async () => {
+  vi.spyOn(gameApi, "joinQueue").mockResolvedValue({
+    message: "queued",
+    room_id: 65,
+  });
+  vi.spyOn(gameApi, "getRoom").mockResolvedValue(
+    makeRoom({
+      id: 65,
+      participants: [{ id: 3, display_label: "Player 3", is_you: true }],
+    }),
+  );
+
+  await renderLobby();
+  await clickTestId("find-game-btn");
+
+  // Player 1 joins out-of-order
+  await act(async () => {
+    emitWs("game_participant_joined", {
+      room_id: 65,
+      participant: { id: 1, display_label: "Player 1" },
+      participant_count: 2,
+      room_expires_at: null,
+    });
+  });
+
+  const seats = Array.from(container.querySelectorAll(".game-seat")).map(
+    (el) => el.textContent,
+  );
+  expect(seats[0]).toContain("Player 1");
+  expect(seats[1]).toContain("Player 3");
+});
+
+test("if getRoom fails right after joinQueue, leaves queue cleanly", async () => {
+  vi.spyOn(gameApi, "joinQueue").mockResolvedValue({
+    message: "queued",
+    room_id: 67,
+  });
+  vi.spyOn(gameApi, "getRoom").mockRejectedValue(new Error("Network glitch"));
+  const leaveSpy = vi.spyOn(gameApi, "leaveQueue").mockResolvedValue(undefined);
+
+  await renderLobby();
+  await clickTestId("find-game-btn");
+
+  expect(leaveSpy).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("We couldn’t join a room right now.");
 });

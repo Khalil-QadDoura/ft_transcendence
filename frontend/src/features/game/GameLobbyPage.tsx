@@ -7,6 +7,7 @@ import { useWsEvent, wsClient } from "../../api/ws";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { gameApi } from "./api";
+import { GAME_RULES_PATH } from "./rules/paths";
 import type {
   GameParticipantEventPayload,
   GameRoom,
@@ -37,7 +38,6 @@ export function GameLobbyPage() {
   const [leaving, setLeaving] = useState(false);
   const [startPressed, setStartPressed] = useState(false);
   const [error, setError] = useState("");
-  const [alreadyInRoom, setAlreadyInRoom] = useState(false);
   const [closedNotice, setClosedNotice] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
 
@@ -76,19 +76,31 @@ export function GameLobbyPage() {
     return () => clearInterval(timer);
   }, [room?.room_expires_at]);
 
-  // Leave waiting room on unmount (navigating away from /game) or browser unload.
+  // Leave waiting room on unmount (navigating away from /game) or browser unload/hide.
+  // Also clear room state on back/forward cache restore (pageshow with persisted).
   useEffect(() => {
     const leaveIfWaiting = () => {
       if (waitingRoomIdRef.current !== null && !gameStartedRef.current) {
         waitingRoomIdRef.current = null;
+        setRoom(null);
+        setStartPressed(false);
         void gameApi.leaveQueue().catch(() => {
           /* Best-effort cleanup on leave. */
         });
       }
     };
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && !gameStartedRef.current) {
+        waitingRoomIdRef.current = null;
+        setRoom(null);
+        setStartPressed(false);
+      }
+    };
     window.addEventListener("pagehide", leaveIfWaiting);
+    window.addEventListener("pageshow", handlePageShow);
     return () => {
       window.removeEventListener("pagehide", leaveIfWaiting);
+      window.removeEventListener("pageshow", handlePageShow);
       leaveIfWaiting();
     };
   }, []);
@@ -137,8 +149,17 @@ export function GameLobbyPage() {
             setRoom(latest);
           }
         })
-        .catch(() => {
-          /* Keep current view until next event or manual leave. */
+        .catch((err: unknown) => {
+          // If server answers 403 or 404 (e.g. participant was removed or room was destroyed),
+          // cleanly clear waiting state and return to lobby.
+          if (
+            err instanceof ApiError &&
+            (err.status === 403 || err.status === 404)
+          ) {
+            syncWaitingRef(null);
+            setRoom(null);
+            setStartPressed(false);
+          }
         });
     });
   }, [enterActiveRoom, syncWaitingRef]);
@@ -151,16 +172,24 @@ export function GameLobbyPage() {
         const alreadyListed = current.participants.some(
           (item) => item.id === payload.participant.id,
         );
-        const participants = alreadyListed
-          ? current.participants
-          : [
-              ...current.participants,
-              {
-                id: payload.participant.id,
-                display_label: payload.participant.display_label,
-                is_you: payload.participant.id === current.my_participant_id,
-              },
-            ];
+        const participants = (
+          alreadyListed
+            ? current.participants
+            : [
+                ...current.participants,
+                {
+                  id: payload.participant.id,
+                  display_label: payload.participant.display_label,
+                  is_you: payload.participant.id === current.my_participant_id,
+                },
+              ]
+        )
+          .slice()
+          .sort((a, b) =>
+            a.display_label.localeCompare(b.display_label, undefined, {
+              numeric: true,
+            }),
+          );
         return {
           ...current,
           participants,
@@ -230,27 +259,30 @@ export function GameLobbyPage() {
     if (joining) return;
     setJoining(true);
     setError("");
-    setAlreadyInRoom(false);
     setClosedNotice(false);
     setStartPressed(false);
     gameStartedRef.current = false;
     try {
       const joined = await gameApi.joinQueue();
       lastAccessTokenRef.current = getAccessToken();
-      const loaded = await gameApi.getRoom(joined.room_id);
-      if (loaded.state === "discussion" || loaded.state === "voting") {
-        enterActiveRoom(loaded.id);
-        return;
+      try {
+        const loaded = await gameApi.getRoom(joined.room_id);
+        if (loaded.state === "discussion" || loaded.state === "voting") {
+          enterActiveRoom(loaded.id);
+          return;
+        }
+        if (loaded.state === "closed" || loaded.state === "finished") {
+          setClosedNotice(true);
+          return;
+        }
+        syncWaitingRef(loaded);
+        setRoom(loaded);
+      } catch (getErr) {
+        void gameApi.leaveQueue().catch(() => {});
+        throw getErr;
       }
-      if (loaded.state === "closed" || loaded.state === "finished") {
-        setClosedNotice(true);
-        return;
-      }
-      syncWaitingRef(loaded);
-      setRoom(loaded);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setAlreadyInRoom(true);
         setError(t("alreadyInRoom"));
       } else {
         setError(t("joinError"));
@@ -269,7 +301,6 @@ export function GameLobbyPage() {
       syncWaitingRef(null);
       setRoom(null);
       setStartPressed(false);
-      setAlreadyInRoom(false);
     } catch {
       setError(t("leaveError"));
     } finally {
@@ -335,14 +366,16 @@ export function GameLobbyPage() {
             </div>
             <div className="game-waiting-stats">
               <Badge variant="info" size="md" data-testid="participant-count">
-                {t("participantCount", {
-                  count: room.participant_count,
-                  target: room.target_size,
-                })}
+                <bdi>
+                  {t("participantCount", {
+                    count: room.participant_count,
+                    target: room.target_size,
+                  })}
+                </bdi>
               </Badge>
               <span
                 className="game-timer-pill"
-                aria-label={t("timeRemaining")}
+                aria-label={`${t("timeRemaining")}: ${formatCountdown(secondsLeft)}`}
                 data-testid="room-countdown"
               >
                 {formatCountdown(secondsLeft)}
@@ -413,7 +446,7 @@ export function GameLobbyPage() {
               <li>{t("ruleWaiting")}</li>
               <li>{t("ruleDiscussion")}</li>
             </ul>
-            <Link className="game-rules-link" to="/game/rules">
+            <Link className="game-rules-link" to={GAME_RULES_PATH}>
               {t("readFullRules")}
             </Link>
           </section>
@@ -444,17 +477,6 @@ export function GameLobbyPage() {
             >
               {t(joining ? "findingGame" : "findGame")}
             </Button>
-            {alreadyInRoom && (
-              <Button
-                type="button"
-                variant="outline"
-                isLoading={leaving}
-                disabled={leaving}
-                onClick={() => void handleLeaveRoom()}
-              >
-                {t("leaveAndRetry")}
-              </Button>
-            )}
           </section>
         </div>
       )}
