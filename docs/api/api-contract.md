@@ -103,11 +103,11 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 | PATCH | `/companies/me` | Bearer | `{name, country, city, district?, country_code?}` | 200 `CompanyOut` | 404, 422 |
 | DELETE | `/companies` | Bearer | — | 204 (soft, idempotent; the logo file is deleted, BE-08) | — |
 | POST | `/jobs` | Bearer (employer) | `JobCreate` | 201 `JobOut` | 404 no company, 422 |
-| PATCH | `/jobs/{id}` | Bearer (owner) | any `JobCreate` fields | 200 `JobOut` | 404 |
-| DELETE | `/jobs/{id}` | Bearer (owner) | — | 204 (soft) | 404 |
+| PATCH | `/jobs/{id}` | Bearer (owner) | any `JobCreate` fields | 200 `JobOut` | 404, 422 id under 1 or too large |
+| DELETE | `/jobs/{id}` | Bearer (owner) | — | 204 (soft) | 404, 422 id under 1 or too large |
 | GET | `/jobs/mine` | Bearer (employer) | — | 200 `JobOut[]` with `views_count`, `applications_count`, `new_applications_count` | 404 no company |
-| GET | `/jobs/open` | — | query below | 200 `{items: JobOut[], next_cursor}` | 422 |
-| GET | `/jobs/{id}` | optional | — | 200 `JobOut` (non-open only for the owner) | 404 |
+| GET | `/jobs/open` | — | query below | 200 `{items: JobOut[], next_cursor}` | 422 (nearest without lat/lng falls back to newest; cursor must be a visible open job) |
+| GET | `/jobs/{id}` | optional | — | 200 `JobOut` (non-open only for the owner) | 404, 422 id under 1 or too large |
 | POST | `/jobs/{id}/view` | optional | — | 204 (counted once per user per 24 h) | — |
 | POST | `/jobs/{id}/apply` | Bearer | `{cover_note? ≤ 1000}` | 201 `ApplicationOut` | 422 `{code: profile_incomplete or no_video, next_step}`, 403 own job, 404, 409 duplicate |
 | GET | `/applications/mine` | Bearer | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | — |

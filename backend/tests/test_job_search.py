@@ -39,6 +39,10 @@ PASSWORD_HASH = security.hash_password(PASSWORD)
         "urgency=asap",
         "salary_min=-1",
         "salary_max=-10",
+        "salary_min=10000000000",
+        "salary_max=10000000000",
+        "salary_min=1e-1000000",
+        "salary_max=1e-1000000",
         "salary_min=5000&salary_max=1000",
         "limit=0",
         "limit=101",
@@ -195,7 +199,7 @@ def test_job_search_filters_radius_fts_sort_and_cursor_pagination():
         urgency="normal",
     )
     # 4) Must NEVER appear in /jobs/open: draft, deleted, or owned by deleted company
-    _seed_job(
+    j_draft = _seed_job(
         active_co,
         title="Draft Barista",
         description="Unpublished draft role.",
@@ -203,7 +207,7 @@ def test_job_search_filters_radius_fts_sort_and_cursor_pagination():
         longitude=54.3773,
         status="draft",
     )
-    _seed_job(
+    j_deleted = _seed_job(
         active_co,
         title="Deleted Barista",
         description="Soft deleted role.",
@@ -211,7 +215,7 @@ def test_job_search_filters_radius_fts_sort_and_cursor_pagination():
         longitude=54.3773,
         status="deleted",
     )
-    _seed_job(
+    j_deleted_co = _seed_job(
         deleted_co,
         title="Deleted Company Barista",
         description="Open job under deleted company.",
@@ -310,7 +314,25 @@ def test_job_search_filters_radius_fts_sort_and_cursor_pagination():
         # Center tie: j_center_2 (higher id) before j_center_1, then j_near (~6.5 km), then j_dubai
         assert collected_nearest == [j_center_2, j_center_1, j_near, j_dubai]
 
-        # Unknown cursor on nearest sort returns 422 cleanly
+        # Hidden/draft/deleted or unknown cursor on nearest sort returns 422 cleanly
+        assert (
+            test_client.get(
+                f"/api/jobs/open?lat=24.4539&lng=54.3773&sort_by=nearest&cursor={j_draft}"
+            ).status_code
+            == 422
+        )
+        assert (
+            test_client.get(
+                f"/api/jobs/open?lat=24.4539&lng=54.3773&sort_by=nearest&cursor={j_deleted}"
+            ).status_code
+            == 422
+        )
+        assert (
+            test_client.get(
+                f"/api/jobs/open?lat=24.4539&lng=54.3773&sort_by=nearest&cursor={j_deleted_co}"
+            ).status_code
+            == 422
+        )
         assert (
             test_client.get(
                 "/api/jobs/open?lat=24.4539&lng=54.3773&sort_by=nearest&cursor=999999"

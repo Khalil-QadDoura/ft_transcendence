@@ -58,8 +58,12 @@ async def list_open_jobs(
         float | None, Query(gt=0.0, le=repo.MAX_RADIUS_KM, allow_inf_nan=False)
     ] = None,
     schedule: Annotated[JobSchedule | None, Query()] = None,
-    salary_min: Annotated[Decimal | None, Query(ge=0, allow_inf_nan=False)] = None,
-    salary_max: Annotated[Decimal | None, Query(ge=0, allow_inf_nan=False)] = None,
+    salary_min: Annotated[
+        Decimal | None, Query(ge=0, max_digits=12, decimal_places=2, allow_inf_nan=False)
+    ] = None,
+    salary_max: Annotated[
+        Decimal | None, Query(ge=0, max_digits=12, decimal_places=2, allow_inf_nan=False)
+    ] = None,
     urgency: Annotated[JobUrgency | None, Query()] = None,
     keyword: Annotated[str | None, Query(max_length=100)] = None,
     position: Annotated[str | None, Query(max_length=100)] = None,

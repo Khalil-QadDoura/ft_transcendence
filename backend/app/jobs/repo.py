@@ -233,9 +233,15 @@ def _origin_geography(lat: float, lng: float):
 async def get_job_distance_meters(
     session: AsyncSession, job_id: int, *, lat: float, lng: float
 ) -> float | None:
-    """Return distance in meters from (lat, lng) for a cursor job id, or None if unknown."""
-    stmt = select(func.ST_Distance(Job.location_point, _origin_geography(lat, lng))).where(
-        Job.id == job_id
+    """Return distance in meters from (lat, lng) for a cursor job id, or None if not visible."""
+    stmt = (
+        select(func.ST_Distance(Job.location_point, _origin_geography(lat, lng)))
+        .join(Company, Company.id == Job.owner_id)
+        .where(
+            Job.id == job_id,
+            Job.status == OPEN,
+            Company.status == COMPANY_ACTIVE,
+        )
     )
     val = (await session.execute(stmt)).scalar_one_or_none()
     return float(val) if val is not None else None
