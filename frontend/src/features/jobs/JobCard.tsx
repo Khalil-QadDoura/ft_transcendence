@@ -56,7 +56,6 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
             <Avatar
               src={job.company_logo_url ?? undefined}
               alt={companyName}
-              fallbackText={companyName}
               size="md"
               className="mt-0.5 shrink-0 bg-surface-muted border border-border"
             />

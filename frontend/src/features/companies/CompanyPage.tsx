@@ -137,7 +137,6 @@ function CompanyLogoSection({
         key={company.logo_url ?? "none"}
         src={company.logo_url ?? undefined}
         alt={company.name}
-        fallbackText={company.name}
         size="xl"
       />
       {file && preview && (
@@ -353,6 +352,7 @@ function CompanyEditor({
   const cache = useQueryClient();
   const [baseline, setBaseline] = useState(company);
   const [saved, setSaved] = useState(justCreated);
+  const [showCreatedMessage, setShowCreatedMessage] = useState(justCreated);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -408,6 +408,7 @@ function CompanyEditor({
       cache.setQueryData(queryKeys.companies.me, updated);
       setBaseline(updated);
       reset(editValuesFrom(updated));
+      setShowCreatedMessage(false);
       setSaved(true);
     } catch (error) {
       if (
@@ -528,7 +529,7 @@ function CompanyEditor({
           )}
           {saved && (
             <p className="company-success" role="status">
-              {t(justCreated ? "created" : "saved")}
+              {t(showCreatedMessage ? "created" : "saved")}
             </p>
           )}
           <div className="company-actions">

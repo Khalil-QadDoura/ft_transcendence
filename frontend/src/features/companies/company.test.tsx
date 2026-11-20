@@ -136,10 +136,25 @@ test("employer can create a company and sees validation errors next to fields", 
   expect(container.textContent).toContain("Company name already reserved");
 
   // Second submit succeeds and transitions into the company editor
+  const patchSpy = vi.spyOn(companyApi, "patch").mockResolvedValue({
+    ...sampleCompany,
+    city: "Al Ain",
+  });
   await submitForm();
   expect(createSpy).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("Abu Dhabi Robotics");
   expect(container.textContent).toContain("Your company profile is live.");
+  // Logo panel uses initials "AD" rather than cut off name
+  expect(
+    container.querySelector(".company-logo-panel .rounded-full")?.textContent,
+  ).toBe("AD");
+
+  // Subsequent save shows "Company details updated." rather than "Your company profile is live."
+  await fill("city", "Al Ain");
+  await submitForm();
+  expect(patchSpy).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("Company details updated.");
+  expect(container.textContent).not.toContain("Your company profile is live.");
 });
 
 test("employer can edit company details and sees API validation errors inline", async () => {
@@ -296,4 +311,36 @@ test("JobCard renders company logo image when company_logo_url is provided", asy
   );
   expect(img).not.toBeNull();
   expect(img?.alt).toBe("Abu Dhabi Robotics");
+});
+
+test("JobCard renders company initials when company_logo_url is null", async () => {
+  const jobWithoutLogo: Job = {
+    id: 102,
+    owner_id: 12,
+    company_name: "Abu Dhabi Robotics",
+    company_logo_url: null,
+    title: "Backend Engineer",
+    description: "Build APIs.",
+    status: "open",
+    latitude: 24.4539,
+    longitude: 54.3773,
+    location: "Abu Dhabi",
+    salary_type: "monthly",
+    schedule: "full_time",
+    urgency: "normal",
+    views_count: 1,
+    applications_count: 0,
+    created_at: "2026-11-18T08:00:00Z",
+  };
+
+  await act(async () => {
+    root.render(
+      <MemoryRouter>
+        <JobCard job={jobWithoutLogo} />
+      </MemoryRouter>,
+    );
+  });
+
+  expect(container.querySelector("img")).toBeNull();
+  expect(container.querySelector(".rounded-full")?.textContent).toBe("AD");
 });
