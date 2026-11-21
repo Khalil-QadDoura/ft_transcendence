@@ -322,6 +322,51 @@ def test_a_player_who_left_the_waiting_room_is_no_longer_let_in(server):
         assert snapshot(ws)["room"]["participant_count"] == 1
 
 
+def test_leaving_after_the_start_removes_nobody(server):
+    """Rules section 3: leaving after the game has started counts as a disconnect. A player who
+    calls DELETE /api/game/queue/leave in the discussion or the voting stays a participant, can
+    still reach the room, and keeps their marks."""
+    room_id, (alice_id, alice_token), (bob_id, bob_token) = discussion_room(server)
+    alice_pid, bob_pid = participant_id(room_id, alice_id), participant_id(room_id, bob_id)
+    bob_number = label_number(my_label(server, bob_token, room_id))
+
+    def leave() -> None:
+        response = httpx2.delete(
+            f"http://{server}/api/game/queue/leave", headers=bearer(alice_token)
+        )
+        assert response.status_code == 204
+
+    def participants() -> list[tuple]:
+        return sql(
+            "SELECT id FROM game_participants WHERE room_id = :room_id ORDER BY id",
+            room_id=room_id,
+        )
+
+    leave()  # in the discussion
+    assert participants() == [(alice_pid,), (bob_pid,)]
+    assert get_room(server, alice_token, room_id)["participant_count"] == 2
+    with room_socket(server, alice_token, room_id) as ws:
+        assert snapshot(ws)["room"]["state"] == "discussion"
+        say(ws, "still here")
+        assert wait_for(ws, "game_message")["text"] == "still here"
+
+    set_state(room_id, "voting", voting_started_at="now()")
+    sql(
+        "INSERT INTO game_votes (room_id, voter_participant_id, target_participant_id, guess)"
+        " VALUES (:room_id, :voter, :target, 'bot')",
+        room_id=room_id,
+        voter=alice_pid,
+        target=bob_pid,
+    )
+    leave()  # in the voting
+    assert participants() == [(alice_pid,), (bob_pid,)]
+    assert get_room(server, alice_token, room_id)["participant_count"] == 2
+    with room_socket(server, alice_token, room_id) as ws:
+        snap = snapshot(ws)
+    assert snap["room"]["state"] == "voting"
+    assert snap["my_votes"] == [{"target_participant_id": bob_number, "guess": "bot"}]
+
+
 # The snapshot -------------------------------------------------------------------------------
 
 
