@@ -71,6 +71,16 @@ class Settings(BaseSettings):
     # Off in tests that do not exercise game timers.
     game_scheduler_enabled: bool = True
 
+    # Video moderation worker & Celery beat (BE-29, M9).
+    # Keep MODERATION_FAIL_OPEN=false on defense day so API errors record moderation_error
+    # instead of silently approving unmoderated videos.
+    openai_api_key: str = ""
+    moderation_fail_open: bool = False
+    moderation_stuck_minutes: int = Field(default=10, ge=1)
+    moderation_beat_interval_sec: float = Field(default=300.0, gt=0.0)
+    worker_heartbeat_interval_sec: float = Field(default=20.0, gt=0.0)
+    worker_heartbeat_ttl_sec: int = Field(default=60, ge=5)
+
 
 @lru_cache
 def get_settings() -> Settings:
