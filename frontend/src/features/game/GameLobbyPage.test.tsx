@@ -60,6 +60,7 @@ beforeEach(() => {
   vi.spyOn(wsClient, "onStateChange").mockReturnValue(() => {
     /* noop */
   });
+  vi.spyOn(gameApi, "getActiveRoom").mockResolvedValue(null);
 });
 
 afterEach(async () => {
@@ -319,6 +320,37 @@ test("joinQueue returning 409 shows match already started error and does not ren
     container.querySelector('[data-testid="find-game-btn"]'),
   ).not.toBeNull();
   expect(container.textContent).not.toContain("Leave previous room");
+});
+
+test("Find a game enters active room directly when user is already in discussion or voting", async () => {
+  const activeRoom = makeRoom({ id: 55, state: "discussion" });
+  vi.spyOn(gameApi, "getActiveRoom").mockResolvedValue(activeRoom);
+  const joinSpy = vi.spyOn(gameApi, "joinQueue");
+  const leaveSpy = vi.spyOn(gameApi, "leaveQueue");
+
+  const router = await renderLobby();
+  await clickTestId("find-game-btn");
+
+  expect(joinSpy).not.toHaveBeenCalled();
+  expect(leaveSpy).not.toHaveBeenCalled();
+  expect(router.state.location.pathname).toBe("/game/rooms/55");
+});
+
+test("Find a game re-checks active room on 409 and redirects if match is in progress", async () => {
+  const activeRoom = makeRoom({ id: 99, state: "voting" });
+  vi.spyOn(gameApi, "getActiveRoom")
+    .mockResolvedValueOnce(null)
+    .mockResolvedValueOnce(activeRoom);
+  vi.spyOn(gameApi, "joinQueue").mockRejectedValue(
+    new ApiError(409, "409", "Active room already in progress"),
+  );
+  const leaveSpy = vi.spyOn(gameApi, "leaveQueue");
+
+  const router = await renderLobby();
+  await clickTestId("find-game-btn");
+
+  expect(leaveSpy).not.toHaveBeenCalled();
+  expect(router.state.location.pathname).toBe("/game/rooms/99");
 });
 
 test("pagehide event leaves queue and pageshow with persisted resets waiting room view", async () => {

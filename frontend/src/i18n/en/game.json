@@ -16,7 +16,7 @@
   "waitingTitle": "Waiting for participants",
   "waitingNoChat": "There is no chat in the waiting room. Discussion opens as soon as the match starts.",
   "participantCount": "{{count}} / {{target}} participants",
-  "timeRemaining": "Room timer",
+  "timeRemaining": "Room timer: {{time}}",
   "youMarker": "You",
   "startNow": "Start now",
   "startingGame": "Starting…",

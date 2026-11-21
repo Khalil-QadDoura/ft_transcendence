@@ -30,6 +30,13 @@ export const gameApi = {
     });
   },
 
+  async getActiveRoom(signal?: AbortSignal): Promise<GameRoom | null> {
+    return apiClient<GameRoom | null>("/game/rooms/active", {
+      method: "GET",
+      signal: signal ?? AbortSignal.timeout(15_000),
+    });
+  },
+
   async startRoom(roomId: number): Promise<GameRoom> {
     return apiClient<GameRoom>(`/game/rooms/${roomId}/start`, {
       method: "POST",

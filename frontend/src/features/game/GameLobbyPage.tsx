@@ -263,6 +263,14 @@ export function GameLobbyPage() {
     setStartPressed(false);
     gameStartedRef.current = false;
     try {
+      const active = await gameApi.getActiveRoom().catch(() => null);
+      if (
+        active &&
+        (active.state === "discussion" || active.state === "voting")
+      ) {
+        enterActiveRoom(active.id);
+        return;
+      }
       const joined = await gameApi.joinQueue();
       lastAccessTokenRef.current = getAccessToken();
       try {
@@ -283,6 +291,18 @@ export function GameLobbyPage() {
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
+        try {
+          const active = await gameApi.getActiveRoom();
+          if (
+            active &&
+            (active.state === "discussion" || active.state === "voting")
+          ) {
+            enterActiveRoom(active.id);
+            return;
+          }
+        } catch {
+          // ignore error and show alreadyInRoom
+        }
         setError(t("alreadyInRoom"));
       } else {
         setError(t("joinError"));
@@ -375,7 +395,9 @@ export function GameLobbyPage() {
               </Badge>
               <span
                 className="game-timer-pill"
-                aria-label={`${t("timeRemaining")}: ${formatCountdown(secondsLeft)}`}
+                aria-label={t("timeRemaining", {
+                  time: formatCountdown(secondsLeft),
+                })}
                 data-testid="room-countdown"
               >
                 {formatCountdown(secondsLeft)}
