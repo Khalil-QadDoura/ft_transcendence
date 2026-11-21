@@ -15,8 +15,12 @@ MP4_SIGNATURE = b"ftyp"
 MP4_SIGNATURE_START = 4
 MP4_SIGNATURE_END = 8
 
-# Where a video is stored in the bucket: users/<user id>/intro/<random uuid>.mp4
+# Where the browser uploads a video: users/<user id>/intro/<random uuid>.mp4
 UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+# Where the video is kept once confirmed: videos/<user id>/<new uuid>.mp4. confirm copies the
+# upload there and deletes the upload. No upload link ever points into videos/, so only the
+# server writes there: the file the feed shows cannot be changed after confirm.
+VIDEOS_FOLDER = "videos"
 
 # How long the signed links work, in seconds: 15 min to upload, 5 min to watch.
 UPLOAD_URL_EXPIRES_SEC = 900

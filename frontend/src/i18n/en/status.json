@@ -1,0 +1,25 @@
+{
+  "title": "Service status",
+  "intro": "Live health of the WOZU services. This page checks again every {{seconds}} seconds.",
+  "overall": {
+    "checking": "Checking…",
+    "operational": "All systems operational",
+    "degraded": "Degraded",
+    "unreachable": "API unreachable"
+  },
+  "componentsHeading": "Components",
+  "component": {
+    "api": "API",
+    "database": "Database",
+    "redis": "Redis",
+    "storage": "File storage",
+    "worker": "Background worker"
+  },
+  "state": {
+    "up": "Up",
+    "down": "Down",
+    "unknown": "Unknown"
+  },
+  "lastChecked": "Last checked:",
+  "notChecked": "Not checked yet"
+}

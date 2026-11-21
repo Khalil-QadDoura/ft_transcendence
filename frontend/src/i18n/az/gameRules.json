@@ -1,0 +1,116 @@
+{
+  "eyebrow": "Türinq dueli",
+  "title": "Oyun qaydaları",
+  "intro": "Otağınızdakı oyunçuların bəziləri bot ola bilər. Onlarla söhbət edin, sonra hər bir digər oyunçu barədə qərar verin: bot, yoxsa insan? Düzgün təxminlər xal qazandırır, səhv təxminlər xal itirdir.",
+  "contents": "Bu səhifədə",
+  "player": "Oyunçu {{number}}",
+  "units": {
+    "minutes_one": "{{value}} dəqiqə",
+    "minutes_other": "{{value}} dəqiqə",
+    "seconds_one": "{{value}} saniyə",
+    "seconds_other": "{{value}} saniyə"
+  },
+  "idea": {
+    "title": "Oyunun mahiyyəti",
+    "body": "Otaqda ən çoxu {{max}} iştirakçı olur. Onların bəziləri real insanlardır, bəziləri bot ola bilər və hamı anonimdir. Qısa söhbətdən sonra hər insan hər bir digər iştirakçı barədə təxmin edir: bot, yoxsa insan? Ən çox xal toplayan insan qalib gəlir."
+  },
+  "rooms": {
+    "title": "Otaqlar və iştirakçılar",
+    "capacity": "Otaqda ən çoxu {{max}} iştirakçı olur və onlardan ən azı {{minHumans}} nəfəri insandır.",
+    "join": "Lobbidə yeni otaq yaradırsınız və ya açıq otağa qoşulursunuz.",
+    "labels": "Hər kəs yalnız etiketlə görünür: “Oyunçu {{first}}”dən “Oyunçu {{last}}”ə qədər. Oyunun heç bir yerində real ad, avatar və ya profil keçidi yoxdur.",
+    "randomLabel": "Qoşulanda sizə {{first}}-dən {{last}}-ə qədər təsadüfi boş nömrə verilir, qoşulma sırasındakı növbəti nömrə yox. “Oyunçu {{first}}” otağı kimin yaratdığını və ya kimin insan olduğunu göstərmir; nömrələr arasında boşluqlar ola bilər.",
+    "stable": "Etiket otaq boyu dəyişmir. Öz etiketiniz “Siz” kimi işarələnir.",
+    "bots": "Otaqda ya bot olmur, ya da {{min}}-dən {{max}}-ə qədər bot olur. Oyun nəticələrə qədər hansı iştirakçıların bot olduğunu, hətta otaqda botun olub-olmadığını heç vaxt demir.",
+    "lookAlike": "Botlar insanlar kimi görünür və davranır: eyni cür etiket, eyni qoşulma qaydası, eyni söhbət tərzi."
+  },
+  "waiting": {
+    "title": "Gözləmə otağı",
+    "timer": "Otaq yaradılanda {{duration}} müddətli vahid otaq taymeri başlayır. Kim qoşulursa qoşulsun, taymer heç vaxt yenidən başlamır.",
+    "joining": "İştirakçılar bir-bir qoşulur. Otaqda bot varsa, onlar insanların arasında təsadüfi anlarda qoşulur.",
+    "shows": "Gözləmə otağında iştirakçıların sayı, mövcud etiketlər, otaq taymeri və otaqda {{min}}-dən {{max}}-ə qədər iştirakçı olduğu müddətdə “İndi başla” düyməsi görünür.",
+    "noChat": "Gözləmə otağında söhbət yoxdur. Söhbət müzakirə mərhələsində açılır.",
+    "counts": "İştirakçıların hər sayına həm botlar, həm də insanlar daxildir.",
+    "startTitle": "Oyun nə vaxt başlayır",
+    "startIntro": "Aşağıdakılardan biri baş verən kimi oyun başlayır:",
+    "startFull": "Otaqdakı iştirakçıların sayı {{max}} olur.",
+    "startNow": "Bir insan “İndi başla” düyməsini basır (otaqda {{min}}-dən {{max}}-ə qədər iştirakçı olduqda görünür). İlk basış oyunu həmin anda otaqda olan hər kəs üçün başladır; sonrakı basışlar nəzərə alınmır.",
+    "startTimer": "Otaq taymeri bitir və otaqda {{min}} və ya daha çox iştirakçı var.",
+    "late": "Oyun başlayanda qoşulmamış olan sonra qoşula bilməz.",
+    "leaveTitle": "Gözləmə otağından çıxmaq",
+    "leave": "Oyun başlamazdan əvvəl otaqdan çıxa bilərsiniz. Etiketiniz ümumi hovuza qayıdır, iştirakçıların sayı bir azalır və otaq taymeri işləməyə davam edir. Otaqda heç bir insan qalmazsa, otaq dərhal bağlanır.",
+    "leaveLate": "Oyun başladıqdan sonra çıxmaq bağlantının kəsilməsi sayılır: həmin andakı işarələriniz saxlanılır və səsvermə bitənə qədər otağa qayıdıb onları dəyişə bilərsiniz.",
+    "closeTitle": "Otaq nə vaxt bağlanır",
+    "close": "Otaq taymeri bitəndə otaqda cəmi {{participants}} iştirakçı varsa, otaq bağlanır. Lobbiyə qayıdırsınız və yeni otaq yarada və ya başqa otağa qoşula bilərsiniz."
+  },
+  "discussion": {
+    "title": "Müzakirə mərhələsi: {{duration}}",
+    "body": "İştirakçılar otaqda söhbət edir. Mesajlarda yalnız göndərənin etiketi görünür."
+  },
+  "voting": {
+    "title": "Səsvermə mərhələsi: {{duration}}",
+    "who": "Hər insan hər bir digər iştirakçını “bot” və ya “insan” kimi işarələyir. Özünüzü işarələyə bilməzsiniz, botlar isə səs vermir.",
+    "preset": "Səsvermə başlayanda hər bir digər iştirakçı artıq “insan” kimi işarələnmiş olur.",
+    "change": "{{duration}} bitənə qədər istənilən işarəni “insan” və “bot” arasında istədiyiniz qədər dəyişə bilərsiniz.",
+    "final": "Səsvermə mərhələsinin sonundakı işarələr hesablanır. “Təxminsiz” seçim yoxdur: “insan” olaraq qalmış işarə də digərləri kimi hesablanır."
+  },
+  "scoring": {
+    "title": "Xallar",
+    "correct": "Düzgün təxmin (bot “bot”, insan “insan” kimi işarələnib): {{points}} xal",
+    "wrong": "Səhv təxmin (bot “insan”, insan “bot” kimi işarələnib): {{points}} xal",
+    "sum": "Xalınız bütün təxminlərinizin cəmidir: hər bir digər iştirakçı üçün səsvermə bitəndəki vəziyyətdə bir işarə. İnsanı “insan” kimi işarələmək bir xal qazandırır; bu, {{zero}} xal deyil."
+  },
+  "outcome": {
+    "title": "Qələbə, heç-heçə və məğlubiyyət",
+    "many": "{{min}} və ya daha çox insan olduqda: ən yüksək xal toplayan insan qalib gəlir, hətta bu xal {{zero}} və ya mənfi olsa belə. Oyun nisbidir: sadəcə digər insanlardan yaxşı nəticə göstərmək kifayətdir. Ən yüksək xal bir neçə oyunçu arasında bölünürsə, onlar heç-heçə edir. Qalanların hamısı məğlub olur.",
+    "single": "Otaqda cəmi {{humans}} insan olduqda (siz və botlar): {{threshold}}-dan yuxarı xal qələbə, düz {{threshold}} heç-heçə, {{threshold}}-dan aşağı xal məğlubiyyətdir.",
+    "humansOnly": "Qələbə, heç-heçə və məğlubiyyət yalnız insanlara aiddir. Botların nə xalı, nə də nəticəsi olur.",
+    "draw": "Heç-heçədə heç kim qalib elan edilmir. Ən yüksək xalı bölüşən oyunçular heç-heçə nəticəsi alır."
+  },
+  "disconnect": {
+    "title": "Oyunçunun bağlantısı kəsilərsə",
+    "keep": "Bağlantısı kəsilən oyunçu həmin andakı işarələrini, o cümlədən hələ də “insan” olaraq qalanları saxlayır və bu işarələr səsvermə bitəndə hesablanır. Səsvermə başlamazdan əvvəl bağlantısı kəsilən oyunçunun bütün işarələri “insan” olaraq qalır.",
+    "counts": "Bağlantısı kəsilən oyunçu qalib müəyyən ediləndə yenə də insanlardan biri sayılır və digər insanlar kimi xal və nəticə alır.",
+    "back": "Səsvermə bitməzdən əvvəl geri qayıdan oyunçu işarələrini yenə dəyişə bilər."
+  },
+  "results": {
+    "title": "Nəticələr",
+    "intro": "Nəticələr yalnız oyun bitdikdən sonra görünür. Onlarda göstərilir:",
+    "bots": "hansı etiketlərin bot olduğu;",
+    "scores": "hər insanın xalı və nəticəsi (qələbə, heç-heçə və ya məğlubiyyət);",
+    "rate": "hər botun aldatma faizi: səsvermə bitəndə həmin botu “insan” kimi işarələmiş insanların sayı (ilkin işarə olaraq qalmış işarə də sayılır), oyundakı insanların sayına (bağlantısı kəsilənlər daxil) bölünür və faizlə göstərilir."
+  },
+  "examples": {
+    "title": "Həll olunmuş nümunələr",
+    "mark": {
+      "human": "insan",
+      "bot": "bot"
+    },
+    "correct": "düzgün",
+    "wrong": "səhv",
+    "self": "(özü)",
+    "score": "Xal",
+    "outcome": "Nəticə",
+    "outcomes": {
+      "win": "Qələbə",
+      "draw": "Heç-heçə",
+      "loss": "Məğlubiyyət"
+    },
+    "a": {
+      "title": "Nümunə A: {{humans}} insan və {{bots}} bot",
+      "setup": "{{size}} nəfərlik otaq. İnsanlar: {{humanLabels}}. Botlar: {{botLabels}}. Hər insan digər {{others}} iştirakçını işarələyir.",
+      "caption": "Nümunə A: işarələr, xallar və nəticələr",
+      "markedBy": "Kim işarələyib",
+      "deceptionTitle": "Botların aldatma faizləri",
+      "deception": "{{player}}: {{humans}} insandan {{fooled}} nəfəri “insan” kimi işarələyib, aldatma faizi {{rate}}.",
+      "tie": "Əgər {{player}} də {{score}} xal toplasaydı, {{humans}} insanın hamısı ən yüksək xalı bölüşər və hamısı heç-heçə edərdi."
+    },
+    "b": {
+      "title": "Nümunə B: {{humans}} insan və {{bots}} bot",
+      "setup": "{{size}} nəfərlik otaq. İnsan: {{humanLabel}}. Botlar: {{botLabels}}. İnsanın üç mümkün təxmin dəsti:",
+      "caption": "Nümunə B: üç mümkün təxmin dəsti",
+      "guesses": "{{player}} təxminləri"
+    }
+  },
+  "lobby": "Lobbiyə keç"
+}

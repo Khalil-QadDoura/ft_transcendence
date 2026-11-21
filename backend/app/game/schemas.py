@@ -2,14 +2,16 @@
 
 Every participant payload before results uses identical fields and types for humans and bots:
 no user_id, no is_bot, no avatar, and no bot-plan metadata.
+Clients identify participants strictly by their 1-based seat number (label number, 1–5),
+derived from display_label ("Player N"), never by the internal database participant id.
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.game.constants import MAX_PARTICIPANTS
+from app.game.constants import MAX_PARTICIPANTS, label_number
 
 
 class QueueJoinOut(BaseModel):
@@ -23,11 +25,43 @@ class ParticipantOut(BaseModel):
     id: int
     display_label: str
 
+    @model_validator(mode="before")
+    @classmethod
+    def _enforce_label_number(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            label = data.get("display_label")
+            if label:
+                data = dict(data)
+                data["id"] = label_number(str(label))
+            return data
+        label = getattr(data, "display_label", None)
+        if label is not None:
+            return {"id": label_number(str(label)), "display_label": label}
+        return data
+
 
 class RoomParticipantOut(BaseModel):
     id: int
     display_label: str
     is_you: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def _enforce_label_number(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            label = data.get("display_label")
+            if label:
+                data = dict(data)
+                data["id"] = label_number(str(label))
+            return data
+        label = getattr(data, "display_label", None)
+        if label is not None:
+            return {
+                "id": label_number(str(label)),
+                "display_label": label,
+                "is_you": bool(getattr(data, "is_you", False)),
+            }
+        return data
 
 
 class RoomOut(BaseModel):
@@ -97,3 +131,53 @@ class GameMessageEventOut(BaseModel):
     participant_id: int
     display_label: str
     text: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _enforce_label_number(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            label = data.get("display_label")
+            if label:
+                data = dict(data)
+                data["participant_id"] = label_number(str(label))
+            return data
+        label = getattr(data, "display_label", None)
+        if label is not None:
+            return {
+                "id": getattr(data, "id", 0),
+                "participant_id": label_number(str(label)),
+                "display_label": label,
+                "text": getattr(data, "text", ""),
+            }
+        return data
+
+
+class GameMessagesPage(BaseModel):
+    """GET /api/game/rooms/{id}/messages: oldest to newest. `prev_before_id` asks for the
+    page before this one; null means this page starts the chat."""
+
+    items: list[GameMessageEventOut]
+    prev_before_id: int | None
+
+
+class MyVoteOut(BaseModel):
+    """One mark I saved: the label number of the participant I marked, and my guess."""
+
+    target_participant_id: int
+    guess: str
+
+
+class GameSnapshotOut(BaseModel):
+    """The first frame of every /ws/game connection: the room as it is now, so a reload or a
+    lost connection loses nothing. Like every payload before the results, it names each
+    participant by label number 1-5 and has no bot flag."""
+
+    room: RoomOut
+    messages: list[GameMessageEventOut]
+    my_votes: list[MyVoteOut]
+
+
+class GameErrorOut(BaseModel):
+    """Why the server refused a frame sent on /ws/game, e.g. chat outside the discussion."""
+
+    detail: str

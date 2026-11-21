@@ -24,6 +24,7 @@ from app.game.constants import (
     PLAYER_LABELS,
     START_NOW_MAX_PARTICIPANTS,
     START_NOW_MIN_PARTICIPANTS,
+    label_number,
 )
 from app.game.models import GameParticipant, GameRoom
 from app.game.schemas import (
@@ -117,12 +118,12 @@ def _serialize_room(
         state=room.state,
         target_size=room.target_size,
         participant_count=len(participants),
-        my_participant_id=me.id,
+        my_participant_id=label_number(me.display_label),
         room_expires_at=room.room_expires_at,
         phase_ends_at=_phase_ends_at(room, settings),
         participants=[
             RoomParticipantOut(
-                id=p.id,
+                id=label_number(p.display_label),
                 display_label=p.display_label,
                 is_you=(p.id == me.id),
             )
@@ -331,11 +332,6 @@ async def start_room(
     return result
 
 
-def _label_number(participant: GameParticipant) -> int:
-    """The number players know a participant by: "Player 3" -> 3 (rules, section 9)."""
-    return PLAYER_LABELS.index(participant.display_label) + 1
-
-
 async def cast_vote(
     session: AsyncSession, settings: Settings, user: User, room_id: int, vote: VoteIn
 ) -> VoteOut:
@@ -353,7 +349,7 @@ async def cast_vote(
     voting_ends_at = _phase_ends_at(room, settings)
     if room.state != "voting" or voting_ends_at is None or _utcnow() >= voting_ends_at:
         raise HTTPException(status_code=409, detail="Voting is not open in this room")
-    if vote.target_participant_id == _label_number(me):
+    if vote.target_participant_id == label_number(me.display_label):
         raise HTTPException(status_code=400, detail="You cannot vote for yourself")
     label = PLAYER_LABELS[vote.target_participant_id - 1]
     target = await repo.get_participant_by_label(session, room_id, label)
@@ -390,7 +386,7 @@ async def get_results(session: AsyncSession, user: User, room_id: int) -> RoomRe
         is_bot = p.user_id is None
         rows.append(
             ParticipantResultOut(
-                participant_id=_label_number(p),
+                participant_id=label_number(p.display_label),
                 display_label=p.display_label,
                 is_bot=is_bot,
                 score=None if is_bot else p.score,
@@ -401,7 +397,7 @@ async def get_results(session: AsyncSession, user: User, room_id: int) -> RoomRe
     return RoomResultsOut(
         room_id=room.id,
         state=room.state,
-        my_participant_id=_label_number(me),
+        my_participant_id=label_number(me.display_label),
         winner_participant_ids=[row.participant_id for row in rows if row.outcome == "win"],
         is_draw=any(row.outcome == "draw" for row in rows),
         participants=rows,
@@ -541,7 +537,7 @@ async def _tick_discussion_room(
                 "game_message",
                 GameMessageEventOut(
                     id=message.id,
-                    participant_id=bot.id,
+                    participant_id=label_number(bot.display_label),
                     display_label=bot.display_label,
                     text=message.text,
                 ),

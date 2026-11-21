@@ -4,3 +4,6 @@ export * from "./schemas";
 export * from "./ConversationCard";
 export * from "./ConversationList";
 export * from "./ConversationsPage";
+export * from "./MessageBubble";
+export * from "./MessageInput";
+export * from "./ChatThread";

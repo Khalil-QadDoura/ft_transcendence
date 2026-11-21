@@ -17,11 +17,27 @@ MAX_ID = 9_223_372_036_854_775_807
 # Anonymous seats drawn randomly from this pool on join (DOC-08).
 PLAYER_LABELS = tuple(f"Player {n}" for n in range(1, MAX_PARTICIPANTS + 1))
 
+
+def label_number(display_label: str) -> int:
+    """Extract 1-based seat number from label like 'Player 3' -> 3."""
+    try:
+        return int(display_label.rsplit(" ", 1)[-1])
+    except (ValueError, IndexError):
+        return 0
+
+
 # Redis lock timeouts for queue assignment and per-room transitions.
 MATCHMAKING_LOCK_KEY = "game:lock:matchmaking"
 ROOM_LOCK_KEY_PREFIX = "game:lock:room:"
 LOCK_TTL_SECONDS = 10
 LOCK_BLOCKING_TIMEOUT_SECONDS = 5
+
+# Room chat (BE-09): the longest message, how many recent messages the snapshot on (re)connect
+# carries, and the page sizes of GET /api/game/rooms/{id}/messages.
+MESSAGE_MAX_LENGTH = 500
+SNAPSHOT_MESSAGES = 50
+HISTORY_PAGE_DEFAULT = 50
+HISTORY_PAGE_MAX = 100
 
 # Template discussion lines used by bots with simulated typing delays until TC-01.
 BOT_CHAT_TEMPLATES = (

@@ -19,6 +19,7 @@
     "i18n:check": "node scripts/check-i18n.mjs",
     "legal:sync": "node scripts/legal-content.mjs",
     "legal:check": "node scripts/legal-content.mjs --check",
+    "rules:check": "vitest run --config scripts/game-rules.config.ts",
     "prebuild": "npm run legal:sync"
   },
   "dependencies": {

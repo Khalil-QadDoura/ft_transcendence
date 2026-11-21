@@ -37,7 +37,7 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | POST | `/auth/reset-password` | — | `{token, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
 | PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
-| DELETE | `/users/me` | Bearer | — | 204 (soft delete) | 401 |
+| DELETE | `/users/me` | Bearer | — | 204 (soft delete; the user's company is soft-deleted too) | 401 |
 
 `UserOut` = `{id, email, first_name, last_name, position, birth_date, bio, avatar_object_key, avatar_url, is_email_verified}` (new backend, BE-05; `avatar_url` from BE-08: my picture's public address, or the default picture, see Media). The reference also sends `phone`, `username`, `is_phone_verified` and `account_number` (`WZ-000123`); the new backend drops them.
 
@@ -59,7 +59,7 @@ Passwords in the new backend (BE-04):
 The profile in the new backend (BE-05):
 
 - `PATCH /users/me` changes only the fields that are sent: a field left out keeps its value, and `{}` changes nothing (200). `first_name` and `last_name` 1–50 characters, `position` 1–100, `bio` up to 500; spaces around them are removed. `birth_date` is `YYYY-MM-DD`, and the user must be at least 18 full years old today, else 422 `"body → birth_date: You must be at least 18 years old"`. Only `bio` accepts `null` (it empties the bio). Any other field (`email`, `status`, `phone`, …) gets 422 `"body → <field>: Extra inputs are not permitted"`, and then nothing is changed. No body at all gets 422.
-- `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409). The files of the avatar and of the user's company logo are deleted from storage at once and both keys are emptied (BE-08), because their public addresses would otherwise keep working.
+- `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409). The files of the avatar and of the user's company logo are deleted from storage at once and both keys are emptied (BE-08), because their public addresses would otherwise keep working. The user's active company, if any, is soft-deleted in the same transaction (`companies.status` becomes `deleted`), so it and its jobs leave every public view: `GET /jobs/{id}` answers 404 and `GET /jobs/open` leaves them out. The jobs and the applications already sent stay as they are.
 
 ## Friends, profiles and conversations
 
@@ -149,9 +149,9 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 
 Intro videos in the new backend (BE-07); every route needs the access token (401 otherwise):
 
-- `upload-url` makes the key `users/<my id>/intro/<uuid>.mp4` and signs both links for `MINIO_EXTERNAL_ENDPOINT` (`https://localhost/files/<key>?X-Amz-…`), both valid `expires_sec` (15 min by default); the links of `mine` and the feed are valid 5 min by default (`expires_sec` is 60–3600 everywhere). The bucket is private (only `avatars/` and `logos/` can be downloaded without a signature, BE-08): without a valid signature MinIO answers 403. The drafts, the demo feed and `/media/health` are not ported (404).
-- `confirm` checks the file in storage, not what the browser says: the key must have exactly that shape with my own id (400); `stat_object` says whether the file exists (400 "No uploaded file at this object_key") and its real size (over 50 MiB → 413; the saved `size_bytes` is the real one); its first 8 bytes must be an MP4 file header, `ftyp` at bytes 4–7 (415). `duration_sec` is what the browser reports (1–30, else 422): the API does not open the video, so the moderation worker (BE-29) measures the real duration (ffprobe) and rejects a video over 30 s. At most 3 videos that are not deleted (409); a key confirmed once cannot be confirmed again, even after a delete (409).
-- After answering, `confirm` puts one Celery task on the Redis queue `celery`: `app.worker.tasks.moderation.run_moderation_task` with the arguments `[video_id, object_key]`, for the worker (`celery -A app.worker.celery_app worker`, BE-29). If Redis cannot be reached, `confirm` still answers 201 and the video stays `pending`; the error is logged, and the worker's check for stuck pending videos (BE-29) queues it again.
+- `upload-url` makes the key `users/<my id>/intro/<uuid>.mp4` and signs both links for `MINIO_EXTERNAL_ENDPOINT` (`https://localhost/files/<key>?X-Amz-…`), both valid `expires_sec` (15 min by default); the links of `mine` and the feed are valid 5 min by default (`expires_sec` is 60–3600 everywhere). The bucket is private (only `avatars/` and `logos/` can be downloaded without a signature, BE-08): without a valid signature MinIO answers 403. `get_url` shows the upload only until `confirm`, which deletes it (404 after); `mine` then gives the video's link. The drafts, the demo feed and `/media/health` are not ported (404).
+- `confirm` keeps a copy of the upload and checks that copy, not what the browser says: the key must have exactly that shape with my own id (400; a `videos/` key is refused too). MinIO then copies the upload to a new key that no upload link ever pointed at, `videos/<my id>/<new uuid>.mp4`, stored with Content-Type `video/mp4`, and the upload is deleted, accepted or refused (400 "No uploaded file at this object_key" when there was none). The copy's real size must be at most 50 MiB (413; the saved `size_bytes` is the real one) and its first 8 bytes an MP4 file header, `ftyp` at bytes 4–7 (415); a refused copy is deleted too. The video's `object_key` (in `mine` and the moderation task) is the copy's key. So `put_url`, valid until it expires, can only write at the upload key again, which nothing reads after `confirm`: it can never change a confirmed video. `duration_sec` is what the browser reports (1–30, else 422): the API does not open the video, so the moderation worker (BE-29) measures the real duration (ffprobe) and rejects a video over 30 s. At most 3 videos that are not deleted (409). A key confirmed once cannot be confirmed again, even after a delete: its upload is gone (400). A video confirmed before `confirm` made copies kept its upload key as `object_key`; confirming that key again is 409 "This video is already confirmed", and nothing is copied or deleted.
+- After answering, `confirm` puts one Celery task on the Redis queue `celery`: `app.worker.tasks.moderation.run_moderation_task` with the arguments `[video_id, object_key]` (the copy's key), for the worker (`celery -A app.worker.celery_app worker`, BE-29). If Redis cannot be reached, `confirm` still answers 201 and the video stays `pending`; the error is logged, and the worker's check for stuck pending videos (BE-29) queues it again.
 - `post`: only an `approved` video that is not posted yet (409); my previously posted video becomes `unposted` (one posted video per user, also a unique index in the database). `unpost`: only a posted video (409). `delete` sets `lifecycle_status = deleted`; the row and the file stay. A deleted video is gone for its owner: not in `mine` or the feed, `post` / `unpost` / `delete` answer 404, and it no longer counts in the 3. Someone else's video gets the same 404 as a missing one.
 - The feed shows approved, posted videos of active accounts, newest first. An employer (a user with an active company) sees only `video_rating` A and B. With `job_id`, three groups, newest first in each: 1. that job's applicants still `submitted` or `viewed`, 2. users whose position contains the job title (any case), 3. everyone else; an unknown job gives the plain order. `cursor` is the `next_cursor` of the page before (the id of its last video; pages keep the group order); `next_cursor` is `null` on the last page. `limit` 1–50, default 20.
 - A `cursor` that is no video's id gets 422 `"query → cursor: No video has this id: use the next_cursor of the page before"` (with or without `job_id`); a cursor under 1, too large for an id, or not a whole number gets the usual 422 of a bad query field (`"query → cursor: …"`). A `next_cursor` the API gave keeps working even if its video has left the feed since (unposted or deleted): the next page still comes.
@@ -177,11 +177,12 @@ Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/g
 | POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued", room_id}` | 409 already in active room |
 | DELETE | `/game/queue/leave` | Bearer | — | 204 | — |
 | GET | `/game/rooms/{id}` | Bearer (participant) | — | 200 `{id, state, target_size, participant_count, my_participant_id, room_expires_at, phase_ends_at, participants: [{id, display_label, is_you}]}` | 403, 404 |
+| GET | `/game/rooms/{id}/messages` | Bearer (participant) | query `before_id`, `limit` (1–100, default 50) | 200 `{items: [{id, participant_id, display_label, text}] oldest→newest, prev_before_id}`: the room chat, `participant_id` = label number 1–5 (BE-09) | 403 not a participant, 404, 422 |
 | POST | `/game/rooms/{id}/start` | Bearer (participant) | — | 200 `RoomOut` (starts waiting room at 2–4 participants; idempotent if already `discussion`) | 403, 404, 409 outside 2–4 participants or wrong state |
 | POST | `/game/rooms/{id}/votes` | Bearer (participant) | `{target_participant_id: label number 1–5, guess: "bot" or "human"}` | 200 `{target_participant_id, guess}`: the caller's mark on that participant, replacing any earlier one (BE-10) | 400 self, 403 not a participant, 404, 409 not in voting or its time is over, 422 bad body or no participant with that number in the room |
 | GET | `/game/rooms/{id}/results` | Bearer (participant) | — | 200 `{room_id, state: "finished", my_participant_id, winner_participant_ids, is_draw, participants: [{participant_id, display_label, is_bot, score, outcome, deception_rate}]}` (BE-10) | 403, 404, 409 not finished |
 
-Room states (BE-27): `waiting (180 s max) → discussion (120 s) → voting (45 s) → finished`, or `closed` if timer expires with 1 participant or the last human leaves `waiting`. Every participant payload before results exposes only `{id, display_label, is_you}` identically for humans and bots.
+Room states (BE-27): `waiting (180 s max) → discussion (120 s) → voting (45 s) → finished`, or `closed` if timer expires with 1 participant or the last human leaves `waiting`. Every participant payload before results exposes only `{id, display_label, is_you}` identically for humans and bots, where `id` and `my_participant_id` are the participant's stable room label number (1–5, e.g. 2 for "Player 2"), never database participant ids (BE-35).
 
 **Votes and results (BE-10).** Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5 to 7.
 
@@ -203,7 +204,7 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 
 ## WebSocket protocol
 
-One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is per user, not per socket: an event for a user reaches every socket that user has open, including `/game/ws`, so the client must route by `type` and ignore what it does not know.
+One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is per user, not per socket: an event for a user reaches every socket that user has open, including `/ws/game`, so the client must route by `type` and ignore what it does not know.
 
 **Connect (new backend, BE-06):** the access token never goes into the socket's URL, where proxy logs would keep it. First ask for a one-time ticket over HTTP, then open the socket with it:
 
@@ -211,19 +212,23 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | --- | --- | --- | --- | --- | --- |
 | POST | `/api/ws/ticket` | Bearer | — | 200 `{ticket}`: opens one socket, once, within 30 s | 401 |
 | WS | `/ws?ticket=<ticket>` | the ticket | — | the socket stays open | closed with code 1008 |
+| WS | `/ws/game?ticket=<ticket>&room_id=<id>` | the ticket (participant) | — | first frame `game_snapshot`, then the socket stays open (BE-09) | closed with code 1008 |
 
 - Every connect and reconnect needs a new ticket. A ticket works on any API worker (tickets live in Redis).
 - **1008** (reason `"Invalid or expired ticket"`): no ticket, an unknown, expired or already used ticket, a deleted user, or a password changed since the ticket was made (`token_version`). The server accepts the socket and then closes it, so the browser sees 1008, not a failed handshake. Get a new ticket (refreshing the access token first if it is old) and connect again.
 - **1011**: the server lost its link to Redis and can no longer deliver events to this socket. Reconnect with backoff, as below.
-- The reference connected with `?token=<access_token>`; the new backend does not accept it. The game room socket moves to `wss://<host>/ws/game?ticket=<ticket>&room_id=<id>` with the same ticket check (BE-09), closed 1008 if not a participant.
+- The reference connected with `?token=<access_token>`; the new backend does not accept it. The game room socket is `wss://<host>/ws/game?ticket=<ticket>&room_id=<id>`, with the same ticket and the same check (BE-09).
+- **1008 on `/ws/game`** (reason `"Not a participant of this room"`): a valid ticket, but `room_id` is missing, not a room id, an unknown room, or a room the user is not in (never was, or left while it was waiting). Do not retry with a new ticket; go back to the lobby.
 
 | Direction | `type` | Payload | When |
 | --- | --- | --- | --- |
 | client → server | `ping` | — | Keep-alive; send every 25–30 s. It also keeps you online: a socket that has not pinged for 60 s stops counting as online |
 | client → server | `delivered` | `{message_id}` (top-level or inside `payload`) | Message shown on this device |
 | client → server | `read` | `{conversation_id, last_message_id}` (top-level or inside `payload`) | Conversation opened / scrolled to bottom |
-| client → server (`/game/ws`) | `chat_message` | `{text}` at top level | Player sends a room message during discussion |
+| client → server (`/ws/game`) | `chat_message` | `{text}` at top level (or inside `payload`); 1–500 characters after trimming | Player sends a room message during discussion |
 | server → client | `pong` | `null` | Reply to ping |
+| server → client (`/ws/game`) | `game_snapshot` | `{room: RoomOut, messages: [game_message payload] (the last 50, oldest→newest), my_votes: [{target_participant_id, guess}]}` | First frame of every `/ws/game` connection; see "Room socket" below |
+| server → client (`/ws/game`) | `game_error` | `{detail}` | A `chat_message` was refused (outside the discussion, empty, too long, or with characters that cannot be stored); nothing was saved or sent |
 | server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
 | server → client | `message` | `MessageOut` | New message in any of my conversations (mine too) |
 | server → client | `message_updated` | `MessageOut` | Author edited a message within 15 min (BE-24) |
@@ -231,11 +236,11 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
 | server → client | `game_room_formed` | `{room_id}` | Matchmaking put me in a room |
-| server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room |
-| server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room |
+| server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room (`participant.id` is label number 1–5, BE-35) |
+| server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room (`participant.id` is label number 1–5, BE-35) |
 | server → client | `game_started` | `{room_id, state: "discussion", phase_ends_at}` | Waiting room transitioned to discussion |
 | server → client | `game_room_closed` | `{room_id}` | Waiting room expired with 1 participant |
-| server → client | `game_message` | `{id, participant_id, display_label, text}` | Room message from a player or a bot |
+| server → client | `game_message` | `{id, participant_id, display_label, text}` | Room message from a player or a bot (`participant_id` is label number 1–5, BE-35) |
 | server → client | `game_phase_voting` | `{room_id, state: "voting", phase_ends_at}` | Discussion ended |
 | server → client | `game_phase_finished` | `{room_id, state: "finished", phase_ends_at: null}` | Voting ended, scores stored, results ready (BE-10) |
 
@@ -243,6 +248,13 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 - **Receipt envelopes**: Client-sent `delivered` and `read` frames are accepted both at top level (`{"type": "delivered", "message_id": 6}`) and inside a `payload` dictionary (`{"type": "delivered", "payload": {"message_id": 6}}`).
 
 **Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
+
+**Room socket (new backend, BE-09):** `/ws/game` is opened by the game screen, next to the `/ws` of the rest of the app. It uses the same one-time ticket (`POST /api/ws/ticket`; every connect needs a new one) and the same 1008 for a bad ticket, and it listens on the same per-user channel, so every event above reaches it too. The room events still reach the lobby's `/ws` exactly as before.
+
+- **Snapshot:** the first frame of every connect and reconnect is `game_snapshot`. `room` has the shape of `GET /game/rooms/{id}`; `messages` holds the newest 50 chat lines (older ones through `GET /game/rooms/{id}/messages?before_id=`); `my_votes` holds the marks the user has saved (a participant missing from it counts as `human`, rules section 5). Replace what the screen shows with it. An event right after it may repeat something it already holds (same `id`).
+- **Chat:** `chat_message` is accepted only while the room is in `discussion` and before its `phase_ends_at`. The server saves it and sends `game_message` to every human of the room, the sender included (all their tabs). Two lines sent at the same moment can arrive in a different order in two browsers; the `id` gives the order they were saved in. Bot lines come through the same `game_message` with the same fields.
+- **Ids:** before the results, every id that names a participant on `/ws/game` is its label number 1–5 (`room.participants[].id`, `room.my_participant_id`, `game_message.participant_id`, `my_votes[].target_participant_id`), never a database id (rules section 9).
+- `ping` gets `pong`; unknown frames are ignored.
 
 **Client rules:** reconnect with backoff (1 s, 2 s, 5 s, then every 10 s) and after reconnecting reload what you show (conversation list, open messages, room state, who is online), because events sent while offline are lost. Refresh the access token before reconnecting, and get a new ticket for every connect.
 
@@ -252,7 +264,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 
 | Done | Change | Why |
 | --- | --- | --- |
-| \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through the nginx + ModSecurity front proxy: no CORS, no mixed content |
+| \[x\] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through the nginx + ModSecurity front proxy: no CORS, no mixed content |
 | [x] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
 | [x] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |
@@ -260,10 +272,10 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
 | \[x\] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` (BE-06) | Access tokens no longer in URLs and logs |
 | \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` (`presence` is sent since BE-06) | Live edits, online dots, no polling for moderation |
-| \[ \] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
+| \[x\] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
-| \[x\] | Game votes: `POST /game/rooms/{id}/votes` names its target by label number (1–5) instead of `target_participant_id`. A vote request replaces the voter's mark for that target: it is idempotent and allowed any number of times until voting ends, so there is no "already voted" error. A target without a mark counts as `human`. BE-10 owns the final field names and errors: the field keeps its name, `target_participant_id`, and holds the label number (BE-10). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5, 6 and 9 | Marks preset to human and changeable until voting ends; no database ids before results (DOC-08 follow-up, BE-10) |
-| \[ \] | Game payloads before the results name each participant by its label number (1–5, "Player N"), the same field as in the votes row above, never by the database participant id: `GET /game/rooms/{id}` (`my_participant_id` and `participants[].id`), `game_participant_joined` and `game_participant_left` (`participant.id`), and `game_message` (`participant_id`). `display_label` stays. Database participant ids appear only in `GET /game/rooms/{id}/results`. BE-35 (Nader, new card: hide database participant ids from game payloads before results) owns the REST room state and the room events; BE-09 owns `game_message` on `/ws/game`. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), section 9 | No database ids before results, so ids cannot hint at join order or at bots (DOC-08 follow-up, BE-35, BE-09) |
+| \[x\] | Game votes: `POST /game/rooms/{id}/votes` `{target_participant_id, guess}` names its target by label number (1–5): the same number as `participants[].id` and `my_participant_id` in the room state, never the database participant id. A vote request replaces the voter's mark for that target: it is idempotent and allowed any number of times until voting ends, so there is no "already voted" error. A target without a mark counts as `human`; `my_votes` in `game_snapshot` lists the saved marks the same way. Answer and errors: the Game table (BE-10). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5, 6 and 9 | Marks preset to human and changeable until voting ends; no database ids before results (DOC-08 follow-up, BE-10) |
+| [x] | Game payloads before the results name each participant by its label number (1–5, "Player N"), the same field as in the votes row above, never by the database participant id: `GET /game/rooms/{id}` (`my_participant_id` and `participants[].id`), `game_participant_joined` and `game_participant_left` (`participant.id`), and `game_message` (`participant_id`). `display_label` stays. `GET /game/rooms/{id}/results` uses the same label numbers (BE-10), so no database participant id reaches a client. BE-35 (Nader, new card: hide database participant ids from game payloads before results) owns the REST room state and the room events; BE-09 owns `game_message` on `/ws/game`. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), section 9 | No database ids before results, so ids cannot hint at join order or at bots (DOC-08 follow-up, BE-35, BE-09) |
 | \[x\] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |
