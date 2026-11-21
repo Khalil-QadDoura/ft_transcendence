@@ -15,6 +15,7 @@ import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
 import { MyApplicationsPage } from "../features/applications/MyApplicationsPage";
 import { JobsPage } from "../features/jobs/JobsPage";
+import { JobDetailPage } from "../features/jobs/JobDetailPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
 import { StatusPage } from "../features/status/StatusPage";
@@ -73,7 +74,7 @@ export const routes: RouteObject[] = [
       { path: "status", element: <StatusPage /> },
       // Public (FE-34): outside RequireSession, works for logged-out visitors.
       { path: GAME_RULES_PATH, element: <GameRulesPage /> },
-      ...pages([["jobs/:id", "routes.job"]]),
+      { path: "jobs/:id", element: <JobDetailPage /> },
       {
         element: <GuestOnly />,
         children: [
