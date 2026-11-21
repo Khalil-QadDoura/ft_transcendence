@@ -663,3 +663,48 @@ def test_phase_ends_at_in_room_payload_and_phase_events(clean_game) -> None:
             room = httpx2.get(url, headers=h1).json()
             assert room["state"] == "finished"
             assert room["phase_ends_at"] is None
+
+
+def room_snapshot(server: str, headers: dict, room_id: int) -> dict:
+    """Open the room socket /ws/game (BE-09) and return its first frame, the snapshot."""
+    ticket = httpx2.post(f"http://{server}/api/ws/ticket", headers=headers).json()["ticket"]
+    with connect(f"ws://{server}/ws/game?ticket={ticket}&room_id={room_id}", open_timeout=5) as ws:
+        frame = json.loads(ws.recv(timeout=5))
+    assert frame["type"] == "game_snapshot"
+    return frame["payload"]
+
+
+@needs_database
+@needs_redis
+def test_room_snapshot_agrees_with_votes_and_results(clean_game) -> None:
+    """BE-09's snapshot on /ws/game shows the marks BE-10 saved, by label number, the same
+    voting end, and after the end the same "me" as the results."""
+    app = game_app(game_scheduler_enabled=True, game_voting_sec=2.0)
+    with running_server(app) as srv:
+        u1, h1 = login(srv, "ana@example.com")
+        u2, h2 = login(srv, "ben@example.com")
+        room_id, _ = make_room("voting", {2: u1, 5: u2}, bots=(3,))
+
+        assert vote(srv, h1, room_id, 3, "bot").status_code == 200
+        assert vote(srv, h1, room_id, 5, "bot").status_code == 200
+        assert vote(srv, h1, room_id, 5, "human").status_code == 200  # changed: the last counts
+        snap = room_snapshot(srv, h1, room_id)
+        assert sorted(snap["my_votes"], key=lambda m: m["target_participant_id"]) == [
+            {"target_participant_id": 3, "guess": "bot"},
+            {"target_participant_id": 5, "guess": "human"},
+        ]
+        assert room_snapshot(srv, h2, room_id)["my_votes"] == []  # nothing sent: all "human"
+        room = httpx2.get(f"http://{srv}/api/game/rooms/{room_id}", headers=h1).json()
+        assert snap["room"]["state"] == "voting"
+        assert snap["room"]["phase_ends_at"] == room["phase_ends_at"] is not None
+
+        wait_until_finished(srv, h1, room_id)
+        snap = room_snapshot(srv, h1, room_id)
+        results = httpx2.get(f"http://{srv}/api/game/rooms/{room_id}/results", headers=h1).json()
+        assert snap["room"]["state"] == "finished" and snap["room"]["phase_ends_at"] is None
+        assert snap["room"]["my_participant_id"] == results["my_participant_id"] == 2
+        assert {p["id"] for p in snap["room"]["participants"]} == {
+            p["participant_id"] for p in results["participants"]
+        }
+        # Player 2: Player 3 bot (+1), Player 5 human (+1) = 2. Player 5: both "human": 1 - 1 = 0.
+        assert results["winner_participant_ids"] == [2]
