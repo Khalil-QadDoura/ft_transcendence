@@ -11,6 +11,7 @@ JobStatus = Literal["draft", "open", "deleted"]
 SalaryType = Literal["hourly", "daily", "weekly", "monthly"]
 JobSchedule = Literal["full_time", "part_time", "internship"]
 JobUrgency = Literal["normal", "urgent", "hot"]
+JobSortBy = Literal["newest", "nearest"]
 
 JobTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 JobDescription = Annotated[str, StringConstraints(strip_whitespace=True)]
@@ -64,6 +65,7 @@ class JobOut(BaseModel):
     id: int
     owner_id: int
     company_name: str | None = None
+    company_logo_url: str | None = None
     title: str
     description: str
     status: JobStatus
@@ -78,7 +80,15 @@ class JobOut(BaseModel):
     views_count: int = 0
     applications_count: int = 0
     new_applications_count: int = 0
+    distance_km: float | None = None
     created_by_id: int | None = None
     updated_by_id: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class JobsPage(BaseModel):
+    """Cursor-paginated public job search response (BE-26)."""
+
+    items: list[JobOut]
+    next_cursor: int | None
