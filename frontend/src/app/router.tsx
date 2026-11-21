@@ -1,5 +1,6 @@
 import { PublicProfile } from "../features/people/PublicProfile";
 import { ProfilePage } from "../features/profile/ProfilePage";
+import { CompanyPage } from "../features/companies/CompanyPage";
 import { useText } from "../i18n/useText";
 import {
   ForgotPassword,
@@ -92,6 +93,7 @@ export const routes: RouteObject[] = [
         children: [
           { path: "settings", element: <AccountSettings /> },
           { path: "profile", element: <ProfilePage /> },
+          { path: "company", element: <CompanyPage /> },
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
           { path: "applications", element: <MyApplicationsPage /> },
