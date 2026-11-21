@@ -21,15 +21,13 @@ from app.core.config import Settings
 from app.core.metrics import track_ws_connection
 from app.game import repo, service
 from app.game.constants import MAX_ID, MESSAGE_MAX_LENGTH, SNAPSHOT_MESSAGES, label_number
-from app.game.models import GameMessage, GameParticipant, GameRoom
+from app.game.models import GameMessage, GameParticipant
 from app.game.schemas import (
     GameErrorOut,
     GameMessageEventOut,
     GameMessagesPage,
     GameSnapshotOut,
     MyVoteOut,
-    RoomOut,
-    RoomParticipantOut,
 )
 from app.realtime import repo as realtime_repo
 from app.realtime import service as realtime_service
@@ -47,29 +45,6 @@ def message_out(message: GameMessage, author: GameParticipant) -> GameMessageEve
         participant_id=label_number(author.display_label),
         display_label=author.display_label,
         text=message.text,
-    )
-
-
-def room_out(
-    room: GameRoom, participants: list[GameParticipant], me: GameParticipant, settings: Settings
-) -> RoomOut:
-    """The room in the shape of GET /api/game/rooms/{id}, with label numbers as ids."""
-    return RoomOut(
-        id=room.id,
-        state=room.state,
-        target_size=room.target_size,
-        participant_count=len(participants),
-        my_participant_id=label_number(me.display_label),
-        room_expires_at=room.room_expires_at,
-        phase_ends_at=service._phase_ends_at(room, settings),
-        participants=[
-            RoomParticipantOut(
-                id=label_number(p.display_label),
-                display_label=p.display_label,
-                is_you=(p.id == me.id),
-            )
-            for p in participants
-        ],
     )
 
 
@@ -101,7 +76,8 @@ async def build_snapshot(
     messages, _ = await repo.list_room_messages(session, room_id, None, SNAPSHOT_MESSAGES)
     labels = {p.id: p.display_label for p in participants}
     return GameSnapshotOut(
-        room=room_out(room, participants, me, settings),
+        # The same room payload as GET /api/game/rooms/{id}, built by the same function.
+        room=service._serialize_room(room, participants, me, settings),
         messages=[message_out(message, author) for message, author in messages],
         my_votes=[
             MyVoteOut(
