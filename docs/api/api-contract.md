@@ -177,6 +177,7 @@ Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/g
 | POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued", room_id}` | 409 already in active room |
 | DELETE | `/game/queue/leave` | Bearer | — | 204 | — |
 | GET | `/game/rooms/{id}` | Bearer (participant) | — | 200 `{id, state, target_size, participant_count, my_participant_id, room_expires_at, phase_ends_at, participants: [{id, display_label, is_you}]}` | 403, 404 |
+| GET | `/game/rooms/{id}/messages` | Bearer (participant) | query `before_id`, `limit` (1–100, default 50) | 200 `{items: [{id, participant_id, display_label, text}] oldest→newest, prev_before_id}`: the room chat, `participant_id` = label number 1–5 (BE-09) | 403 not a participant, 404, 422 |
 | POST | `/game/rooms/{id}/start` | Bearer (participant) | — | 200 `RoomOut` (starts waiting room at 2–4 participants; idempotent if already `discussion`) | 403, 404, 409 outside 2–4 participants or wrong state |
 | POST | `/game/rooms/{id}/votes` | Bearer (participant) | `{target_participant_id, guess: "bot" or "human"}` | 201 `{message}` | 400 self, 409 not voting phase / already voted, 422 |
 | GET | `/game/rooms/{id}/results` | Bearer (participant) | — | 200 `{room_id, state, participants: [{participant_id, display_label, is_bot, score (humans), deception_rate (bots)}]}` | 409 not finished |
@@ -197,7 +198,7 @@ Health and spec endpoints of the new backend (BE-01). Routes under `/_internal/*
 
 ## WebSocket protocol
 
-One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is per user, not per socket: an event for a user reaches every socket that user has open, including `/game/ws`, so the client must route by `type` and ignore what it does not know.
+One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is per user, not per socket: an event for a user reaches every socket that user has open, including `/ws/game`, so the client must route by `type` and ignore what it does not know.
 
 **Connect (new backend, BE-06):** the access token never goes into the socket's URL, where proxy logs would keep it. First ask for a one-time ticket over HTTP, then open the socket with it:
 
@@ -205,19 +206,23 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | --- | --- | --- | --- | --- | --- |
 | POST | `/api/ws/ticket` | Bearer | — | 200 `{ticket}`: opens one socket, once, within 30 s | 401 |
 | WS | `/ws?ticket=<ticket>` | the ticket | — | the socket stays open | closed with code 1008 |
+| WS | `/ws/game?ticket=<ticket>&room_id=<id>` | the ticket (participant) | — | first frame `game_snapshot`, then the socket stays open (BE-09) | closed with code 1008 |
 
 - Every connect and reconnect needs a new ticket. A ticket works on any API worker (tickets live in Redis).
 - **1008** (reason `"Invalid or expired ticket"`): no ticket, an unknown, expired or already used ticket, a deleted user, or a password changed since the ticket was made (`token_version`). The server accepts the socket and then closes it, so the browser sees 1008, not a failed handshake. Get a new ticket (refreshing the access token first if it is old) and connect again.
 - **1011**: the server lost its link to Redis and can no longer deliver events to this socket. Reconnect with backoff, as below.
-- The reference connected with `?token=<access_token>`; the new backend does not accept it. The game room socket moves to `wss://<host>/ws/game?ticket=<ticket>&room_id=<id>` with the same ticket check (BE-09), closed 1008 if not a participant.
+- The reference connected with `?token=<access_token>`; the new backend does not accept it. The game room socket is `wss://<host>/ws/game?ticket=<ticket>&room_id=<id>`, with the same ticket and the same check (BE-09).
+- **1008 on `/ws/game`** (reason `"Not a participant of this room"`): a valid ticket, but `room_id` is missing, not a room id, an unknown room, or a room the user is not in (never was, or left while it was waiting). Do not retry with a new ticket; go back to the lobby.
 
 | Direction | `type` | Payload | When |
 | --- | --- | --- | --- |
 | client → server | `ping` | — | Keep-alive; send every 25–30 s. It also keeps you online: a socket that has not pinged for 60 s stops counting as online |
 | client → server | `delivered` | `{message_id}` (top-level or inside `payload`) | Message shown on this device |
 | client → server | `read` | `{conversation_id, last_message_id}` (top-level or inside `payload`) | Conversation opened / scrolled to bottom |
-| client → server (`/game/ws`) | `chat_message` | `{text}` at top level | Player sends a room message during discussion |
+| client → server (`/ws/game`) | `chat_message` | `{text}` at top level (or inside `payload`); 1–500 characters after trimming | Player sends a room message during discussion |
 | server → client | `pong` | `null` | Reply to ping |
+| server → client (`/ws/game`) | `game_snapshot` | `{room: RoomOut, messages: [game_message payload] (the last 50, oldest→newest), my_votes: [{target_participant_id, guess}]}` | First frame of every `/ws/game` connection; see "Room socket" below |
+| server → client (`/ws/game`) | `game_error` | `{detail}` | A `chat_message` was refused (outside the discussion, empty, too long, or with characters that cannot be stored); nothing was saved or sent |
 | server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
 | server → client | `message` | `MessageOut` | New message in any of my conversations (mine too) |
 | server → client | `message_updated` | `MessageOut` | Author edited a message within 15 min (BE-24) |
@@ -238,6 +243,13 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 
 **Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
 
+**Room socket (new backend, BE-09):** `/ws/game` is opened by the game screen, next to the `/ws` of the rest of the app. It uses the same one-time ticket (`POST /api/ws/ticket`; every connect needs a new one) and the same 1008 for a bad ticket, and it listens on the same per-user channel, so every event above reaches it too. The room events still reach the lobby's `/ws` exactly as before.
+
+- **Snapshot:** the first frame of every connect and reconnect is `game_snapshot`. `room` has the shape of `GET /game/rooms/{id}`; `messages` holds the newest 50 chat lines (older ones through `GET /game/rooms/{id}/messages?before_id=`); `my_votes` holds the marks the user has saved (a participant missing from it counts as `human`, rules section 5). Replace what the screen shows with it. An event right after it may repeat something it already holds (same `id`).
+- **Chat:** `chat_message` is accepted only while the room is in `discussion` and before its `phase_ends_at`. The server saves it and sends `game_message` to every human of the room, the sender included (all their tabs). Two lines sent at the same moment can arrive in a different order in two browsers; the `id` gives the order they were saved in. Bot lines come through the same `game_message` with the same fields.
+- **Ids:** before the results, every id that names a participant on `/ws/game` is its label number 1–5 (`room.participants[].id`, `room.my_participant_id`, `game_message.participant_id`, `my_votes[].target_participant_id`), never a database id (rules section 9).
+- `ping` gets `pong`; unknown frames are ignored.
+
 **Client rules:** reconnect with backoff (1 s, 2 s, 5 s, then every 10 s) and after reconnecting reload what you show (conversation list, open messages, room state, who is online), because events sent while offline are lost. Refresh the access token before reconnecting, and get a new ticket for every connect.
 
 ## Planned changes for the new backend
@@ -246,7 +258,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 
 | Done | Change | Why |
 | --- | --- | --- |
-| \[ \] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through the nginx + ModSecurity front proxy: no CORS, no mixed content |
+| \[x\] | All routes under `/api`, WebSockets under `/ws` and `/ws/game` on the same origin | One origin through the nginx + ModSecurity front proxy: no CORS, no mixed content |
 | [x] | `GET /companies/me` → 200 `null` when the user has no company | No 404 in the Chrome console |
 | [x] | `UserOut`, public profile, friends list return `avatar_url` (signed or public path) with a default avatar; same for `logo_url` | Frontend cannot show images from object keys |
 | \[x\] | `PATCH /users/me` accepts partial updates | Edit one field without resending the whole profile |

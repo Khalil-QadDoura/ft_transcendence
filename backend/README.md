@@ -36,6 +36,8 @@ app/
   conversations/ direct chats, participants, idempotent messages, edits/deletes, read state (BE-23, BE-24)
   game/          /api/game: Redis-locked matchmaking queue, waiting room lifecycle, start now,
                  hidden random bot plan, staggered joins, template bot chat and server phases (BE-27)
+                 chat.py: the room socket /ws/game, room chat and its history, the snapshot
+                 sent on every (re)connect (BE-09)
   applications/  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
