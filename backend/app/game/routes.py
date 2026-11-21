@@ -1,5 +1,5 @@
-"""The /api/game routes for matchmaking, waiting room management, and room state, and the
-room socket at /ws/game (BE-09)."""
+"""The /api/game routes for matchmaking, waiting room management, room state, votes and results,
+and the room socket at /ws/game (BE-09)."""
 
 from typing import Annotated
 
@@ -12,7 +12,14 @@ from app.core.redis_client import get_redis
 from app.db.session import get_session
 from app.game import chat, service
 from app.game.constants import HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX, MAX_ID
-from app.game.schemas import GameMessagesPage, QueueJoinOut, RoomOut
+from app.game.schemas import (
+    GameMessagesPage,
+    QueueJoinOut,
+    RoomOut,
+    RoomResultsOut,
+    VoteIn,
+    VoteOut,
+)
 from app.realtime import service as realtime_service
 
 router = APIRouter(prefix="/game", tags=["game"])
@@ -90,3 +97,25 @@ async def start_room(
 ) -> RoomOut:
     """Start a waiting room early with 2–4 participants; idempotent across concurrent presses."""
     return await service.start_room(session, redis, request.app.state.settings, user, room_id)
+
+
+@router.post("/rooms/{room_id}/votes")
+async def cast_vote(
+    room_id: RoomIdPath,
+    vote: VoteIn,
+    request: Request,
+    user: CurrentUser,
+    session: Session,
+) -> VoteOut:
+    """Mark another participant (by label number) as bot or human; a new mark replaces the old."""
+    return await service.cast_vote(session, request.app.state.settings, user, room_id, vote)
+
+
+@router.get("/rooms/{room_id}/results")
+async def get_results(
+    room_id: RoomIdPath,
+    user: CurrentUser,
+    session: Session,
+) -> RoomResultsOut:
+    """Bots revealed, scores, outcomes and deception rates, once the room is finished."""
+    return await service.get_results(session, user, room_id)

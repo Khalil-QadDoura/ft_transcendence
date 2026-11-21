@@ -8,6 +8,7 @@ from typing import Any
 from redis.asyncio import Redis
 from redis.exceptions import LockError
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.game.constants import (
@@ -114,7 +115,8 @@ async def get_room_for_update(session: AsyncSession, room_id: int) -> GameRoom |
 
 async def get_room_for_share(session: AsyncSession, room_id: int) -> GameRoom | None:
     """The room, read with a shared row lock (FOR SHARE) held until commit: a phase change
-    (FOR UPDATE) waits for it, while other chat messages of the room do not."""
+    (FOR UPDATE) waits for it, while other chat messages and votes of the room do not. So a
+    chat message or a vote is saved before the phase ends, or sees the new phase."""
     stmt = (
         select(GameRoom)
         .where(GameRoom.id == room_id)
@@ -254,3 +256,40 @@ async def list_active_room_ids(session: AsyncSession) -> list[int]:
         .order_by(GameRoom.id.asc())
     )
     return list(await session.scalars(stmt))
+
+
+async def get_participant_by_label(
+    session: AsyncSession, room_id: int, display_label: str
+) -> GameParticipant | None:
+    stmt = select(GameParticipant).where(
+        GameParticipant.room_id == room_id, GameParticipant.display_label == display_label
+    )
+    return await session.scalar(stmt)
+
+
+async def save_mark(
+    session: AsyncSession, *, room_id: int, voter_id: int, target_id: int, guess: str
+) -> None:
+    """Insert the voter's mark on the target, or replace the one already there (one row each)."""
+    stmt = (
+        pg_insert(GameVote)
+        .values(
+            room_id=room_id,
+            voter_participant_id=voter_id,
+            target_participant_id=target_id,
+            guess=guess,
+        )
+        .on_conflict_do_update(
+            index_elements=["voter_participant_id", "target_participant_id"],
+            set_={"guess": guess, "updated_at": func.now()},
+        )
+    )
+    await session.execute(stmt)
+
+
+async def list_marks(session: AsyncSession, room_id: int) -> dict[tuple[int, int], str]:
+    """Every mark sent in the room, keyed by (voter id, target id)."""
+    stmt = select(
+        GameVote.voter_participant_id, GameVote.target_participant_id, GameVote.guess
+    ).where(GameVote.room_id == room_id)
+    return {(voter, target): guess for voter, target, guess in await session.execute(stmt)}
