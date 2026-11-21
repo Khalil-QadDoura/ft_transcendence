@@ -31,6 +31,11 @@ async def count_active_videos(session: AsyncSession, user_id: int) -> int:
     )
 
 
+async def has_video_at(session: AsyncSession, object_key: str) -> bool:
+    """True if a video (deleted ones too) has this object key."""
+    return await session.scalar(select(exists().where(IntroVideo.object_key == object_key)))
+
+
 def add_video(
     session: AsyncSession, user_id: int, object_key: str, duration_sec: int, size_bytes: int
 ) -> IntroVideo:

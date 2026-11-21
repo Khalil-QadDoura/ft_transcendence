@@ -14,9 +14,11 @@ PLAYER_LABELS = tuple(f"Player {n}" for n in range(1, MAX_PARTICIPANTS + 1))
 
 
 def label_number(display_label: str) -> int:
-    """The number of a label: 3 for "Player 3". Before the results, players know each other
-    only by this number, never by the database id (rules, section 9)."""
-    return PLAYER_LABELS.index(display_label) + 1
+    """Extract 1-based seat number from label like 'Player 3' -> 3."""
+    try:
+        return int(display_label.rsplit(" ", 1)[-1])
+    except (ValueError, IndexError):
+        return 0
 
 
 # Redis lock timeouts for queue assignment and per-room transitions.

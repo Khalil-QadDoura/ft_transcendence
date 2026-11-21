@@ -12,7 +12,7 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 s ?=
 
 .PHONY: all env certs up down logs logs-reset test https-check images-check files-check mail-check metrics-check \
-	grafana-check fclean re
+	grafana-check schema-diagram fclean re
 
 all: env up
 
@@ -110,6 +110,13 @@ https-check:
 # and no .env.
 images-check:
 	@./scripts/images-check.sh
+
+# Draws docs/db/schema.svg, the database picture in the README, from a throwaway PostgreSQL +
+# PostGIS built by `alembic upgrade head` (eralchemy and Graphviz, pinned versions); removes
+# what it started. Run it after a migration changes the schema and commit the picture. Needs
+# only Docker: no .env, no port published, the running stack is left alone (BE-14).
+schema-diagram:
+	@./scripts/gen-schema-diagram.sh
 
 # Presigned upload and download through https://<host>/files and the bucket policy, against
 # the running stack; ends with a snippet for the Chrome console (INF-04).

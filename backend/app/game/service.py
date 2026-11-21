@@ -113,12 +113,12 @@ def _serialize_room(
         state=room.state,
         target_size=room.target_size,
         participant_count=len(participants),
-        my_participant_id=me.id,
+        my_participant_id=label_number(me.display_label),
         room_expires_at=room.room_expires_at,
         phase_ends_at=_phase_ends_at(room, settings),
         participants=[
             RoomParticipantOut(
-                id=p.id,
+                id=label_number(p.display_label),
                 display_label=p.display_label,
                 is_you=(p.id == me.id),
             )
