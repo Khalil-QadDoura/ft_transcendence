@@ -26,6 +26,7 @@ export function safeNext(value: string | null): string {
     "/verify-email",
     "/forgot-password",
     "/reset-password",
+    "/oauth/callback",
   ].includes(path)
     ? "/profile"
     : url.pathname + url.search + url.hash;
