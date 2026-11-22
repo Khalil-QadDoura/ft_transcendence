@@ -1,3 +1,5 @@
+import { localizeMessage } from "../../i18n/copy";
+import { activeLanguage } from "../../i18n";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useWsEvent, wsClient } from "../../api/ws";
 import { Spinner } from "../../components/Spinner";
@@ -357,7 +359,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       if (d.toDateString() === today.toDateString()) return t("chat.today");
       if (d.toDateString() === yesterday.toDateString())
         return t("chat.yesterday");
-      return d.toLocaleDateString(undefined, {
+      return d.toLocaleDateString(activeLanguage(), {
         month: "short",
         day: "numeric",
         year: d.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
@@ -374,7 +376,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border p-4">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           {onBack && (
             <button
               type="button"
@@ -384,7 +386,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
               data-testid="thread-back-btn"
             >
               <svg
-                className="h-5 w-5"
+                className="h-5 w-5 directional-icon"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -404,7 +406,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
               className="truncate text-base font-semibold text-ink"
               data-testid="thread-peer-name"
             >
-              {peerDisplayName}
+              <bdi>{peerDisplayName}</bdi>
             </h2>
             {conversation?.job_title && (
               <p className="truncate text-xs text-ink-muted">
@@ -434,7 +436,13 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
             className="flex h-full flex-col items-center justify-center p-6 text-center"
             data-testid="thread-error"
           >
-            <p className="text-sm text-danger">{error}</p>
+            <p className="text-sm text-danger">
+              {localizeMessage(
+                "screens",
+                error ?? undefined,
+                "chat.failedToLoadMessages",
+              )}
+            </p>
             <button
               type="button"
               onClick={loadInitialMessages}

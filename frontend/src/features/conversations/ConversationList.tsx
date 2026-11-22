@@ -1,3 +1,4 @@
+import { localizeMessage } from "../../i18n/copy";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useWsEvent } from "../../api/ws";
 import { Button } from "../../components/Button";
@@ -158,9 +159,9 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     >
       <div className="border-b border-border p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xl font-bold tracking-tight text-ink">
+          <h1 className="text-xl font-bold tracking-tight text-ink">
             {t("chat.messages")}
-          </h2>
+          </h1>
           {totalUnreadCount > 0 && (
             <span
               className="rounded-full bg-lime text-ink px-2.5 py-0.5 text-xs font-semibold"
@@ -192,7 +193,11 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         ) : error ? (
           <div className="p-4 text-center">
             <p className="mb-3 text-sm text-red-600 dark:text-red-400">
-              {error}
+              {localizeMessage(
+                "screens",
+                error ?? undefined,
+                "chat.failedToLoad",
+              )}
             </p>
             <Button
               onClick={loadConversations}

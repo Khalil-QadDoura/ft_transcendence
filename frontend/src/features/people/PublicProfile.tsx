@@ -1,4 +1,5 @@
 import "../../i18n";
+import { localizeMessage } from "../../i18n/copy";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
@@ -170,7 +171,9 @@ function PersonView({ id }: { id: number }) {
         {person.friendship_status &&
           person.friendship_status !== "pending_sent" &&
           !relation && <p role="status">{t("unavailable")}</p>}
-        {error && !confirm && <p role="alert">{error}</p>}
+        {error && !confirm && (
+          <p role="alert">{localizeMessage("people", error)}</p>
+        )}
       </article>
       <Modal
         isOpen={confirm}
@@ -180,7 +183,7 @@ function PersonView({ id }: { id: number }) {
         title={t("removeTitle")}
         description={t("removeHint")}
       >
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{localizeMessage("people", error)}</p>}
         <div className="people-actions">
           <Button
             disabled={busy}

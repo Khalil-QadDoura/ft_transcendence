@@ -1,3 +1,4 @@
+import { activeLanguage, formatNumber } from "../../i18n";
 import React from "react";
 import { Avatar } from "../../components/Avatar";
 import { Badge } from "../../components/Badge";
@@ -35,9 +36,12 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
 
       if (diffMins < 1) return t("chat.justNow");
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      return date.toLocaleDateString(undefined, {
+      const relative = new Intl.RelativeTimeFormat(activeLanguage(), {
+        style: "short",
+      });
+      if (diffMins < 60) return relative.format(-diffMins, "minute");
+      if (diffHours < 24) return relative.format(-diffHours, "hour");
+      return date.toLocaleDateString(activeLanguage(), {
         month: "short",
         day: "numeric",
       });
@@ -50,7 +54,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
     <button
       type="button"
       onClick={() => onClick(conversation)}
-      className={`group flex w-full items-start space-x-3.5 rounded-xl p-3.5 text-left transition-all duration-150 ${
+      className={`group flex w-full items-start gap-3.5 rounded-xl p-3.5 text-start transition-all duration-150 ${
         isSelected
           ? "bg-surface-muted ring-1 ring-border shadow-xs"
           : "hover:bg-surface-muted/60"
@@ -61,17 +65,17 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
         <Avatar src={avatarUrl} alt={displayName} size="md" />
         {conversation.unread_count > 0 && (
           <span
-            className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-5 h-5 px-1 text-[11px] font-bold rounded-full bg-lime text-ink border border-surface shadow-xs"
+            className="absolute -top-1.5 -end-1.5 inline-flex items-center justify-center min-w-5 h-5 px-1 text-[11px] font-bold rounded-full bg-lime text-ink border border-surface shadow-xs"
             data-testid="unread-badge"
           >
-            {conversation.unread_count}
+            {formatNumber(conversation.unread_count)}
           </span>
         )}
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2 truncate">
+          <div className="flex items-center gap-2 truncate">
             <span
               className={`truncate text-sm font-semibold ${
                 conversation.unread_count > 0
@@ -80,7 +84,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
               }`}
               data-testid="conversation-name"
             >
-              {displayName}
+              <bdi>{displayName}</bdi>
             </span>
             {conversation.job_title && (
               <Badge
@@ -88,7 +92,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
                 size="sm"
                 className="hidden sm:inline-flex"
               >
-                {conversation.job_title}
+                <bdi>{conversation.job_title}</bdi>
               </Badge>
             )}
           </div>
@@ -99,6 +103,7 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
 
         <div className="mt-1 flex items-center justify-between">
           <p
+            dir="auto"
             className={`truncate text-xs ${
               conversation.unread_count > 0
                 ? "font-medium text-ink"

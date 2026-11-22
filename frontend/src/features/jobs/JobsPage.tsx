@@ -1,3 +1,4 @@
+import { localizeMessage } from "../../i18n/copy";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "../../components/Button";
@@ -248,7 +249,13 @@ export function JobsPage() {
             <strong className="block font-semibold">
               {t("jobs.errorLoading")}
             </strong>
-            <span>{error}</span>
+            <span>
+              {localizeMessage(
+                "screens",
+                error ?? undefined,
+                "jobs.failedToLoadJobs",
+              )}
+            </span>
           </div>
           <Button
             type="button"
@@ -304,7 +311,13 @@ export function JobsPage() {
           role="alert"
           className="p-3.5 rounded-lg bg-danger-subtle border border-danger/30 text-danger text-sm flex items-center justify-between gap-3 text-start"
         >
-          <span>{loadMoreError}</span>
+          <span>
+            {localizeMessage(
+              "screens",
+              loadMoreError ?? undefined,
+              "jobs.failedToLoadMore",
+            )}
+          </span>
           <Button
             type="button"
             variant="outline"

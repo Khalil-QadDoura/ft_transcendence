@@ -1,3 +1,5 @@
+import { localizeMessage } from "../../i18n/copy";
+import { activeLanguage } from "../../i18n";
 import React, { useEffect, useState } from "react";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
@@ -61,7 +63,7 @@ export const VideoResumePage: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm("Are you sure you want to delete this video résumé?")) {
+    if (!window.confirm(t("media.deleteConfirm"))) {
       return;
     }
     setActionLoading(id);
@@ -116,7 +118,7 @@ export const VideoResumePage: React.FC = () => {
 
       {error && (
         <div className="mb-6 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300">
-          {error}
+          {localizeMessage("screens", error ?? undefined, "media.uploadFailed")}
         </div>
       )}
 
@@ -128,7 +130,7 @@ export const VideoResumePage: React.FC = () => {
         <Card className="mb-10 overflow-hidden">
           <div className="p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center gap-3">
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                   {t("media.currentPitch")}
                 </h2>
@@ -155,10 +157,12 @@ export const VideoResumePage: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
               <div className="text-xs text-gray-500 dark:text-gray-400">
                 {t("media.createdDate", {
-                  date: new Date(activeVideo.created_at).toLocaleDateString(),
+                  date: new Date(activeVideo.created_at).toLocaleDateString(
+                    activeLanguage(),
+                  ),
                 })}
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
                 {activeVideo.lifecycle_status === "posted" ? (
                   <Button
                     onClick={() => handleUnpost(activeVideo.id)}

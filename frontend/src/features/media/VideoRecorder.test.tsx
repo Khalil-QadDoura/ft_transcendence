@@ -341,7 +341,9 @@ describe("VideoRecorder Component (FE-25)", () => {
         ?.click();
     });
 
-    expect(container.textContent).toMatch(/Storage server unreachable/i);
+    expect(container.textContent).toContain(
+      "Video upload failed. Please verify your connection and try again.",
+    );
     expect(container.textContent).toContain("Retry Upload");
   });
 });

@@ -1,3 +1,5 @@
+import { localizeMessage } from "../../i18n/copy";
+import { activeLanguage } from "../../i18n";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "../../components/Badge";
@@ -119,13 +121,17 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-400 dark:text-gray-500">
               <span>
                 {t("applications.appliedDate", {
-                  date: new Date(application.applied_at).toLocaleDateString(),
+                  date: new Date(application.applied_at).toLocaleDateString(
+                    activeLanguage(),
+                  ),
                 })}
               </span>
               {application.viewed_at && (
                 <span>
                   {t("applications.viewedDate", {
-                    date: new Date(application.viewed_at).toLocaleDateString(),
+                    date: new Date(application.viewed_at).toLocaleDateString(
+                      activeLanguage(),
+                    ),
                   })}
                 </span>
               )}
@@ -143,7 +149,11 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
             )}
             {error && (
               <div className="mt-2 text-xs text-red-600 dark:text-red-400">
-                {error}
+                {localizeMessage(
+                  "screens",
+                  error ?? undefined,
+                  "applications.failedToWithdraw",
+                )}
               </div>
             )}
           </div>
@@ -167,7 +177,7 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
               <>
                 {confirmWithdraw ? (
                   <div
-                    className="flex items-center space-x-2 rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/60 dark:text-red-300"
+                    className="flex items-center gap-2 rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/60 dark:text-red-300"
                     data-testid={`withdraw-confirm-box-${application.id}`}
                   >
                     <span>{t("applications.withdrawPrompt")}</span>

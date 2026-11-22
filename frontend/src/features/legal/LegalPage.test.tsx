@@ -42,9 +42,9 @@ test.each(["privacy", "terms"] as const)(
         section.title,
       );
     }
-    expect(container.querySelector(".legal-page")?.getAttribute("lang")).toBe(
-      "en",
-    );
+    expect(
+      container.querySelector(".legal-copy [lang]")?.getAttribute("lang"),
+    ).toBe("en");
     expect(container.querySelector("script")).toBeNull();
   },
 );

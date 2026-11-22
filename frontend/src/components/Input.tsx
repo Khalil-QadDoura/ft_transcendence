@@ -61,6 +61,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         ) : null}
 
         <input
+          dir={
+            ["email", "password", "url", "tel", "number", "date"].includes(
+              props.type ?? "",
+            )
+              ? "ltr"
+              : "auto"
+          }
           ref={ref}
           id={inputId}
           disabled={disabled}

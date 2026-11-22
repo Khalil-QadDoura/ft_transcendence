@@ -50,14 +50,20 @@ export function Tabs({
     e: KeyboardEvent<HTMLButtonElement>,
     index: number,
   ) => {
+    const direction =
+      getComputedStyle(e.currentTarget).direction ||
+      e.currentTarget.closest("[dir]")?.getAttribute("dir");
+    const rtl = direction === "rtl";
+    const forward = rtl ? "ArrowLeft" : "ArrowRight";
+    const backward = rtl ? "ArrowRight" : "ArrowLeft";
     let nextIndex: number | null = null;
-    if (e.key === "ArrowRight") {
+    if (e.key === forward) {
       let candidate = (index + 1) % tabs.length;
       while (candidate !== index && tabs[candidate]?.disabled) {
         candidate = (candidate + 1) % tabs.length;
       }
       if (!tabs[candidate]?.disabled) nextIndex = candidate;
-    } else if (e.key === "ArrowLeft") {
+    } else if (e.key === backward) {
       let candidate = (index - 1 + tabs.length) % tabs.length;
       while (candidate !== index && tabs[candidate]?.disabled) {
         candidate = (candidate - 1 + tabs.length) % tabs.length;

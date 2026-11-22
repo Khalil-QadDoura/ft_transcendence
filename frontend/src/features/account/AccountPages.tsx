@@ -1,4 +1,6 @@
-import copy from "./copy.en.json";
+import sourceCopy from "../../i18n/en/account.json";
+import { translatedCopy, localizeMessage } from "../../i18n/copy";
+const copy = translatedCopy("account", sourceCopy);
 import { LanguageSwitcher } from "../../i18n/LanguageSwitcher";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
@@ -23,7 +25,7 @@ const passwordSchema = z
   })
   .refine((v) => v.new_password === v.confirm, {
     path: ["confirm"],
-    message: copy.passwordsMustMatch,
+    message: "validation.passwordsMatch",
   });
 type PasswordFields = z.infer<typeof passwordSchema>;
 function errorText(error: unknown) {
@@ -39,6 +41,7 @@ function errorText(error: unknown) {
   return copy.weCouldntCompleteThatRequestPleaseTryAgain;
 }
 export function ForgotPassword() {
+  useTranslation("account");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const {
@@ -82,7 +85,7 @@ export function ForgotPassword() {
               {...register("email")}
               error={errors.email && copy.enterAValidEmailAddress}
             />
-            {error && <p role="alert">{error}</p>}
+            {error && <p role="alert">{localizeMessage("account", error)}</p>}
             <Button type="submit" isLoading={isSubmitting}>
               {copy.sendResetLink}
             </Button>
@@ -94,6 +97,7 @@ export function ForgotPassword() {
   );
 }
 function PasswordForm({ token }: { token?: string }) {
+  useTranslation("account");
   const navigate = useNavigate();
   const [error, setError] = useState("");
   const changing = token === undefined;
@@ -148,9 +152,9 @@ function PasswordForm({ token }: { token?: string }) {
         autoComplete="new-password"
         required
         {...register("confirm")}
-        error={errors.confirm?.message}
+        error={errors.confirm && copy.passwordsMustMatch}
       />
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{localizeMessage("account", error)}</p>}
       <Button type="submit" isLoading={isSubmitting}>
         {changing ? copy.changePassword : copy.resetPassword}
       </Button>
@@ -158,6 +162,7 @@ function PasswordForm({ token }: { token?: string }) {
   );
 }
 export function ResetPassword() {
+  useTranslation("account");
   const [params] = useSearchParams();
   const token = params.get("token");
   return (
@@ -179,6 +184,7 @@ export function ResetPassword() {
   );
 }
 export function AccountSettings() {
+  useTranslation("account");
   const { t } = useTranslation();
   const [confirm, setConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -232,7 +238,7 @@ export function AccountSettings() {
           }
           closeOnBackdrop={!removing}
         >
-          {error && <p role="alert">{error}</p>}
+          {error && <p role="alert">{localizeMessage("account", error)}</p>}
           <div className="account-actions">
             <Button variant="outline" disabled={removing} onClick={close}>
               {copy.keepMyAccount}

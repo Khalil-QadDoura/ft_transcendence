@@ -26,13 +26,13 @@ export function Layout({
       ?.querySelectorAll("br")
       .forEach((lineBreak) => lineBreak.replaceWith(" "));
     const title = heading?.textContent?.replace(/\s+/g, " ").trim();
-    document.title = `${title || "Find your people"} · WOZU`;
+    document.title = `${title || t("tagline")} · WOZU`;
     if (previousPath.current !== pathname) {
       window.scrollTo(0, 0);
       main.current?.focus({ preventScroll: true });
     }
     previousPath.current = pathname;
-  }, [pathname, i18n.resolvedLanguage]);
+  }, [pathname, i18n.resolvedLanguage, t]);
   return (
     <div className="site-frame">
       <a className="skip-link" href="#main">
@@ -61,7 +61,9 @@ export function Layout({
           {signedIn && <LogoutButton />}
           <Link className="button small" to={signedIn ? "/profile" : "/login"}>
             {signedIn ? t("profile") : t("signIn")}{" "}
-            <span aria-hidden="true">↗</span>
+            <span className="directional-icon" aria-hidden="true">
+              ↗
+            </span>
           </Link>
         </div>
       </header>

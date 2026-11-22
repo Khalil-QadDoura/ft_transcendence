@@ -311,7 +311,7 @@ describe("ConversationList Component (FE-29)", () => {
       root.render(<ConversationList onSelectConversation={vi.fn()} />);
     });
 
-    expect(container.textContent).toContain("Network timeout");
+    expect(container.textContent).toContain("Failed to load conversations.");
 
     const retryBtn = container.querySelector<HTMLButtonElement>(
       '[data-testid="retry-conversations-btn"]',

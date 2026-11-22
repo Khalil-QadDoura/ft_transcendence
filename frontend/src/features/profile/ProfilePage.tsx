@@ -1,4 +1,5 @@
 import "../../i18n";
+import { localizeMessage } from "../../i18n/copy";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
@@ -140,7 +141,7 @@ function ProfilePhoto({
           )}
         </>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{localizeMessage("profile", error)}</p>}
       {saved && <p role="status">{t("photoSaved")}</p>}
     </section>
   );
