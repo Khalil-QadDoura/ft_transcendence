@@ -158,6 +158,52 @@ Versions are the ones pinned in `docker-compose.yml`, the Dockerfiles and the lo
 | Backups | Database and file backups with a restore runbook (in review: #83) | Recovery from data loss. Not part of `main` yet. |
 | CI | GitHub Actions, one workflow (`ci.yml`) with a `ci-ok` gate | One required check on `main`; jobs run only for the parts a pull request changed, and the `stack` job runs `make` on a clean runner. |
 
+### Architecture
+
+```mermaid
+flowchart LR
+    browser([Browser])
+
+    subgraph host["Docker network (only the proxy publishes ports 80 and 443)"]
+        proxy["proxy<br/>nginx + ModSecurity<br/>one HTTPS origin"]
+
+        frontend["frontend<br/>static files"]
+        api["api<br/>FastAPI"]
+        minio[("minio<br/>S3 files")]
+        grafana["grafana"]
+        mailpit["mailpit"]
+
+        db[("postgres<br/>PostGIS")]
+        redis[("redis")]
+        worker["worker<br/>Celery (profile worker, off by default)"]
+
+        prometheus["prometheus"]
+        exporters["postgres-exporter<br/>redis-exporter<br/>cadvisor"]
+    end
+
+    browser -->|HTTPS| proxy
+    proxy -->|"/"| frontend
+    proxy -->|"/api and /ws*"| api
+    proxy -->|"/files"| minio
+    proxy -->|"/grafana/"| grafana
+    proxy -->|"/mail/"| mailpit
+
+    api --> db
+    api --> redis
+    api --> minio
+    api -->|SMTP| mailpit
+
+    worker -.-> redis
+    worker -.-> db
+    worker -.-> minio
+
+    prometheus -->|"scrape /metrics"| api
+    prometheus --> exporters
+    grafana --> prometheus
+```
+
+The browser talks to one origin, `https://localhost`, and only the proxy publishes host ports. The proxy terminates TLS, runs ModSecurity on every request and sends each path prefix to one service: `/` to the frontend, `/api` and `/ws*` (WebSockets) to the API, `/files` to MinIO, `/grafana/` to Grafana and `/mail/` to Mailpit. Because the frontend, the API and the file URLs share one origin, there is no CORS. Presigned upload and download URLs point at `/files` on the same origin, so file bytes go from the browser through the proxy to MinIO without passing through the API. The proxy answers 404 for `/_internal*` and `/metrics*` (also under `/api`), so those routes stay inside the Docker network; Prometheus reads the API's metrics there. The API uses PostgreSQL for data, Redis for pub/sub, presence and tickets, MinIO for files and Mailpit for email; the worker, when started, uses Redis as its broker and the same database and storage.
+
 ## Database Schema
 
 The data lives in PostgreSQL 15 with PostGIS: 17 tables, created by the Alembic migrations in `backend/alembic/versions/` (the SQLAlchemy models are in `backend/app/<domain>/models.py`).
