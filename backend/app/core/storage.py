@@ -94,6 +94,12 @@ class Storage:
         """Delete the file at this key. A key with no file is not an error."""
         self.internal.remove_object(self.bucket, key)
 
+    def keys_in(self, folder: str) -> list[str]:
+        """The key of every file under this folder, e.g. "avatars/12/" (end it with "/":
+        "avatars/1" would also match the files of user 12)."""
+        found = self.internal.list_objects(self.bucket, prefix=folder, recursive=True)
+        return [stored.object_name for stored in found]
+
     def read(self, key: str, max_bytes: int) -> bytes | None:
         """The stored file, but never more than max_bytes of it: a bigger file is cut there.
         None if there is no file at this key."""

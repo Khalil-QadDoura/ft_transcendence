@@ -28,6 +28,7 @@ from app.core.storage import Storage
 from app.jobs.repo import OPEN as JOB_OPEN
 from app.media.constants import VIEW_URL_EXPIRES_SEC
 from app.realtime import service as realtime_service
+from app.users.constants import DELETED_USER_NAME
 from app.users.models import User
 
 log = structlog.get_logger(__name__)
@@ -35,6 +36,21 @@ log = structlog.get_logger(__name__)
 
 def _serialize_application(detail: dict[str, Any], storage: Storage) -> ApplicationOut:
     app: Application = detail["application"]
+    if detail.get("applicant_status") == "deleted":
+        # A deleted account shows no profile, from its deletion on and once anonymised
+        # (BE-34): the application stays, from "Deleted user", without the applicant's data.
+        detail = {
+            **detail,
+            "applicant_first_name": None,
+            "applicant_last_name": None,
+            "applicant_position": None,
+            "applicant_avatar_key": None,
+            "video_object_key": None,
+        }
+        display_name = DELETED_USER_NAME
+    else:
+        names = (detail.get("applicant_first_name"), detail.get("applicant_last_name"))
+        display_name = " ".join(name for name in names if name) or None
     video_key = detail.get("video_object_key")
     video_lifecycle = detail.get("video_lifecycle_status")
     video_url = (
@@ -56,6 +72,7 @@ def _serialize_application(detail: dict[str, Any], storage: Storage) -> Applicat
         viewed_at=app.viewed_at,
         job_title=detail.get("job_title"),
         company_name=detail.get("company_name"),
+        applicant_display_name=display_name,
         applicant_first_name=detail.get("applicant_first_name"),
         applicant_last_name=detail.get("applicant_last_name"),
         applicant_position=detail.get("applicant_position"),

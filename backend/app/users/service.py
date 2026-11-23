@@ -1,5 +1,7 @@
 """The rules of the profile. Routes call these functions."""
 
+from datetime import UTC, datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.companies import repo as companies_repo
@@ -52,9 +54,13 @@ async def delete_account(session: AsyncSession, storage: Storage, user: User) ->
     nobody can run it or answer its candidates. The job pages and the job search show only
     the jobs of active companies, so its jobs disappear from them too. The jobs and the
     applications already sent stay in the database as they are.
+
+    deleted_at starts the 30 days after which the worker's daily job anonymises the account
+    (BE-34, users/anonymise.py).
     """
     old_files = await media.forget_pictures(session, user)
     user.status = "deleted"
+    user.deleted_at = datetime.now(UTC)
     # My company, locked as DELETE /companies locks it (forget_pictures already holds this
     # lock, so it never waits here). A company that DELETE /companies deleted first is not
     # found. Its logo is already emptied, and its file is in old_files: it is deleted once.

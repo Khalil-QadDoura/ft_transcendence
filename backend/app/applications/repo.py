@@ -30,6 +30,7 @@ def _application_detail_stmt():
             User.last_name.label("applicant_last_name"),
             User.position.label("applicant_position"),
             User.avatar_object_key.label("applicant_avatar_key"),
+            User.status.label("applicant_status"),
             IntroVideo.object_key.label("video_object_key"),
             IntroVideo.lifecycle_status.label("video_lifecycle_status"),
         )
@@ -51,6 +52,7 @@ def _row_to_detail(row: Any) -> dict[str, Any]:
         "applicant_last_name": row.applicant_last_name,
         "applicant_position": row.applicant_position,
         "applicant_avatar_key": row.applicant_avatar_key,
+        "applicant_status": row.applicant_status,
         "video_object_key": row.video_object_key,
         "video_lifecycle_status": row.video_lifecycle_status,
     }
