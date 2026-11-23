@@ -169,13 +169,11 @@ export const GameRoomPage: React.FC = () => {
           setMessages((prev) => dedupeMessages(prev, payload.messages));
         }
         if (payload.my_votes) {
-          setVotes((prev) => {
-            const next = { ...prev };
-            for (const v of payload.my_votes) {
-              next[v.target_participant_id] = v.guess;
-            }
-            return next;
-          });
+          const next: Record<number, VoteGuess> = {};
+          for (const v of payload.my_votes) {
+            next[v.target_participant_id] = v.guess;
+          }
+          setVotes(next);
         }
       }),
     );

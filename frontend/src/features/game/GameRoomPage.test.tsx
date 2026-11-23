@@ -420,6 +420,53 @@ test("hydrates room, chat messages, and saved votes from game_snapshot", async (
   expect(activeBtn?.textContent).toContain("Bot");
 });
 
+test("treats game_snapshot my_votes as authoritative and reverts unacknowledged optimistic bot marks to human", async () => {
+  const room = makeDiscussionRoom({ state: "voting" });
+  vi.spyOn(gameApi, "getRoom").mockResolvedValueOnce(room);
+  vi.spyOn(gameApi, "castVote").mockResolvedValueOnce({
+    target_participant_id: 3,
+    guess: "bot",
+  });
+
+  await renderRoom();
+
+  const cards = container.querySelectorAll(".game-voting-card");
+  const p3Card = Array.from(cards).find((c) =>
+    c.textContent?.includes("Player 3"),
+  );
+  const botButton = p3Card?.querySelectorAll(
+    ".game-btn-toggle",
+  )[1] as HTMLButtonElement;
+
+  // Mark Player 3 as bot
+  await act(async () => {
+    botButton.click();
+  });
+  expect(
+    p3Card?.querySelector(".game-btn-toggle.is-active")?.textContent,
+  ).toContain("Bot");
+
+  // Reconnect snapshot arrives where my_votes is empty
+  await act(async () => {
+    emitRoomWs("game_snapshot", {
+      room: {
+        ...room,
+        state: "voting",
+      },
+      messages: [],
+      my_votes: [],
+    });
+  });
+
+  // Player 3 must revert back to default "Human" because snapshot is authoritative
+  const p3CardAfter = Array.from(
+    container.querySelectorAll(".game-voting-card"),
+  ).find((c) => c.textContent?.includes("Player 3"));
+  expect(
+    p3CardAfter?.querySelector(".game-btn-toggle.is-active")?.textContent,
+  ).toContain("Human");
+});
+
 test("renders draw and loss outcomes correctly in results phase", async () => {
   const room = makeDiscussionRoom({ state: "voting" });
   vi.spyOn(gameApi, "getRoom").mockResolvedValueOnce(room);
