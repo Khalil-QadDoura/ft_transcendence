@@ -69,6 +69,9 @@ class ApplicationOut(BaseModel):
     viewed_at: datetime | None
     job_title: str | None = None
     company_name: str | None = None
+    # "Ana Silva", or "Deleted user" once the applicant has deleted the account (BE-34): the
+    # names, position, avatar and video of a deleted applicant are then left out.
+    applicant_display_name: str | None = None
     applicant_first_name: str | None = None
     applicant_last_name: str | None = None
     applicant_position: str | None = None
