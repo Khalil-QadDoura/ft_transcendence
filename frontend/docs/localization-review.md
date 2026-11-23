@@ -29,13 +29,25 @@ Switching Arabic sets `html.lang=ar` and `html.dir=rtl` without navigation. Logi
 ![Arabic profile at mobile width](evidence/fe07-fe08/arabic-profile-mobile.jpg)
 ![Mixed Arabic and English chat](evidence/fe07-fe08/arabic-chat-desktop.jpg)
 
+## November 23 review follow-up
+
+Merged main at 1ca48d6 into the PR and addressed Khalil's changes-requested review:
+
+- Added all nine 42 OAuth messages in all five languages, updated the gateway mock and mirrored OAuth arrows. Removed the three obsolete feature copy files so later changes cannot silently bypass the catalogs.
+- Restored the explicit temporary company/game English fallback requested by Khalil, until code freeze (November 26). This exception is limited to those newly landed namespaces; the strict checker still validates all other catalogs. Do not claim the whole module is accepted while these remain incomplete.
+- Fixed empty Arabic input/textarea placeholder direction without reversing typed Latin text. Job descriptions now use automatic direction.
+- Added a deterministic Azerbaijani formatting catalog because Chromium can lack date/relative-time data even when Node has it.
+- Mapped both known password/reset backend error texts to translated messages.
+- Added complete reading translations of Privacy and Terms in AR/AZ/TR/RU. The legal body and table of contents follow the chosen language; Arabic uses RTL. A localized review-pending notice and English-original toggle remain visible. Canonical source hashes, dates, structural coverage and packaged-copy drift are checked by legal:check. Translation date is distinct from source policy dates.
+- Removed the old jobs-search blocker: BE-26 /api/jobs/open is now on main. This update does not claim a new live job-search test.
+
 ## Acceptance still pending
 
-1. Fluent speakers must review AR, AZ, TR and RU. All new translations are **unreviewed drafts** until recorded below. Before code freeze, hide any incomplete language as FE-07 requires; at least three complete languages are needed for the module claim.
-2. Approved legal document bodies remain their English originals with explicit language/direction and a translated notice. They are **not** translated by this change. `docs/legal/` remains canonical; translated legal documents need content-owner review before publishing, as established in `legal-pages.md`. This leaves FE-07's legal-text checklist open.
-3. Account-level language persistence is blocked by the current backend contract: `UserOut` has no language field and `UserUpdate` rejects extra fields. The switcher saves locally and sends Accept-Language. Do not send an unsupported PATCH or claim cross-device persistence.
-4. The locally tested main backend resolves `/api/jobs/open` as a numeric job ID and returns 422. The UI now shows localized recovery text; successful live search requires the search backend contract. This PR does not fix or hide that dependency.
-5. Khalil's review and green CI are merge gates. These cards must not be marked Done yet.
+1. Fluent speakers/content owner must review the new translations. The legal texts are now implemented, but approval is not implied by structural tests. Record actual reviewers below. Hide incomplete languages at code freeze as the card requires.
+2. Account persistence remains local until the backend contract is agreed and implemented. See [the proposal sent to Khalil](language-preference-contract.md). No unsupported PATCH calls were added.
+3. Company/game catalogs are temporarily English-only under Khalil's requested exception. Pending game/employer/friends implementations need their own final RTL pass after they land.
+4. Fresh browser verification of this November 23 update could not run because the browser-control service timed out. The images above are November 22 evidence, not new legal-page screenshots. Automated render/direction/navigation tests cover every legal locale; visual approval is still pending.
+5. Khalil's fresh review and current-head green CI are merge gates. These cards are not Done.
 
 | Language    | Fluent reviewer | Status  |
 | ----------- | --------------- | ------- |

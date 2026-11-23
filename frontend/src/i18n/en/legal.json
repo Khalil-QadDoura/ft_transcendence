@@ -8,5 +8,8 @@
   "intro": "The details behind your experience.",
   "privacyLink": "Read our Privacy Policy",
   "termsLink": "Read our Terms of Service",
-  "documentLanguage": "Approved document: English original."
+  "documentLanguage": "Approved document: English original.",
+  "translationNotice": "Reading translation; content-owner and fluent-speaker review pending. The English source is available below.",
+  "readOriginal": "Read the English original",
+  "readTranslation": "Read the translation"
 }

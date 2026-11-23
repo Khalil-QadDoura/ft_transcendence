@@ -1,5 +1,5 @@
 import { localizeMessage } from "../../i18n/copy";
-import { activeLanguage } from "../../i18n";
+import { formatDate } from "../../i18n";
 import React, { useEffect, useState } from "react";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
@@ -157,9 +157,7 @@ export const VideoResumePage: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
               <div className="text-xs text-gray-500 dark:text-gray-400">
                 {t("media.createdDate", {
-                  date: new Date(activeVideo.created_at).toLocaleDateString(
-                    activeLanguage(),
-                  ),
+                  date: formatDate(new Date(activeVideo.created_at)),
                 })}
               </div>
               <div className="flex items-center gap-2">

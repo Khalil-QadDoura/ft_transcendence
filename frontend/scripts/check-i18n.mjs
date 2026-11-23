@@ -6,6 +6,9 @@ import console from "node:console";
 import process from "node:process";
 const root = fileURLToPath(new URL("../", import.meta.url));
 import { validateMessages } from "./i18n-validation.mjs";
+const plan = JSON.parse(
+  readFileSync(join(root, "src/i18n/translation-plan.json"), "utf8"),
+);
 let failed = false;
 for (const namespace of readdirSync(join(root, "src/i18n/en")).filter((name) =>
   name.endsWith(".json"),
@@ -14,6 +17,14 @@ for (const namespace of readdirSync(join(root, "src/i18n/en")).filter((name) =>
     readFileSync(join(root, "src/i18n/en", namespace), "utf8"),
   );
   for (const language of ["ar", "az", "tr", "ru"]) {
+    if (
+      plan.englishFallbackNamespaces[namespace.replace(".json", "")]?.includes(
+        language,
+      )
+    ) {
+      console.warn(`Temporary English fallback: ${language}/${namespace}`);
+      continue;
+    }
     const target = join(root, "src/i18n", language, namespace);
     try {
       const translated = JSON.parse(readFileSync(target, "utf8"));

@@ -37,5 +37,7 @@
   "deleteYourAccount": "Hesabınızı silmək istəyirsiniz?",
   "thisDeactivatesYourAccountAndEndsYourSessionsYouWont": "Bu, hesabınızı deaktiv edir və sessiyalarınızı bitirir. Yenidən daxil ola bilməyəcəksiniz.",
   "keepMyAccount": "Hesabımı saxla",
-  "yesDeleteMyAccount": "Bəli, hesabımı sil"
+  "yesDeleteMyAccount": "Bəli, hesabımı sil",
+  "wrongCurrentPassword": "Cari şifrə yanlışdır",
+  "invalidOrExpiredLink": "Keçid etibarsızdır və ya vaxtı bitib"
 }

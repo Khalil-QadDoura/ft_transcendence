@@ -55,8 +55,8 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
             <Avatar
+              src={job.company_logo_url ?? undefined}
               alt={companyName}
-              fallbackText={companyName}
               size="md"
               className="mt-0.5 shrink-0 bg-surface-muted border border-border"
             />
@@ -95,7 +95,10 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
 
       <CardContent className="p-4 sm:p-5 pt-1 space-y-3">
         {job.description && (
-          <p className="text-xs sm:text-sm text-ink-muted line-clamp-2 leading-relaxed">
+          <p
+            dir="auto"
+            className="text-xs sm:text-sm text-ink-muted line-clamp-2 leading-relaxed"
+          >
             {job.description}
           </p>
         )}

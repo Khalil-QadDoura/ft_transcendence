@@ -37,5 +37,7 @@
   "deleteYourAccount": "Hesabınızı silmek istiyor musunuz?",
   "thisDeactivatesYourAccountAndEndsYourSessionsYouWont": "Bu işlem hesabınızı devre dışı bırakır ve oturumlarınızı sonlandırır. Tekrar giriş yapamazsınız.",
   "keepMyAccount": "Hesabımı koru",
-  "yesDeleteMyAccount": "Evet, hesabımı sil"
+  "yesDeleteMyAccount": "Evet, hesabımı sil",
+  "wrongCurrentPassword": "Mevcut parola yanlış",
+  "invalidOrExpiredLink": "Bağlantı geçersiz veya süresi dolmuş"
 }

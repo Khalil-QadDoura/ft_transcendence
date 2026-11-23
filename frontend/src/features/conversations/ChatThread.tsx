@@ -1,5 +1,5 @@
 import { localizeMessage } from "../../i18n/copy";
-import { activeLanguage } from "../../i18n";
+import { formatDate } from "../../i18n";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useWsEvent, wsClient } from "../../api/ws";
 import { Spinner } from "../../components/Spinner";
@@ -359,7 +359,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       if (d.toDateString() === today.toDateString()) return t("chat.today");
       if (d.toDateString() === yesterday.toDateString())
         return t("chat.yesterday");
-      return d.toLocaleDateString(activeLanguage(), {
+      return formatDate(d, {
         month: "short",
         day: "numeric",
         year: d.getFullYear() !== today.getFullYear() ? "numeric" : undefined,

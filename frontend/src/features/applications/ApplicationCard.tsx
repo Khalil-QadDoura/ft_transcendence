@@ -1,5 +1,5 @@
 import { localizeMessage } from "../../i18n/copy";
-import { activeLanguage } from "../../i18n";
+import { formatDate } from "../../i18n";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "../../components/Badge";
@@ -121,17 +121,13 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-400 dark:text-gray-500">
               <span>
                 {t("applications.appliedDate", {
-                  date: new Date(application.applied_at).toLocaleDateString(
-                    activeLanguage(),
-                  ),
+                  date: formatDate(new Date(application.applied_at)),
                 })}
               </span>
               {application.viewed_at && (
                 <span>
                   {t("applications.viewedDate", {
-                    date: new Date(application.viewed_at).toLocaleDateString(
-                      activeLanguage(),
-                    ),
+                    date: formatDate(new Date(application.viewed_at)),
                   })}
                 </span>
               )}

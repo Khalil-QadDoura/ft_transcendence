@@ -37,5 +37,7 @@
   "deleteYourAccount": "هل تريد حذف حسابك؟",
   "thisDeactivatesYourAccountAndEndsYourSessionsYouWont": "سيؤدي ذلك إلى تعطيل حسابك وإنهاء جلساتك. لن تتمكن من الدخول مجددًا.",
   "keepMyAccount": "الاحتفاظ بحسابي",
-  "yesDeleteMyAccount": "نعم، احذف حسابي"
+  "yesDeleteMyAccount": "نعم، احذف حسابي",
+  "wrongCurrentPassword": "كلمة المرور الحالية غير صحيحة",
+  "invalidOrExpiredLink": "الرابط غير صالح أو انتهت صلاحيته"
 }

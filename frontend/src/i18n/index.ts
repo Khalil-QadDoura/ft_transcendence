@@ -1,5 +1,6 @@
 import i18next, { type Resource } from "i18next";
 import { initReactI18next } from "react-i18next";
+import { calendarDate } from "./date-format";
 
 export const languages = ["en", "ar", "az", "tr", "ru"] as const;
 export type Language = (typeof languages)[number];
@@ -66,6 +67,6 @@ export const formatNumber = (
   options?: Intl.NumberFormatOptions,
 ) => new Intl.NumberFormat(activeLanguage(), options).format(value);
 export const formatDate = (value: Date, options?: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat(activeLanguage(), options).format(value);
+  calendarDate(value, activeLanguage(), options);
 export default i18next;
 import "./rtl.css";

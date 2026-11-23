@@ -152,6 +152,7 @@ test("Arabic and Russian plurals select the appropriate form with locale-formatt
 });
 test("language switch preserves registration input and updates an existing validation error", async () => {
   const client: AuthGateway = {
+    loginWithTokens: vi.fn(),
     register: vi.fn(),
     verify: vi.fn(),
     login: vi.fn(),
@@ -193,17 +194,19 @@ test("account settings reacts to switching without losing the route", async () =
   await act(() => i18n.changeLanguage("ar"));
   expect(container.querySelector("h1")?.textContent).toBe("إعدادات الحساب.");
 });
-test("Arabic legal interface identifies and isolates the unchanged English original", async () => {
+test("Arabic legal document is translated and the unchanged English original stays available", async () => {
   const original = legalDocument("privacy").body;
   await i18n.changeLanguage("ar");
   await mount(<LegalPage kind="privacy" />);
   expect(container.querySelector("h1")?.textContent).toBe("سياسة الخصوصية");
-  expect(container.textContent).toContain(
-    "الوثيقة المعتمدة: النسخة الإنجليزية الأصلية.",
-  );
+  expect(container.textContent).toContain("ترجمة للقراءة");
   expect(
-    container.querySelector('.legal-copy [lang="en"]')?.getAttribute("dir"),
-  ).toBe("ltr");
+    container.querySelector('.legal-copy [lang="ar"]')?.getAttribute("dir"),
+  ).toBe("rtl");
+  expect(
+    container.querySelector('a[href="/privacy?original=1"]'),
+  ).not.toBeNull();
+  expect(container.textContent).toContain("من نحن");
   expect(legalDocument("privacy").body).toBe(original);
 });
 test.each(["ltr", "rtl"])(

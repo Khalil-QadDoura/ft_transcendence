@@ -1,4 +1,5 @@
-import { activeLanguage, formatNumber } from "../../i18n";
+import { activeLanguage, formatNumber, formatDate } from "../../i18n";
+import { relativePast } from "../../i18n/date-format";
 import React from "react";
 import { Avatar } from "../../components/Avatar";
 import { Badge } from "../../components/Badge";
@@ -36,12 +37,11 @@ export const ConversationCard: React.FC<ConversationCardProps> = ({
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
 
       if (diffMins < 1) return t("chat.justNow");
-      const relative = new Intl.RelativeTimeFormat(activeLanguage(), {
-        style: "short",
-      });
-      if (diffMins < 60) return relative.format(-diffMins, "minute");
-      if (diffHours < 24) return relative.format(-diffHours, "hour");
-      return date.toLocaleDateString(activeLanguage(), {
+      if (diffMins < 60)
+        return relativePast(diffMins, "minute", activeLanguage());
+      if (diffHours < 24)
+        return relativePast(diffHours, "hour", activeLanguage());
+      return formatDate(date, {
         month: "short",
         day: "numeric",
       });

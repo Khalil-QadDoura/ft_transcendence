@@ -36,6 +36,7 @@ from websockets.sync.client import ClientConnection, connect
 
 from app.auth import security
 from app.auth.deps import get_current_user
+from app.core import limiter
 from app.game import repo as game_repo
 from app.game import scoring
 
@@ -560,9 +561,13 @@ def test_two_players_voting_at_once_through_two_api_workers(clean_game) -> None:
 
 @needs_database
 @needs_redis
-def test_votes_racing_the_end_of_voting_are_counted_or_refused(clean_game) -> None:
+def test_votes_racing_the_end_of_voting_are_counted_or_refused(
+    clean_game, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Two players keep flipping their marks while the server clock ends voting. Every vote is
     either accepted and counted in the stored score, or refused with 409, never lost."""
+    # Far more votes than a person sends, on purpose: the write limit (BE-12) is lifted here.
+    monkeypatch.setattr(limiter, "WRITE_RATE_LIMIT", "100000/minute")
     app = game_app(game_scheduler_enabled=True, game_voting_sec=0.8, game_tick_interval_sec=0.01)
     with running_server(app) as srv:
         u1, h1 = login(srv, "ana@example.com")

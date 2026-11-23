@@ -30,10 +30,13 @@ const passwordSchema = z
 type PasswordFields = z.infer<typeof passwordSchema>;
 function errorText(error: unknown) {
   if (error instanceof ApiError) {
-    if (error.status === 400)
-      return typeof error.detail === "string"
-        ? error.detail
-        : copy.pleaseCheckYourDetailsAndTryAgain;
+    if (error.status === 400) {
+      if (error.detail === "Wrong current password")
+        return copy.wrongCurrentPassword;
+      if (error.detail === "Invalid or expired link")
+        return copy.invalidOrExpiredLink;
+      return copy.pleaseCheckYourDetailsAndTryAgain;
+    }
     if (error.status === 429)
       return copy.tooManyAttemptsPleaseWaitAFewMinutesAndTry;
     if (error.status === 422) return copy.pleaseCheckTheFormValuesAndTryAgain;

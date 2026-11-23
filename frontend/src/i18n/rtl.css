@@ -48,3 +48,8 @@ html:lang(ar) .poster-word {
     font-size: clamp(2rem, 9vw, 3.5rem);
   }
 }
+
+/* Empty auto-directed controls inherit Arabic; entered Latin text stays LTR. */
+[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown {
+  direction: rtl;
+}

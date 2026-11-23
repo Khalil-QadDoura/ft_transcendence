@@ -42,6 +42,11 @@ async def get_or_create_direct(
     if existing:
         return existing
 
+    # A new chat needs a partner who exists and is not deleted (BE-13): an unknown id used to
+    # fail in the database (500), and a deleted account could be sent messages.
+    if not await repo.is_active_user(session, peer_id):
+        raise LookupError("User not found")
+
     conv = await repo.create_conversation(session, type="direct", job_id=job_id)
     await repo.add_participant(session, conv.id, me_id)
     await repo.add_participant(session, conv.id, peer_id)

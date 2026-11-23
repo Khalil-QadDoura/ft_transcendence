@@ -20,6 +20,13 @@
   .legal-hero > p {
     max-width: 60ch;
   }
+  .legal-source-link {
+    display: inline-block;
+    margin-block-start: 1rem;
+    color: var(--color-lime);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
   .legal-hero .eyebrow {
     color: var(--color-lime);
   }

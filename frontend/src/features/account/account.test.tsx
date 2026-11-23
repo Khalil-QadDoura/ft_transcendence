@@ -106,6 +106,34 @@ test("expired reset remains on the page with a fresh-link action", async () => {
   );
   expect(container.querySelector('a[href="/forgot-password"]')).not.toBeNull();
 });
+
+test.each(["ar", "az", "tr", "ru"])(
+  "%s translates a wrong current password and keeps entered values",
+  async (language) => {
+    vi.spyOn(accountApi, "change").mockRejectedValue(
+      new ApiError(400, "400", "Wrong current password"),
+    );
+    await i18n.changeLanguage(language);
+    await render("/settings");
+    await fill("current_password", "old-password");
+    await fill("new_password", "new-password");
+    await fill("confirm", "new-password");
+    await submit();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      i18n.t("wrongCurrentPassword", { ns: "account" }),
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).not.toBe(
+      "Wrong current password",
+    );
+    await act(() => i18n.changeLanguage("en"));
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Wrong current password",
+    );
+    expect(
+      container.querySelector<HTMLInputElement>('[name="new_password"]')?.value,
+    ).toBe("new-password");
+  },
+);
 test("deletion requires confirmation, cancel sends nothing, failure stays visible", async () => {
   const remove = vi
     .spyOn(accountApi, "remove")

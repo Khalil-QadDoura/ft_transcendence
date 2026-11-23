@@ -37,5 +37,7 @@
   "deleteYourAccount": "Удалить ваш аккаунт?",
   "thisDeactivatesYourAccountAndEndsYourSessionsYouWont": "Это деактивирует аккаунт и завершит сессии. Войти снова будет нельзя.",
   "keepMyAccount": "Оставить аккаунт",
-  "yesDeleteMyAccount": "Да, удалить аккаунт"
+  "yesDeleteMyAccount": "Да, удалить аккаунт",
+  "wrongCurrentPassword": "Неверный текущий пароль",
+  "invalidOrExpiredLink": "Ссылка недействительна или срок её действия истёк"
 }

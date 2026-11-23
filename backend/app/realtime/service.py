@@ -17,7 +17,7 @@ from redis.exceptions import RedisError
 from app.auth import repo as auth_repo
 from app.core.metrics import track_ws_connection
 from app.realtime import repo
-from app.realtime.constants import PRESENCE_TTL_SECONDS, TICKET_LIFETIME_SECONDS
+from app.realtime.constants import MAX_ID, PRESENCE_TTL_SECONDS, TICKET_LIFETIME_SECONDS
 from app.realtime.schemas import Event, PresenceOut
 from app.users.models import User
 
@@ -127,7 +127,9 @@ async def forward_events(pubsub: PubSub, websocket: WebSocket) -> None:
 
 
 def _positive_int(value: Any) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+    # Up to MAX_ID (BIGINT): a bigger id failed in the database and closed the socket (BE-13).
+    is_id = isinstance(value, int) and not isinstance(value, bool) and 0 < value <= MAX_ID
+    return value if is_id else None
 
 
 async def read_frames(websocket: WebSocket, redis: Redis, user_id: int, socket_id: str) -> None:

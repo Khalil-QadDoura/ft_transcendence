@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "i18n:check": "node --test scripts/i18n-validation.test.mjs && node scripts/check-i18n.mjs",
     "legal:sync": "node scripts/legal-content.mjs",
-    "legal:check": "node scripts/legal-content.mjs --check",
+    "legal:check": "node --test scripts/legal-translation-validation.test.mjs && node scripts/legal-content.mjs --check",
     "rules:check": "vitest run --config scripts/game-rules.config.ts",
     "prebuild": "npm run legal:sync"
   },

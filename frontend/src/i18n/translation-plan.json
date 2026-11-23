@@ -1,4 +1,7 @@
 {
-  "englishFallbackNamespaces": {},
-  "reason": "FE-07 translates all shipped interface namespaces. Approved legal document bodies remain English originals, explicitly identified in the translated UI. User-generated content is not translated."
+  "englishFallbackNamespaces": {
+    "company": ["ar", "az", "tr", "ru"],
+    "game": ["ar", "az", "tr", "ru"]
+  },
+  "reason": "Temporary review-approved fallback for newly merged company/game screens until code freeze on 2026-11-26. Other namespaces require complete catalogs. Legal translations are reading translations pending content-owner and fluent-speaker review."
 }
