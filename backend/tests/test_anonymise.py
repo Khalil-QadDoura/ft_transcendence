@@ -38,6 +38,7 @@ from app.core.logging import configure_logging, json_handler
 from app.core.storage import Storage
 from app.media.moderation import apply_moderation_result
 from app.users.anonymise import anonymise_deleted_accounts
+from app.users.constants import ANONYMISE_AFTER_DAYS
 from app.worker.celery_app import celery_app
 from app.worker.tasks.anonymise import ANONYMISE_TASK
 
@@ -56,6 +57,9 @@ PROFILE = {
     "bio": "Loves the open sea.",
 }
 PERSONAL = ["analia", "zephyrine", "sailing", "1994-05-17", "open sea"]
+# Deleted a day longer ago than the job waits (31 days), or a day less (29 days).
+DUE = ANONYMISE_AFTER_DAYS + 1
+NOT_YET = ANONYMISE_AFTER_DAYS - 1
 
 
 def minio_client() -> Minio:
@@ -185,7 +189,7 @@ def is_anonymised(user_id: int) -> bool:
     return row["email"] == f"deleted-{user_id}@invalid" and row["anonymised"] and not any(personal)
 
 
-async def one_run(storage: Storage, older_than_days: int = 30):
+async def one_run(storage: Storage, older_than_days: int = ANONYMISE_AFTER_DAYS):
     """One run of the job on its own database connection, as the worker makes it."""
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     try:
@@ -195,7 +199,7 @@ async def one_run(storage: Storage, older_than_days: int = 30):
         await engine.dispose()
 
 
-def run_job(older_than_days: int = 30, storage: Storage | None = None):
+def run_job(older_than_days: int = ANONYMISE_AFTER_DAYS, storage: Storage | None = None):
     return asyncio.run(one_run(storage or Storage(settings()), older_than_days))
 
 
@@ -241,8 +245,8 @@ def test_deleted_31_days_ago_is_anonymised_29_days_ago_is_not(services):
     old = make_user("analia@example.com", **PROFILE)
     recent = make_user("ben@example.com", **PROFILE)
     active = make_user("cara@example.com", **PROFILE)
-    deleted_days_ago(old, 31)
-    deleted_days_ago(recent, 29)
+    deleted_days_ago(old, DUE)
+    deleted_days_ago(recent, NOT_YET)
     files = {user_id: files_of(user_id) for user_id in (old, recent, active)}
     set_avatar(old)
     # Files of user 10 and of company 10: the folders of user 1 and company 1 must not reach them.
@@ -260,7 +264,7 @@ def test_deleted_31_days_ago_is_anonymised_29_days_ago_is_not(services):
 
 def test_an_account_on_hold_is_kept_until_the_hold_is_lifted(services):
     held = make_user("analia@example.com", **PROFILE)
-    deleted_days_ago(held, 90, hold=True)
+    deleted_days_ago(held, 3 * DUE, hold=True)
     files = files_of(held)
     before = account(held)
 
@@ -274,7 +278,7 @@ def test_an_account_on_hold_is_kept_until_the_hold_is_lifted(services):
 
 def test_a_second_run_changes_nothing(services):
     user_id = make_user("analia@example.com", **PROFILE)
-    deleted_days_ago(user_id, 31)
+    deleted_days_ago(user_id, DUE)
     assert run_job().anonymised == [user_id]
     after_first = account(user_id)
     store(f"avatars/{user_id}/late.png")  # even a file that appears later is left alone
@@ -311,7 +315,7 @@ def test_videos_are_marked_deleted_and_the_records_stay_linked(services):
         u=analia,
     )
     videos = [add_video(analia, "posted"), add_video(analia, "loaded")]
-    deleted_days_ago(analia, 31)
+    deleted_days_ago(analia, DUE)
 
     assert run_job().anonymised == [analia]
 
@@ -325,7 +329,7 @@ def test_videos_are_marked_deleted_and_the_records_stay_linked(services):
 
 def test_a_failed_file_delete_saves_nothing_and_the_next_run_finishes(services):
     user_id = make_user("analia@example.com", **PROFILE)
-    deleted_days_ago(user_id, 31)
+    deleted_days_ago(user_id, DUE)
     files_of(user_id)
     before = account(user_id)
     storage = Storage(settings())
@@ -354,7 +358,7 @@ def test_a_failed_file_delete_saves_nothing_and_the_next_run_finishes(services):
 
 def test_the_log_lines_name_only_the_account_id(services):
     user_id = make_user("analia.zephyrine@example.com", **PROFILE)
-    deleted_days_ago(user_id, 31)
+    deleted_days_ago(user_id, DUE)
     with captured_logs() as logs:
         run_job()
     [line] = [line for line in logs if line["event"] == "account anonymised"]
@@ -369,7 +373,7 @@ def test_the_log_lines_name_only_the_account_id(services):
 
 def test_two_runs_at_once_anonymise_an_account_once(services):
     user_id = make_user("analia@example.com", **PROFILE)
-    deleted_days_ago(user_id, 31)
+    deleted_days_ago(user_id, DUE)
     files_of(user_id)
 
     async def scenario():
@@ -391,7 +395,7 @@ def test_two_runs_at_once_anonymise_an_account_once(services):
 
 def test_a_hold_set_while_the_job_waits_keeps_the_account(services):
     user_id = make_user("analia@example.com", **PROFILE)
-    deleted_days_ago(user_id, 31)
+    deleted_days_ago(user_id, DUE)
     before = account(user_id)
 
     async def scenario():
@@ -416,7 +420,7 @@ def test_a_hold_set_while_the_job_waits_keeps_the_account(services):
 
 def test_a_moderation_result_that_meets_the_job_finds_the_video_deleted(services):
     user_id = make_user("analia@example.com", **PROFILE)
-    deleted_days_ago(user_id, 31)
+    deleted_days_ago(user_id, DUE)
     set_avatar(user_id)
     video_id = add_video(user_id, "loaded")
 
@@ -474,7 +478,7 @@ def test_the_command_with_0_days_anonymises_a_fresh_deletion_but_not_a_hold(serv
             timeout=60,
         )
 
-    # Without the flag, the 30 days apply: an hour-old deletion is not due.
+    # Without the flag, the 30 days (ANONYMISE_AFTER_DAYS) apply: an hour-old deletion is not due.
     assert command().returncode == 0
     assert not is_anonymised(fresh) and len(stored()) == 6
 
@@ -580,7 +584,7 @@ def test_a_deleted_account_shows_as_deleted_user_in_chat_and_applications(servic
         ben_sees_a_deleted_user()
 
         # Stage 2: 30 days later, the job anonymises her. Ben sees the same.
-        deleted_days_ago(analia, 31)
+        deleted_days_ago(analia, DUE)
         assert run_job().anonymised == [analia]
         ben_sees_a_deleted_user()
 
