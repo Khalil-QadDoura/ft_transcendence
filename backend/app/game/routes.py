@@ -52,6 +52,17 @@ async def leave_queue(
     return Response(status_code=204)
 
 
+# Before /rooms/{room_id}: declared after it, "active" would be read as a room id (422).
+@router.get("/rooms/active")
+async def get_active_room(
+    request: Request,
+    user: CurrentUser,
+    session: Session,
+) -> RoomOut | None:
+    """The caller's room while it is waiting, in discussion or in voting; null when none."""
+    return await service.get_active_room(session, request.app.state.settings, user)
+
+
 @router.get("/rooms/{room_id}")
 async def get_room(
     room_id: RoomIdPath,

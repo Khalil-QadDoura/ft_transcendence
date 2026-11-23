@@ -295,6 +295,19 @@ async def get_room(session: AsyncSession, settings: Settings, user: User, room_i
     return _serialize_room(room, participants, me, settings)
 
 
+async def get_active_room(session: AsyncSession, settings: Settings, user: User) -> RoomOut | None:
+    """The caller's own room while it is waiting, in discussion or in voting, else None.
+
+    The lobby asks for it before joining, so a player whose match is running goes back to it
+    instead of getting a 409. Same payload as get_room: label numbers only, no bot flag."""
+    membership = await repo.get_user_active_membership(session, user.id)
+    if membership is None:
+        return None
+    room, me = membership
+    participants = await repo.list_participants(session, room.id)
+    return _serialize_room(room, participants, me, settings)
+
+
 async def start_room(
     session: AsyncSession,
     redis: Redis,
