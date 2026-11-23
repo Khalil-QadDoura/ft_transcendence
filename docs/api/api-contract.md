@@ -14,12 +14,23 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 | Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. A missing, invalid or expired token, or one made before a password change (`token_version`), gets 401 with `WWW-Authenticate: Bearer`. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
 | Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
 | Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
-| Rate limit | 429 with the same error body. Limits per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min, login with 42 (`/auth/oauth/42/start`) 10/min |
+| Rate limit | 429 with the same error body, detail `"Rate limit exceeded: <n> per 1 minute"`, and a `Retry-After` header (seconds until the count starts again). Login and sign-up count per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min, login with 42 (`/auth/oauth/42/start`) 10/min. Every write (POST, PUT, PATCH, DELETE) under `/api` also counts per route: per user with a valid access token, else per IP; 60/min, or the route's own number in the table below (BE-12). Reads (GET) are never limited. All numbers live in `backend/app/core/limits.py` |
 | Pagination | Request `cursor` (id of the last item seen) + `limit`; response `{items: [...], next_cursor: id or null}`. Messages use `before_id` → `prev_before_id` (older pages) |
 | Times | ISO 8601 with timezone, UTC (`2026-10-27T14:03:00+00:00`) |
 | Ids | Integers |
 | Money | `salary_amount` decimal as string or number, `salary_currency` ISO 4217 (3 capital letters) |
 | Files | Never through the API: the API returns a presigned URL; the browser PUTs the file to it, then calls a `confirm` endpoint |
+
+Write routes with their own limit (per user, or per IP without a valid token; BE-12). The chat line limit is on the `/ws/game` socket, where a line over it gets a `game_error` instead of a 429.
+
+| Route | Limit |
+| --- | --- |
+| Any other POST, PUT, PATCH, DELETE under `/api` | 60/min per route |
+| `POST /media/intro-video/upload-url`, `/media/avatar/upload-url`, `/media/company-logo/upload-url` | 10/min each |
+| `POST /conversations/{id}/messages` | 30/min |
+| `POST /friends/requests` | 10/min |
+| `POST /game/queue/join` | 10/min |
+| `chat_message` on `/ws/game` | 30/min per user, all rooms and tabs together |
 
 ## Auth and users
 
@@ -239,7 +250,7 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | client → server (`/ws/game`) | `chat_message` | `{text}` at top level (or inside `payload`); 1–500 characters after trimming | Player sends a room message during discussion |
 | server → client | `pong` | `null` | Reply to ping |
 | server → client (`/ws/game`) | `game_snapshot` | `{room: RoomOut, messages: [game_message payload] (the last 50, oldest→newest), my_votes: [{target_participant_id, guess}]}` | First frame of every `/ws/game` connection; see "Room socket" below |
-| server → client (`/ws/game`) | `game_error` | `{detail}` | A `chat_message` was refused (outside the discussion, empty, too long, or with characters that cannot be stored); nothing was saved or sent |
+| server → client (`/ws/game`) | `game_error` | `{detail}` | A `chat_message` was refused (outside the discussion, empty, too long, with characters that cannot be stored, or over the chat limit: `"Rate limit exceeded: 30 per 1 minute"`); nothing was saved or sent, and the socket stays open |
 | server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
 | server → client | `message` | `MessageOut` | New message in any of my conversations (mine too) |
 | server → client | `message_updated` | `MessageOut` | Author edited a message within 15 min (BE-24) |
