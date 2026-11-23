@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError, getAccessToken } from "../../api/client";
 import { SessionContext } from "../../app/session";
@@ -87,10 +87,10 @@ export function JobDetailPage({ currentUserId }: JobDetailPageProps) {
     setApplyError(null);
   };
 
-  const handleCloseApply = () => {
+  const handleCloseApply = useCallback(() => {
     setIsApplyOpen(false);
     setApplyError(null);
-  };
+  }, []);
 
   const handleSubmitApply = async (e: React.FormEvent) => {
     e.preventDefault();

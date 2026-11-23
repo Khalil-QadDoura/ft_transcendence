@@ -285,4 +285,55 @@ describe("JobDetailPage (FE-24)", () => {
     expect(container.textContent).toContain("View Applications (8)");
     expect(container.textContent).not.toContain("Apply with Video");
   });
+
+  it("keeps focus in cover note textarea while typing multiple characters", async () => {
+    vi.spyOn(api, "fetchJobDetail").mockResolvedValue(mockJob);
+    vi.spyOn(api, "recordJobView").mockResolvedValue();
+
+    const router = createMemoryRouter(
+      [{ path: "/jobs/:id", element: <JobDetailPage /> }],
+      { initialEntries: ["/jobs/42"] },
+    );
+
+    await act(async () => {
+      root.render(
+        <SessionContext value="authenticated">
+          <RouterProvider router={router} />
+        </SessionContext>,
+      );
+    });
+
+    const applyButton = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Apply with Video"),
+    );
+    await act(async () => {
+      applyButton?.click();
+    });
+    // Allow modal open and initial autofocus RAF to run
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const textarea = document.querySelector("textarea");
+    expect(textarea).not.toBeNull();
+    textarea?.focus();
+    expect(document.activeElement).toBe(textarea);
+
+    // Type character by character with re-render / frame in between
+    for (const char of ["H", "e", "l", "l", "o"]) {
+      await act(async () => {
+        const nextValue = (textarea!.value || "") + char;
+        setNativeValue(textarea!, nextValue);
+        textarea!.dispatchEvent(new Event("input", { bubbles: true }));
+        textarea!.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      // Simulate frame / timer tick
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      expect(document.activeElement).toBe(textarea);
+    }
+
+    expect(textarea?.value).toBe("Hello");
+  });
 });
