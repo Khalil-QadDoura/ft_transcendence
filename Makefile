@@ -6,13 +6,15 @@
 # command line tools; the ubuntu runner).
 
 COMPOSE := docker compose
-# Every profile, so down and fclean also reach services that are off by default (worker).
+# Every profile, so down and fclean also reach services with profiles (api-test, redis-test).
 COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
+# Optional: `make anonymise-deleted days=0` anonymises every deleted account at once.
+days ?=
 
-.PHONY: all env certs up down logs logs-reset test https-check images-check files-check mail-check metrics-check \
-	grafana-check fclean re
+.PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
+	mail-check metrics-check grafana-check schema-diagram anonymise-deleted fclean re
 
 all: env up
 
@@ -111,6 +113,20 @@ https-check:
 images-check:
 	@./scripts/images-check.sh
 
+# Secrets (keys, passwords, tokens) in any commit of any branch, with gitleaks (pinned) on a
+# fresh mirror clone: never reads .env or another ignored file; prints REDACTED instead of
+# a value. Findings checked by hand and known not to be secrets: .gitleaksignore. Needs only
+# Docker and git (BE-13).
+secrets-check:
+	@./scripts/secrets-check.sh
+
+# Draws docs/db/schema.svg, the database picture in the README, from a throwaway PostgreSQL +
+# PostGIS built by `alembic upgrade head` (eralchemy and Graphviz, pinned versions); removes
+# what it started. Run it after a migration changes the schema and commit the picture. Needs
+# only Docker: no .env, no port published, the running stack is left alone (BE-14).
+schema-diagram:
+	@./scripts/gen-schema-diagram.sh
+
 # Presigned upload and download through https://<host>/files and the bucket policy, against
 # the running stack; ends with a snippet for the Chrome console (INF-04).
 files-check:
@@ -139,6 +155,13 @@ metrics-check:
 # container, never printed; retries for up to 60 s (INF-09).
 grafana-check:
 	@./infra/grafana/smoke-test.sh
+
+# The second stage of account deletion now, instead of at the worker's nightly run (BE-34), on
+# the running stack: anonymises the deleted accounts that are due and deletes their files.
+# By default those deleted more than 30 days ago, as the nightly run; `days=0` takes every
+# deleted account at once (the demo). Accounts on retention hold are always skipped.
+anonymise-deleted:
+	$(COMPOSE) exec -T worker python -m app.worker.tasks.anonymise $(if $(days),--older-than-days $(days))
 
 # Removes containers, volumes (database, files), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.

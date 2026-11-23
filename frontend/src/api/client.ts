@@ -487,6 +487,9 @@ export const queryKeys = {
   auth: {
     me: ["auth", "me"] as const,
   },
+  companies: {
+    me: ["companies", "me"] as const,
+  },
   jobs: {
     all: ["jobs"] as const,
     list: (filters: Record<string, unknown> = {}) =>

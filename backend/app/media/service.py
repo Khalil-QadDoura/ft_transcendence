@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from fastapi import BackgroundTasks, HTTPException
 from PIL import Image
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import unauthorized
@@ -36,6 +35,7 @@ from app.media.constants import (
     ROW_LOCK,
     STAGING_FOLDER,
     UUID_PATTERN,
+    VIDEOS_FOLDER,
 )
 from app.media.models import IntroVideo
 from app.media.schemas import (
@@ -72,13 +72,20 @@ NO_COMPANY = "You have no company"
 
 
 def object_key_for(user_id: int) -> str:
-    """A new, unguessable place for one of this user's videos."""
+    """A new, unguessable place for the upload of one of this user's videos."""
     return f"users/{user_id}/intro/{uuid4()}.{MP4_EXTENSION}"
+
+
+def video_key_for(user_id: int) -> str:
+    """A new place for the copy that confirm keeps of one of this user's videos:
+    videos/<user id>/<uuid>.mp4. No upload link ever points there."""
+    return f"{VIDEOS_FOLDER}/{user_id}/{uuid4()}.{MP4_EXTENSION}"
 
 
 def is_my_object_key(user_id: int, object_key: str) -> bool:
     """True only for a key upload-url could have made for this user. fullmatch: the whole key
-    must fit the pattern, so "users/1/intro/../2/..." or a key of another user never does."""
+    must fit the pattern, so "users/1/intro/../2/..." or a key of another user never does,
+    and neither does a confirmed video's own key (videos/...)."""
     pattern = rf"users/{user_id}/intro/{UUID_PATTERN}\.{MP4_EXTENSION}"
     return re.fullmatch(pattern, object_key) is not None
 
@@ -111,43 +118,59 @@ async def confirm_upload(
     user: User,
     data: ConfirmIn,
 ) -> IntroVideo:
-    """Check the uploaded file itself, save the video as pending, and queue its moderation."""
+    """Copy the uploaded file to a key of the server's own and delete the upload, check the
+    copy, save the video as pending with the copy's key, and queue its moderation."""
     # 1. The key must be one of mine: nobody can confirm another user's file.
     if not is_my_object_key(user.id, data.object_key):
         raise HTTPException(status_code=400, detail=NOT_YOUR_KEY)
+    # A video confirmed before confirm made copies kept its upload key as its object_key.
+    # Step 2 would copy that file and then delete it, so the video would lose its file.
+    if await repo.has_video_at(session, data.object_key):
+        raise HTTPException(status_code=409, detail=ALREADY_CONFIRMED)
 
-    # 2. Look at the file in storage instead of trusting what the browser says about it.
-    # The MinIO calls wait for the network, so they run in a worker thread.
-    size = await asyncio.to_thread(storage.size, data.object_key)
-    if size is None:  # never uploaded, or uploaded somewhere else
-        raise HTTPException(status_code=400, detail=NO_FILE)
-    if size > MAX_SIZE_BYTES:
-        raise HTTPException(status_code=413, detail=TOO_BIG)
-    first_bytes = b""
-    if size >= MP4_SIGNATURE_END:  # a shorter file cannot be an MP4, and has nothing to read
-        first_bytes = await asyncio.to_thread(
-            storage.first_bytes, data.object_key, MP4_SIGNATURE_END
-        )
-    if not looks_like_mp4(first_bytes):
-        raise HTTPException(status_code=415, detail=NOT_AN_MP4)
-
-    # 3. At most 3 videos. Two confirms of mine at the same time must not both count 2 and
-    # both save: so I lock my row in users first. The second confirm waits at the lock until
-    # the first is saved (commit), then counts 3 and gets 409. Other users never wait.
-    await repo.lock_user(session, user.id)
-    if await repo.count_active_videos(session, user.id) >= MAX_ACTIVE_VIDEOS:
-        raise HTTPException(status_code=409, detail=TOO_MANY_VIDEOS)
-
-    # 4. Save it with the real size: moderation "pending", lifecycle "loaded" (not shown yet).
-    # The commit also lets go of the lock.
-    video = repo.add_video(session, user.id, data.object_key, data.duration_sec, size)
+    # 2. Copy the upload to a new key that no upload link points at, then delete the upload.
+    # put_url works until it expires, so another file can still be PUT at the upload key;
+    # but from now on nothing reads it. The video that is checked, moderated and shown is
+    # the copy, and only the server writes there. MinIO makes the copy itself. The MinIO
+    # calls wait for the network, so they run in a worker thread.
+    video_key = video_key_for(user.id)
     try:
-        await session.commit()
-    except IntegrityError:  # object_key is unique: this file was confirmed before
-        await session.rollback()
-        raise HTTPException(status_code=409, detail=ALREADY_CONFIRMED) from None
+        copied = await asyncio.to_thread(storage.copy, data.object_key, video_key, MP4_CONTENT_TYPE)
+    finally:
+        await remove_files(storage, [data.object_key])  # also when the copy failed
+    if not copied:  # never uploaded, uploaded somewhere else, or confirmed already
+        raise HTTPException(status_code=400, detail=NO_FILE)
 
-    # 5. Queue the moderation, after the answer has gone out, so the user never waits for it.
+    try:
+        # 3. Look at the copy instead of trusting what the browser says about it: these
+        # are the very bytes the feed will show and the moderation will check.
+        size = await asyncio.to_thread(storage.size, video_key)
+        if size > MAX_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail=TOO_BIG)
+        first_bytes = b""
+        if size >= MP4_SIGNATURE_END:  # a shorter file cannot be an MP4, and has nothing to read
+            first_bytes = await asyncio.to_thread(storage.first_bytes, video_key, MP4_SIGNATURE_END)
+        if not looks_like_mp4(first_bytes):
+            raise HTTPException(status_code=415, detail=NOT_AN_MP4)
+
+        # 4. At most 3 videos. Two confirms of mine at the same time must not both count 2
+        # and both save: so I lock my row in users first. The second confirm waits at the
+        # lock until the first is saved (commit), then counts 3 and gets 409. Other users
+        # never wait.
+        await repo.lock_user(session, user.id)
+        if await repo.count_active_videos(session, user.id) >= MAX_ACTIVE_VIDEOS:
+            raise HTTPException(status_code=409, detail=TOO_MANY_VIDEOS)
+
+        # 5. Save it with the copy's key and real size: moderation "pending", lifecycle
+        # "loaded" (not shown yet). The commit also lets go of the lock.
+        video = repo.add_video(session, user.id, video_key, data.duration_sec, size)
+        await session.commit()
+    except Exception:
+        # Refused, or not saved: nothing will ever read the copy, so it goes too.
+        await remove_files(storage, [video_key])
+        raise
+
+    # 6. Queue the moderation, after the answer has gone out, so the user never waits for it.
     background.add_task(queue.moderate_video, video.id, video.object_key)
     return video
 
@@ -167,6 +190,7 @@ async def list_my_videos(
                 size_bytes=video.size_bytes,
                 content_type=video.content_type,
                 moderation_status=video.moderation_status,
+                rejected_reason=video.rejected_reason,
                 lifecycle_status=video.lifecycle_status,
                 created_at=video.created_at,
                 updated_at=video.updated_at,

@@ -166,6 +166,7 @@ def test_game_routes_require_auth(client: TestClient) -> None:
     assert client.post("/api/game/queue/join").status_code == 401
     assert client.delete("/api/game/queue/leave").status_code == 401
     assert client.get("/api/game/rooms/1").status_code == 401
+    assert client.get("/api/game/rooms/active").status_code == 401
     assert client.post("/api/game/rooms/1/start").status_code == 401
 
 
@@ -880,3 +881,119 @@ def test_concurrent_start_vs_leave_queue_does_not_remove_participant(
         ).json()
         assert room["state"] == "discussion"
         assert room["participant_count"] == 2
+
+
+# The caller's own room: GET /api/game/rooms/active -----------------------------------------
+
+
+def active_room(server: str, token: str) -> dict | None:
+    response = httpx2.get(f"http://{server}/api/game/rooms/active", headers=auth_headers(token))
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def put_room_in(room_id: int, state: str) -> None:
+    """Move a room on, as the server clock would (the clock is off in these tests)."""
+    times = {"voting": ", voting_started_at = now()", "finished": ", finished_at = now()"}
+    sql(
+        f"UPDATE game_rooms SET state = CAST(:state AS game_room_state){times.get(state, '')}"
+        " WHERE id = :rid",
+        state=state,
+        rid=room_id,
+    )
+
+
+@needs_database
+@needs_redis
+def test_active_room_is_my_room_until_the_match_ends(clean_db_and_redis) -> None:
+    app = new_game_app(game_scheduler_enabled=False)
+    with running_server(app) as srv:
+        _, ana = create_user_and_login(srv, "ana@example.com")
+        _, ben = create_user_and_login(srv, "ben@example.com")
+        _, cara = create_user_and_login(srv, "cara@example.com")
+        # No room: 200 with null, not a 404 that the browser console would print.
+        assert active_room(srv, ana) is None
+
+        join = f"http://{srv}/api/game/queue/join"
+        room_id = httpx2.post(join, headers=auth_headers(ana)).json()["room_id"]
+        assert httpx2.post(join, headers=auth_headers(ben)).json()["room_id"] == room_id
+        # A bot in the room, shown like any other participant.
+        used = {
+            label
+            for (label,) in sql(
+                "SELECT display_label FROM game_participants WHERE room_id = :rid", rid=room_id
+            )
+        }
+        sql(
+            "INSERT INTO game_participants (room_id, user_id, display_label)"
+            " VALUES (:rid, NULL, :label)",
+            rid=room_id,
+            label=next(label for label in PLAYER_LABELS if label not in used),
+        )
+
+        for state in ("waiting", "discussion", "voting"):
+            if state == "discussion":
+                start = httpx2.post(
+                    f"http://{srv}/api/game/rooms/{room_id}/start", headers=auth_headers(ana)
+                )
+                assert start.status_code == 200
+            elif state == "voting":
+                put_room_in(room_id, "voting")
+            for token in (ana, ben):
+                mine = active_room(srv, token)
+                # The same answer as GET /rooms/{id}: label numbers only, no bot flag.
+                room_url = f"http://{srv}/api/game/rooms/{room_id}"
+                assert mine == httpx2.get(room_url, headers=auth_headers(token)).json()
+                assert (mine["id"], mine["state"], mine["participant_count"]) == (room_id, state, 3)
+                assert_no_bot_leak_in_room_payload(mine)
+                [me] = [p for p in mine["participants"] if p["is_you"]]
+                assert me["id"] == mine["my_participant_id"]
+            # Cara is in no room, so she learns nothing about this one.
+            assert active_room(srv, cara) is None
+            if state != "waiting":
+                # Find a game still gets its 409; the lobby asks this route first.
+                assert httpx2.post(join, headers=auth_headers(ana)).status_code == 409
+
+        put_room_in(room_id, "finished")
+        assert active_room(srv, ana) is None
+        assert active_room(srv, ben) is None
+
+        # A closed room is not active either, even with the player still seated in it.
+        other_room = httpx2.post(join, headers=auth_headers(cara)).json()["room_id"]
+        assert other_room != room_id
+        assert active_room(srv, cara)["id"] == other_room
+        put_room_in(other_room, "closed")
+        assert active_room(srv, cara) is None
+        # And a player who left a waiting room has no room any more.
+        third_room = httpx2.post(join, headers=auth_headers(cara)).json()["room_id"]
+        assert active_room(srv, cara)["id"] == third_room
+        leave = httpx2.delete(f"http://{srv}/api/game/queue/leave", headers=auth_headers(cara))
+        assert leave.status_code == 204
+        assert active_room(srv, cara) is None
+
+
+@needs_database
+@needs_redis
+def test_two_joins_at_once_give_one_seat_and_one_active_room(clean_db_and_redis) -> None:
+    """The same player presses Find a game in two tabs at once, on two API workers."""
+    app1 = new_game_app(game_scheduler_enabled=False)
+    app2 = new_game_app(game_scheduler_enabled=False)
+    with running_server(app1) as srv1, running_server(app2) as srv2:
+        user_id, token = create_user_and_login(srv1, "dana@example.com")
+        barrier = threading.Barrier(2)
+
+        def join_on(srv: str) -> httpx2.Response:
+            barrier.wait(timeout=3.0)
+            return httpx2.post(f"http://{srv}/api/game/queue/join", headers=auth_headers(token))
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            r1, r2 = list(pool.map(join_on, [srv1, srv2]))
+
+        assert (r1.status_code, r2.status_code) == (202, 202)
+        room_id = r1.json()["room_id"]
+        assert r2.json()["room_id"] == room_id
+        [(seats,)] = sql("SELECT COUNT(*) FROM game_participants WHERE user_id = :uid", uid=user_id)
+        assert seats == 1
+        for srv in (srv1, srv2):
+            mine = active_room(srv, token)
+            assert (mine["id"], mine["state"], mine["participant_count"]) == (room_id, "waiting", 1)

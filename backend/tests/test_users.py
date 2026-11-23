@@ -294,6 +294,10 @@ def test_delete_marks_the_account_deleted_and_keeps_the_row(client, ana):
     # A soft delete: the row and the profile are still there, only the status changed.
     assert sql("SELECT email, status FROM users") == [("ana@example.com", "deleted")]
     assert profile_in_db("ana@example.com") == ANA
+    # The 30 days before the account is anonymised start now (BE-34); no hold by default.
+    assert sql(
+        "SELECT deleted_at > now() - interval '1 minute', retention_hold, anonymised_at FROM users"
+    ) == [(True, False, None)]
 
 
 def test_a_deleted_account_cannot_log_in(client, ana):
@@ -332,6 +336,93 @@ def test_delete_deletes_only_my_own_account(client, ana):
         ("ben@example.com", "active"),
     ]
     assert login(client, "ben@example.com").status_code == 200
+
+
+# --- An employer deletes the account: the company goes too ---------------------------------
+
+# A job that anyone may see: "open" (a draft is shown to its owner only).
+OPEN_JOB = {
+    "title": "Barista",
+    "description": "Make the coffee.",
+    "latitude": 24.4539,
+    "longitude": 54.3773,
+    "location": "Abu Dhabi, UAE",
+    "status": "open",
+}
+
+
+@pytest.fixture
+def ben(client) -> dict:
+    """Ben's account, logged in: a stranger to Ana's company."""
+    make_user("ben@example.com")
+    response = login(client, "ben@example.com")
+    assert response.status_code == 200
+    return response.json()
+
+
+def make_employer(client, tokens: dict, company_name: str) -> int:
+    """This user opens a company and posts one open job, through the real routes. Returns
+    the job's id."""
+    response = client.post("/api/companies", json={"name": company_name}, headers=bearer(tokens))
+    assert response.status_code == 201
+    response = client.post("/api/jobs", json=OPEN_JOB, headers=bearer(tokens))
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+def companies_in_db() -> list:
+    """(name, status) of every company, oldest first."""
+    return sql("SELECT name, status FROM companies ORDER BY id")
+
+
+def test_deleting_an_employers_account_deletes_the_company_too(client, ana, ben):
+    make_employer(client, ana, "Cafe Ana")
+    make_employer(client, ben, "Cafe Ben")
+    assert delete_me(client, ana).status_code == 204
+    # A soft delete, like the account's: the row stays, only its status changed.
+    assert companies_in_db() == [("Cafe Ana", "deleted"), ("Cafe Ben", "active")]
+
+
+def test_after_the_employer_is_deleted_nobody_sees_the_company_or_its_job(client, ana, ben):
+    job_id = make_employer(client, ana, "Cafe Ana")
+    # Before: Ben, logged in, and anyone without a login see the job and its company's name.
+    for headers in (bearer(ben), {}):
+        response = client.get(f"/api/jobs/{job_id}", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["company_name"] == "Cafe Ana"
+    assert delete_me(client, ana).status_code == 204
+    # After: the same 404 as a job that never existed.
+    for headers in (bearer(ben), {}):
+        response = client.get(f"/api/jobs/{job_id}", headers=headers)
+        assert response.status_code == 404
+        assert response.json() == {"error": {"code": "404", "detail": "Job not found"}}
+
+
+def test_the_job_and_the_applications_to_it_stay_as_they_were(client, ana, ben):
+    job_id = make_employer(client, ana, "Cafe Ana")
+    [(ben_id,)] = sql("SELECT id FROM users WHERE email = 'ben@example.com'")
+    # Ben has applied. main has no route to apply yet, so the row is added straight.
+    sql(
+        "INSERT INTO applications (job_id, applicant_id, company_id)"
+        " SELECT id, :ben_id, owner_id FROM jobs WHERE id = :job_id",
+        ben_id=ben_id,
+        job_id=job_id,
+    )
+    assert delete_me(client, ana).status_code == 204
+    assert sql("SELECT status FROM jobs") == [("open",)]
+    assert sql("SELECT applicant_id, status FROM applications") == [(ben_id, "submitted")]
+
+
+def test_deleting_an_account_without_a_company_works_as_before(client, ana, ben):
+    job_id = make_employer(client, ben, "Cafe Ben")
+    assert delete_me(client, ana).status_code == 204
+    assert sql("SELECT email, status FROM users ORDER BY id") == [
+        ("ana@example.com", "deleted"),
+        ("ben@example.com", "active"),
+    ]
+    # Ben's company and job are untouched: anyone still sees the job.
+    assert companies_in_db() == [("Cafe Ben", "active")]
+    assert client.get(f"/api/jobs/{job_id}").status_code == 200
 
 
 # Every /users/me route, with a body that would be accepted, so only the token is wrong.

@@ -863,6 +863,32 @@ def test_deleting_an_account_with_no_pictures_touches_no_file(client, ana, ben):
     assert is_stored(bens_avatar)
 
 
+def record_removed_keys(app) -> list[str]:
+    """From now on, the key of every file the server deletes (Storage.remove) goes in this list."""
+    removed = []
+    remove = app.state.storage.remove
+
+    def remove_and_record(key: str) -> None:
+        removed.append(key)
+        remove(key)
+
+    app.state.storage.remove = remove_and_record
+    return removed
+
+
+def test_deleting_an_employers_account_deletes_the_company_and_its_logo_file_once(app, client, ana):
+    company_id = make_company(ana)
+    logo = publish(client, ana, "company-logo")
+    removed = record_removed_keys(app)
+    assert client.delete("/api/users/me", headers=ana.headers).status_code == 204
+    # The company is soft-deleted with the account (BE-05), its logo emptied...
+    assert sql("SELECT status, logo_object_key FROM companies WHERE id = :id", id=company_id) == [
+        ("deleted", None)
+    ]
+    # ...and the logo's file is deleted once, not a second time with the company.
+    assert removed == [logo]
+
+
 # --- A confirm and a deletion at the same time ----------------------------------------------
 # Two requests of the same person, each with its own database session, through the real
 # routes. A Pause holds one of them at a chosen line while the other one runs, so the two
@@ -1077,6 +1103,24 @@ def test_deleting_my_account_while_my_company_is_being_deleted_works(client, ana
         second_waits=True,
     )
     assert (company_deleted.status_code, account_deleted.status_code) == (204, 204)
+    assert_no_picture_is_left(ana, folder, old_key)
+
+
+def test_deleting_my_company_while_my_account_is_being_deleted_works(app, client, ana, monkeypatch):
+    folder, old_key = start_with_a_picture(client, ana, "company-logo")
+    removed = record_removed_keys(app)
+    # The other order: the account deletion holds my row's lock and my company's, and soft-
+    # deletes my company with my account (BE-05). The company deletion waits for the lock, then
+    # finds no active company: there is nothing left to do, and it answers 204 as usual.
+    account_deleted, company_deleted = run_while_paused(
+        pause_the_deletion_after_its_lock(monkeypatch, DELETE_ACCOUNT),
+        lambda: client.delete(DELETE_ACCOUNT, headers=ana.headers),
+        lambda: client.delete(DELETE_COMPANY, headers=ana.headers),
+        second_waits=True,
+    )
+    assert (account_deleted.status_code, company_deleted.status_code) == (204, 204)
+    assert sql("SELECT status FROM companies WHERE owner_user_id = :u", u=ana.id) == [("deleted",)]
+    assert removed == [old_key]  # the logo's file, deleted once
     assert_no_picture_is_left(ana, folder, old_key)
 
 

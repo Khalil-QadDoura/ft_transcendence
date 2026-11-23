@@ -4,21 +4,27 @@ import asyncio
 from datetime import UTC, datetime
 
 import jwt
+import structlog
 from fastapi import BackgroundTasks, HTTPException
+from pydantic import ValidationError
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import repo, security
+from app.auth import oauth42, repo, security
 from app.auth.constants import (
     ACCESS_SCOPE,
     ACCESS_TOKEN_LIFETIME,
     EMAIL_VERIFY_SCOPE,
     EMAIL_VERIFY_TOKEN_LIFETIME,
+    OAUTH_STATE_KEY_PREFIX,
+    OAUTH_STATE_LIFETIME,
     PASSWORD_RESET_TOKEN_LIFETIME,
     REFRESH_SCOPE,
     REFRESH_TOKEN_LIFETIME,
 )
 from app.auth.schemas import (
     ChangePasswordIn,
+    FtProfile,
     LoginIn,
     RegisterIn,
     ResetPasswordIn,
@@ -27,7 +33,10 @@ from app.auth.schemas import (
 )
 from app.core.config import Settings
 from app.core.mailer import Mailer
+from app.users.constants import NAME_MAX_LENGTH
 from app.users.models import User
+
+log = structlog.get_logger(__name__)
 
 EMAIL_TAKEN = "Email already registered"
 INVALID_LINK = "Invalid or expired link"
@@ -35,6 +44,16 @@ INVALID_CREDENTIALS = "Invalid email or password"
 EMAIL_NOT_VERIFIED = "Email not verified"
 INVALID_TOKEN = "Invalid or expired token"
 WRONG_CURRENT_PASSWORD = "Wrong current password"
+OAUTH_NOT_CONFIGURED = "Login with 42 is not set up on this server"
+
+# Why a login with 42 failed (BE-11). The callback sends the browser to the frontend's
+# /oauth/callback page with "#error=<one of these>", and the page shows a message for each.
+OAUTH_INVALID_STATE = "invalid_state"  # no state, a wrong, expired or already used one
+OAUTH_ACCESS_DENIED = "access_denied"  # the user pressed "Cancel" on 42's page
+OAUTH_INVALID_REQUEST = "invalid_request"  # 42 sent neither a code nor an error
+OAUTH_FT_UNAVAILABLE = "ft_unavailable"  # 42 refused, was too slow, or answered nonsense
+OAUTH_NO_EMAIL = "no_email"  # the 42 profile has no valid email
+OAUTH_ACCOUNT_DISABLED = "account_disabled"  # our account with that email is deleted
 
 VERIFY_SUBJECT = "Verify your WOZU account"
 VERIFY_BODY = """\
@@ -238,3 +257,87 @@ async def reset_password(session: AsyncSession, data: ResetPasswordIn) -> None:
     # The user's other links (from earlier requests) stop working too.
     await repo.close_password_reset_tokens(session, row.user_id)
     await session.commit()  # the used links and the new password, together
+
+
+class OAuthLoginError(Exception):
+    """A login with 42 that ends without tokens; `code` says why (one of the OAUTH_* above)."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+async def start_oauth42(settings: Settings, redis: Redis) -> str:
+    """Begin a login with 42 (BE-11): a new random state, remembered in Redis for 10 minutes.
+    The route sends the browser to 42's login page with it."""
+    if not oauth42.is_configured(settings):  # 503: this server is not set up for it
+        raise HTTPException(status_code=503, detail=OAUTH_NOT_CONFIGURED)
+    state = security.new_oauth_state()
+    await redis.set(OAUTH_STATE_KEY_PREFIX + state, "1", ex=OAUTH_STATE_LIFETIME)
+    return state
+
+
+async def finish_oauth42(
+    session: AsyncSession,
+    settings: Settings,
+    redis: Redis,
+    *,
+    state: str | None,
+    cookie_state: str | None,
+    code: str | None,
+    error: str | None,
+) -> TokenPairOut:
+    """The callback of a login with 42: check the state, swap the code for a 42 token, read
+    the 42 profile, find or create our account with that email, and give our token pair.
+    Every failure raises OAuthLoginError."""
+    # 1. The state must be the one in this browser's cookie, so only the browser that pressed
+    # the button can finish this login (the CSRF check). Then it must be one we handed out,
+    # not expired and not used: deleting it is that check. Redis deletes a key only once, so
+    # of two callbacks with the same state only one gets 1; an expired one is already gone.
+    if not state or state != cookie_state:
+        raise OAuthLoginError(OAUTH_INVALID_STATE)
+    if await redis.delete(OAUTH_STATE_KEY_PREFIX + state) != 1:
+        raise OAuthLoginError(OAUTH_INVALID_STATE)
+
+    # 2. What 42 sent back: a code, or an error (e.g. the user pressed "Cancel").
+    if error:
+        raise OAuthLoginError(
+            OAUTH_ACCESS_DENIED if error == "access_denied" else OAUTH_FT_UNAVAILABLE
+        )
+    if not code:
+        raise OAuthLoginError(OAUTH_INVALID_REQUEST)
+
+    # 3. Ask 42, from our server: the code for a 42 token, then the profile with that token.
+    try:
+        ft_access_token = await oauth42.exchange_code(settings, code)
+        me = await oauth42.fetch_me(settings, ft_access_token)
+    except oauth42.FtError as failure:
+        log.warning("login with 42: 42 did not answer as expected", error=str(failure))
+        raise OAuthLoginError(OAUTH_FT_UNAVAILABLE) from None
+    try:
+        profile = FtProfile.model_validate(me)
+    except ValidationError:
+        raise OAuthLoginError(OAUTH_NO_EMAIL) from None
+
+    # 4. Our account with that email, locked until the commit; created if there is none.
+    user = await repo.get_or_create_42_user(
+        session, profile.email, _name(profile.first_name), _name(profile.last_name)
+    )
+    # A deleted account cannot log in with a password, so not with 42 either.
+    if user.status != "active":
+        await session.rollback()  # nothing was changed; this also unlocks the row
+        raise OAuthLoginError(OAUTH_ACCOUNT_DISABLED)
+    # Someone signed up with this email and never opened the link. 42 has now shown that this
+    # person owns the email, so the account becomes theirs: verified, and without the
+    # password the other sign-up chose (they can set one with "Forgot password?").
+    if not user.is_email_verified:
+        user = await repo.verify_and_remove_password(session, user.id)
+
+    # 5. Our own two tokens, exactly as at login. This also saves (commits) step 4.
+    return await issue_token_pair(session, settings, user)
+
+
+def _name(value: str | None) -> str | None:
+    """A first or last name from 42, as our profile keeps it: trimmed, 50 characters at most."""
+    value = (value or "").strip()[:NAME_MAX_LENGTH].strip()
+    return value or None

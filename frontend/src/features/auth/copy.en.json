@@ -68,5 +68,14 @@
   "tryAgain": "Try again",
   "yourPasswordWasUpdatedSignInWithYourNewPassword": "Your password was updated. Sign in with your new password.",
   "yourAccountHasBeenDeactivated": "Your account has been deactivated.",
-  "forgotPassword": "Forgot password?"
+  "forgotPassword": "Forgot password?",
+  "logInWith42": "Log in with 42",
+  "signingYouIn": "Signing you in…",
+  "youCancelledTheSignInOn42": "You cancelled the sign-in on 42. Try again, or sign in with your email.",
+  "thisSignInWith42ExpiredOrWasAlreadyUsed": "This sign-in with 42 expired or was already used. Please start again.",
+  "42IntraIsntAnsweringRightNowPleaseTryAgain": "42 intra isn’t answering right now. Please try again in a moment.",
+  "your42AccountHasNoEmailAddressWeCanUse": "Your 42 account has no email address we can use, so we can’t sign you in with it.",
+  "thisAccountHasBeenDeactivatedAndCantSignIn": "This account has been deactivated and can’t sign in.",
+  "signInWith42DidntWorkPleaseTryAgain": "Sign-in with 42 didn’t work. Please try again.",
+  "backToSignIn": "Back to sign in"
 }

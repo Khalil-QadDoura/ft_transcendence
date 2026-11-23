@@ -12,6 +12,7 @@ import {
   refreshAccessToken,
 } from "../../api/client";
 import { routes } from "../../app/router";
+import { safeNext } from "../../app/session";
 import { AuthProvider } from "./AuthProvider";
 import { AuthError, createAuthGateway, type AuthGateway } from "./gateway";
 
@@ -30,6 +31,7 @@ beforeEach(() => {
     register: vi.fn().mockResolvedValue(undefined),
     verify: vi.fn().mockResolvedValue(undefined),
     login: vi.fn().mockResolvedValue(undefined),
+    loginWithTokens: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
     getStatus: () => "anonymous",
     getSessionVersion: () => 0,
@@ -527,4 +529,70 @@ test("login offers a clickable recovery route without submitting credentials", a
   await act(() => link.click());
   expect(router.state.location.pathname).toBe("/forgot-password");
   expect(client.login).not.toHaveBeenCalled();
+});
+
+// Login with 42 (BE-11)
+test("the login page offers login with 42 through the API, the sign-up page does not", async () => {
+  await render("/login");
+  const link = container.querySelector<HTMLAnchorElement>(
+    'a[href="/api/auth/oauth/42/start"]',
+  );
+  expect(link?.textContent).toContain("Log in with 42");
+  await act(() => root.unmount());
+  root = createRoot(container);
+  await render("/register");
+  expect(container.querySelector('a[href*="oauth/42"]')).toBeNull();
+});
+test("the 42 callback page stores the tokens like a login and drops them from the address", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(jsonResponse(JSON.stringify({ id: 1 }))),
+  );
+  client = createAuthGateway();
+  const router = await render(
+    "/oauth/callback#access_token=access-42&refresh_token=refresh-42&token_type=bearer",
+  );
+  expect(getAccessToken()).toBe("access-42");
+  expect(getStoredRefreshToken()).toBe("refresh-42");
+  expect(localStorage.getItem("wozu_refresh_token")).toBe("refresh-42");
+  expect(client.getStatus()).toBe("authenticated");
+  expect(router.state.location.pathname).toBe("/profile");
+  expect(router.state.location.hash).toBe("");
+  expect(router.state.historyAction).toBe("REPLACE");
+});
+test("logging in with 42 replaces an earlier session", () => {
+  setTokens({ accessToken: "old-access", refreshToken: "old-refresh" });
+  const gateway = createAuthGateway();
+  gateway.loginWithTokens({
+    access_token: "new-access",
+    refresh_token: "new-refresh",
+    token_type: "bearer",
+  });
+  expect(getAccessToken()).toBe("new-access");
+  expect(getStoredRefreshToken()).toBe("new-refresh");
+});
+test.each([
+  ["#error=access_denied", "You cancelled the sign-in on 42"],
+  ["#error=invalid_state", "expired or was already used"],
+  ["#error=ft_unavailable", "isn’t answering right now"],
+  ["#error=no_email", "no email address we can use"],
+  ["#error=account_disabled", "has been deactivated"],
+  ["#error=invalid_request", "Sign-in with 42 didn’t work"],
+  ["#access_token=only-half", "Sign-in with 42 didn’t work"],
+  ["", "Sign-in with 42 didn’t work"],
+])(
+  "the 42 callback page %s explains the failure and stores nothing",
+  async (fragment, message) => {
+    await render(`/oauth/callback${fragment}`);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      message,
+    );
+    expect(client.loginWithTokens).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBeNull();
+    expect(container.querySelector('a[href="/login"]')).not.toBeNull();
+  },
+);
+test("a sign-in never returns to the 42 callback page", () => {
+  expect(safeNext("/oauth/callback")).toBe("/profile");
+  expect(safeNext("/oauth/callback/")).toBe("/profile");
 });

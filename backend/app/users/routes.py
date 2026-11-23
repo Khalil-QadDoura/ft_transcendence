@@ -38,5 +38,5 @@ async def update_me(
 @router.delete("/me", status_code=204)
 async def delete_me(user: CurrentUser, session: Session, storage: Files) -> None:
     """Delete my account (a soft delete). My tokens stop working and I cannot log in again;
-    the files of my avatar and of my company's logo are deleted."""
+    my company is soft-deleted too, and the files of my avatar and of its logo are deleted."""
     await service.delete_account(session, storage, user)

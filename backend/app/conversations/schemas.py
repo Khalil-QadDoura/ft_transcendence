@@ -7,6 +7,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# The largest id the database can hold (BIGINT). A bigger id in a request is a 422, not a
+# database error (BE-13).
+MAX_ID = 2**63 - 1
+
 # ── Response Models ────────────────────────────────────────────────────────────
 
 
@@ -76,13 +80,13 @@ class UnreadOut(BaseModel):
 
 class ConversationCreate(BaseModel):
     type: Literal["direct", "ai"] = "direct"
-    peer_user_id: int | None = None
-    job_id: int | None = None
+    peer_user_id: int | None = Field(default=None, ge=1, le=MAX_ID)
+    job_id: int | None = Field(default=None, ge=1, le=MAX_ID)
 
 
 class SendMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
-    reply_to_id: int | None = None
+    reply_to_id: int | None = Field(default=None, ge=1, le=MAX_ID)
     idempotency_key: str | None = Field(default=None, max_length=64)
 
 
@@ -91,11 +95,11 @@ class EditMessageRequest(BaseModel):
 
 
 class ReadRequest(BaseModel):
-    last_message_id: int = Field(gt=0)
+    last_message_id: int = Field(gt=0, le=MAX_ID)
 
 
 class AddParticipantRequest(BaseModel):
-    user_id: int
+    user_id: int = Field(ge=1, le=MAX_ID)
     role: Literal["member", "admin"] = "member"
 
 

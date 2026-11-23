@@ -2,14 +2,19 @@ import copy from "./copy.en.json";
 import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { useEffect, useRef, useState, type PropsWithChildren } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { loginSchema, registerSchema } from "./schemas";
 import { validationOptions } from "../../lib/validation";
 import { applyServerValidation } from "../../lib/server-validation";
-import { AuthError } from "./gateway";
+import { AuthError, parseTokenPair } from "./gateway";
 import { useAuth } from "./AuthProvider";
 import "./auth.css";
 
@@ -286,6 +291,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           <span aria-hidden="true">↗</span>
         </Button>
       </form>
+      {!signup && (
+        // A plain link, not a router Link: the browser leaves the app for our API, which sends
+        // it on to 42's login page (BE-11). It comes back at /oauth/callback.
+        <a className="button light auth-submit" href="/api/auth/oauth/42/start">
+          {copy.logInWith42}
+          <span aria-hidden="true">↗</span>
+        </a>
+      )}
       <p className="auth-switch">
         {signup ? copy.alreadyFoundUs : copy.newAroundHere}{" "}
         <Link to={`${signup ? "/login" : "/register"}${suffix}`}>
@@ -387,6 +400,70 @@ export function VerifyEmail() {
           <span aria-hidden="true">↗</span>
         </Link>
       )}
+    </AuthFrame>
+  );
+}
+// Why a login with 42 failed: the backend's callback sends one of these after "#error=".
+const oauthErrors: Record<string, string> = {
+  access_denied: copy.youCancelledTheSignInOn42,
+  invalid_state: copy.thisSignInWith42ExpiredOrWasAlreadyUsed,
+  ft_unavailable: copy["42IntraIsntAnsweringRightNowPleaseTryAgain"],
+  no_email: copy.your42AccountHasNoEmailAddressWeCanUse,
+  account_disabled: copy.thisAccountHasBeenDeactivatedAndCantSignIn,
+};
+// The end of a login with 42 (BE-11). The backend's callback sends the browser here with
+// our token pair after "#" (#access_token=…&refresh_token=…&token_type=bearer), or with
+// #error=<reason>. The part after "#" never leaves the browser: no server or log sees it.
+export function OAuthCallback() {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const { hash } = useLocation();
+  // Read once, when the page opens: the address changes as soon as the tokens are stored.
+  const [{ pair, error }] = useState(() => {
+    const fragment = new URLSearchParams(hash.slice(1));
+    return {
+      error: fragment.get("error"),
+      pair: fragment.has("error")
+        ? null
+        : parseTokenPair({
+            access_token: fragment.get("access_token"),
+            refresh_token: fragment.get("refresh_token"),
+            token_type: fragment.get("token_type"),
+          }),
+    };
+  });
+  useEffect(() => {
+    if (!pair) return;
+    auth.loginWithTokens(pair);
+    // replace: the address with the tokens is dropped from the browser history.
+    void navigate("/profile", { replace: true });
+  }, [auth, navigate, pair]);
+  if (pair)
+    return (
+      <AuthFrame
+        title={copy.aMomentPlease}
+        intro={copy.aSecureStartToYourNextChapter}
+      >
+        <p role="status">{copy.signingYouIn}</p>
+      </AuthFrame>
+    );
+  return (
+    <AuthFrame
+      title={copy.letsTryThatAgain}
+      intro={copy.aSecureStartToYourNextChapter}
+    >
+      <div className="auth-result" role="alert">
+        <span className="auth-result-icon" aria-hidden="true">
+          ↗
+        </span>
+        <p>
+          {oauthErrors[error ?? ""] ?? copy.signInWith42DidntWorkPleaseTryAgain}
+        </p>
+      </div>
+      <Link className="button auth-submit" to="/login">
+        {copy.backToSignIn}
+        <span aria-hidden="true">↗</span>
+      </Link>
     </AuthFrame>
   );
 }
