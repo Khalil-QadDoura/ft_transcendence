@@ -68,6 +68,7 @@ export const GameRoomPage: React.FC = () => {
   const [newMessage, setNewMessage] = useState("");
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [wsState, setWsState] = useState<WsConnectionState>("connected");
+  const [reconnectAttempt, setReconnectAttempt] = useState<number>(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -152,8 +153,9 @@ export const GameRoomPage: React.FC = () => {
     const unsubs: Array<() => void> = [];
 
     unsubs.push(
-      roomWs.onStateChange((state) => {
+      roomWs.onStateChange((state, attempt = 0) => {
         setWsState(state);
+        setReconnectAttempt(attempt);
       }),
     );
 
@@ -312,7 +314,8 @@ export const GameRoomPage: React.FC = () => {
     if (
       !trimmed ||
       room?.state !== "discussion" ||
-      (secondsLeft !== null && secondsLeft <= 0)
+      (secondsLeft !== null && secondsLeft <= 0) ||
+      wsState !== "connected"
     ) {
       return;
     }
@@ -326,6 +329,7 @@ export const GameRoomPage: React.FC = () => {
     if (
       room?.state !== "voting" ||
       (secondsLeft !== null && secondsLeft <= 0) ||
+      wsState !== "connected" ||
       savingVotes[targetId]
     ) {
       return;
@@ -439,6 +443,33 @@ export const GameRoomPage: React.FC = () => {
             </div>
           )}
 
+          {/* Own Connection Indicator (FE-36) */}
+          <div
+            className="game-connection-status"
+            data-testid="game-connection-status"
+            aria-live="polite"
+          >
+            <span
+              className={`game-connection-dot ${
+                wsState === "connected"
+                  ? "is-connected"
+                  : wsState === "reconnecting"
+                    ? "is-reconnecting"
+                    : "is-offline"
+              }`}
+              aria-hidden="true"
+            />
+            <span className="game-connection-label">
+              {wsState === "connected"
+                ? t("game:room.connected")
+                : wsState === "reconnecting"
+                  ? t("game:room.reconnectingWithAttempt", {
+                      count: Math.max(1, reconnectAttempt),
+                    })
+                  : t("game:room.offline")}
+            </span>
+          </div>
+
           {/* Link to public rules page (FE-34) */}
           <Link
             to={GAME_RULES_PATH}
@@ -451,14 +482,19 @@ export const GameRoomPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Socket Reconnecting Banner */}
-      {wsState === "reconnecting" && (
+      {/* Socket Reconnecting Banner (FE-36) */}
+      {wsState !== "connected" && (
         <div
           className="game-reconnecting-banner"
+          data-testid="game-reconnecting-banner"
           role="status"
           aria-live="polite"
         >
-          {t("game:room.socketDisconnected")}
+          {wsState === "reconnecting"
+            ? t("game:room.reconnectingBanner", {
+                count: Math.max(1, reconnectAttempt),
+              })
+            : t("game:room.offlineBanner")}
         </div>
       )}
 
@@ -556,16 +592,22 @@ export const GameRoomPage: React.FC = () => {
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder={
-                    isDiscussionEnded
-                      ? t("game:room.chatDisabledEnded")
-                      : t("game:room.chatPlaceholder")
+                    wsState !== "connected"
+                      ? t("game:room.inputPaused")
+                      : isDiscussionEnded
+                        ? t("game:room.chatDisabledEnded")
+                        : t("game:room.chatPlaceholder")
                   }
-                  disabled={isDiscussionEnded}
+                  disabled={isDiscussionEnded || wsState !== "connected"}
                   maxLength={500}
                 />
                 <Button
                   type="submit"
-                  disabled={isDiscussionEnded || !newMessage.trim()}
+                  disabled={
+                    isDiscussionEnded ||
+                    !newMessage.trim() ||
+                    wsState !== "connected"
+                  }
                 >
                   {t("game:room.chatSend")}
                 </Button>
@@ -612,7 +654,7 @@ export const GameRoomPage: React.FC = () => {
                             type="button"
                             className={`game-btn-toggle ${currentVote === "human" ? "is-active" : ""}`}
                             onClick={() => handleVote(opponent.id, "human")}
-                            disabled={isVotingEnded}
+                            disabled={isVotingEnded || wsState !== "connected"}
                           >
                             {t("game:room.markHuman")}
                           </button>
@@ -620,7 +662,7 @@ export const GameRoomPage: React.FC = () => {
                             type="button"
                             className={`game-btn-toggle ${currentVote === "bot" ? "is-active" : ""}`}
                             onClick={() => handleVote(opponent.id, "bot")}
-                            disabled={isVotingEnded}
+                            disabled={isVotingEnded || wsState !== "connected"}
                           >
                             {t("game:room.markBot")}
                           </button>

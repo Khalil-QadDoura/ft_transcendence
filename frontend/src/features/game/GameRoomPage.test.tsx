@@ -21,7 +21,9 @@ let root: Root;
 let container: HTMLDivElement;
 const roomWsHandlers = new Map<string, Set<WsEventHandler<unknown>>>();
 const globalWsHandlers = new Map<string, Set<WsEventHandler<unknown>>>();
-let roomWsStateListeners: Array<(state: WsConnectionState) => void> = [];
+let roomWsStateListeners: Array<
+  (state: WsConnectionState, attempt?: number) => void
+> = [];
 const sentFrames: Array<{ type: string; payload?: unknown }> = [];
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -32,8 +34,8 @@ function emitRoomWs(type: string, payload: unknown) {
   for (const handler of set) handler(payload);
 }
 
-function emitRoomWsState(state: WsConnectionState) {
-  for (const listener of roomWsStateListeners) listener(state);
+function emitRoomWsState(state: WsConnectionState, attempt = 0) {
+  for (const listener of roomWsStateListeners) listener(state, attempt);
 }
 
 function makeDiscussionRoom(overrides: Partial<GameRoom> = {}): GameRoom {
@@ -750,19 +752,103 @@ test("FE-33: shows reconnecting banner when room socket drops and clears on reco
 
   await renderRoom();
 
-  expect(container.textContent).not.toContain("Reconnecting to room…");
+  expect(container.textContent).not.toContain("Reconnecting to room");
 
   // Simulate socket dropping and entering reconnecting state
   await act(async () => {
-    emitRoomWsState("reconnecting");
+    emitRoomWsState("reconnecting", 1);
   });
 
-  expect(container.textContent).toContain("Reconnecting to room…");
+  expect(container.textContent).toContain("Reconnecting to room");
 
   // Simulate socket reconnecting
   await act(async () => {
-    emitRoomWsState("connected");
+    emitRoomWsState("connected", 0);
   });
 
-  expect(container.textContent).not.toContain("Reconnecting to room…");
+  expect(container.textContent).not.toContain("Reconnecting to room");
+});
+
+test("FE-36: renders own connection indicator as connected in room header", async () => {
+  const room = makeDiscussionRoom();
+  vi.spyOn(gameApi, "getRoom").mockResolvedValueOnce(room);
+  vi.spyOn(gameApi, "getRoomMessages").mockResolvedValueOnce({ items: [] });
+
+  await renderRoom();
+
+  const statusIndicator = container.querySelector(
+    '[data-testid="game-connection-status"]',
+  );
+  expect(statusIndicator).not.toBeNull();
+  expect(statusIndicator?.textContent).toContain("Connected");
+  const dot = statusIndicator?.querySelector(".game-connection-dot");
+  expect(dot?.classList.contains("is-connected")).toBe(true);
+});
+
+test("FE-36: displays reconnecting progress, attempts and pauses inputs on disconnect", async () => {
+  const room = makeDiscussionRoom();
+  vi.spyOn(gameApi, "getRoom").mockResolvedValueOnce(room);
+  vi.spyOn(gameApi, "getRoomMessages").mockResolvedValueOnce({ items: [] });
+
+  await renderRoom();
+
+  const chatInput = container.querySelector(
+    ".game-chat-input-bar input",
+  ) as HTMLInputElement;
+  const sendButton = container.querySelector(
+    ".game-chat-input-bar button",
+  ) as HTMLButtonElement;
+  expect(chatInput.disabled).toBe(false);
+
+  // Transition to reconnecting, attempt 2
+  await act(async () => {
+    emitRoomWsState("reconnecting", 2);
+  });
+
+  const statusIndicator = container.querySelector(
+    '[data-testid="game-connection-status"]',
+  );
+  expect(statusIndicator?.textContent).toContain("Reconnecting (attempt 2)…");
+  const banner = container.querySelector(
+    '[data-testid="game-reconnecting-banner"]',
+  );
+  expect(banner?.textContent).toContain(
+    "Reconnecting to room (attempt 2)… Inputs are paused.",
+  );
+
+  // Chat input is disabled
+  expect(chatInput.disabled).toBe(true);
+  expect(sendButton.disabled).toBe(true);
+
+  // Reconnected
+  await act(async () => {
+    emitRoomWsState("connected", 0);
+  });
+
+  expect(
+    container.querySelector('[data-testid="game-reconnecting-banner"]'),
+  ).toBeNull();
+  expect(chatInput.disabled).toBe(false);
+});
+
+test("FE-36: disables vote options during voting when connection is lost", async () => {
+  const room = makeDiscussionRoom({ state: "voting" });
+  vi.spyOn(gameApi, "getRoom").mockResolvedValueOnce(room);
+  vi.spyOn(gameApi, "getRoomMessages").mockResolvedValueOnce({ items: [] });
+
+  await renderRoom();
+
+  const buttons = container.querySelectorAll(".game-btn-toggle");
+  expect((buttons[0] as HTMLButtonElement).disabled).toBe(false);
+
+  // Socket drops to offline
+  await act(async () => {
+    emitRoomWsState("offline", 0);
+  });
+
+  expect(
+    container.querySelector('[data-testid="game-connection-status"]')
+      ?.textContent,
+  ).toContain("Offline");
+  expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
 });
