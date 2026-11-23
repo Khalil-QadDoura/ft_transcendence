@@ -1,0 +1,5 @@
+# Findings of `make secrets-check` that were checked by hand and are not secrets (BE-13).
+# One line each: <commit>:<file>:<rule>:<line>, as gitleaks prints it in "Fingerprint".
+
+# "object_key, MP4_SIGNATURE_END": a constant's name after the word "key", not a key.
+10d80d04b6af36da74db9fbceeb957567e70a460:backend/app/media/service.py:generic-api-key:107
