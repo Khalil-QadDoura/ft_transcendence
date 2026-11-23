@@ -114,11 +114,11 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 | PATCH | `/companies/me` | Bearer | `{name, country, city, district?, country_code?}` | 200 `CompanyOut` | 404, 422 |
 | DELETE | `/companies` | Bearer | — | 204 (soft, idempotent; the logo file is deleted, BE-08) | — |
 | POST | `/jobs` | Bearer (employer) | `JobCreate` | 201 `JobOut` | 404 no company, 422 |
-| PATCH | `/jobs/{id}` | Bearer (owner) | any `JobCreate` fields | 200 `JobOut` | 404 |
-| DELETE | `/jobs/{id}` | Bearer (owner) | — | 204 (soft) | 404 |
+| PATCH | `/jobs/{id}` | Bearer (owner) | any `JobCreate` fields | 200 `JobOut` | 404, 422 id under 1 or too large |
+| DELETE | `/jobs/{id}` | Bearer (owner) | — | 204 (soft) | 404, 422 id under 1 or too large |
 | GET | `/jobs/mine` | Bearer (employer) | — | 200 `JobOut[]` with `views_count`, `applications_count`, `new_applications_count` | 404 no company |
-| GET | `/jobs/open` | — | query below | 200 `{items: JobOut[], next_cursor}` | 422 |
-| GET | `/jobs/{id}` | optional | — | 200 `JobOut` (non-open only for the owner) | 404 |
+| GET | `/jobs/open` | — | query below | 200 `{items: JobOut[], next_cursor}` | 422 (nearest without lat/lng falls back to newest; cursor must be a visible open job) |
+| GET | `/jobs/{id}` | optional | — | 200 `JobOut` (non-open only for the owner) | 404, 422 id under 1 or too large |
 | POST | `/jobs/{id}/view` | optional | — | 204 (counted once per user per 24 h) | — |
 | POST | `/jobs/{id}/apply` | Bearer | `{cover_note? ≤ 1000}` | 201 `ApplicationOut` | 422 `{code: profile_incomplete or no_video, next_step}`, 403 own job, 404, 409 duplicate |
 | GET | `/applications/mine` | Bearer | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | — |
@@ -130,7 +130,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 **`GET /jobs/open` query:** `lat`, `lng`, `radius_km` (≤ 500; all three for radius), `schedule` (`full_time`, `part_time`, `internship`), `salary_min`, `salary_max`, `urgency` (`normal`, `urgent`, `hot`), `keyword` (full-text), `position` (title contains), `sort_by` (`newest` default, `nearest` needs lat/lng), `cursor`, `limit` 1–100 (default 20).
 
 - `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
-- `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, views_count, applications_count, new_applications_count, created_by_id, updated_by_id, created_at, updated_at}`.
+- `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, company_logo_url, views_count, applications_count, new_applications_count, distance_km, created_by_id, updated_by_id, created_at, updated_at}` (`company_logo_url` from `Storage.logo_url`, `distance_km` populated by `GET /jobs/open` when `lat` and `lng` are given, BE-26).
 - `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at}`.
 - `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, logo_url, status, country, city, district, country_code, created_at, updated_at}`. `logo_url` (new backend, BE-08): the logo's public address, or `null` without a logo (see Media).
 
