@@ -119,19 +119,20 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 | GET | `/jobs/mine` | Bearer (employer) | — | 200 `JobOut[]` with `views_count`, `applications_count`, `new_applications_count` | 404 no company |
 | GET | `/jobs/open` | — | query below | 200 `{items: JobOut[], next_cursor}` | 422 (nearest without lat/lng falls back to newest; cursor must be a visible open job) |
 | GET | `/jobs/{id}` | optional | — | 200 `JobOut` (non-open only for the owner) | 404, 422 id under 1 or too large |
-| POST | `/jobs/{id}/view` | optional | — | 204 (counted once per user per 24 h) | — |
-| POST | `/jobs/{id}/apply` | Bearer | `{cover_note? ≤ 1000}` | 201 `ApplicationOut` | 422 `{code: profile_incomplete or no_video, next_step}`, 403 own job, 404, 409 duplicate |
-| GET | `/applications/mine` | Bearer | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | — |
-| GET | `/applications/{id}` | Bearer (applicant or job owner) | — | 200 `ApplicationOut` | 403, 404 |
-| DELETE | `/applications/{id}` | Bearer (applicant) | — | 204 → `withdrawn` | 404, 409 |
-| GET | `/jobs/{id}/applications` | Bearer (job owner) | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 403, 404 |
-| PATCH | `/applications/{id}/status` | Bearer (job owner) | `{status, note? ≤ 500}` | 200 `ApplicationOut` | 403, 409 transition not allowed |
+| POST | `/jobs/{id}/view` | optional | — | 204 (counted once per viewer per 24 h on `open` jobs; draft is a 204 no-op) | 404, 422 |
+| POST | `/jobs/{id}/apply` | Bearer | `{cover_note? ≤ 1000}` (optional body) | 201 `ApplicationOut` + WS `application_created` to employer | 422 `{code: profile_incomplete or no_video, next_step}`, 403 own job, 404, 409 duplicate |
+| GET | `/applications/mine` | Bearer | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 422 |
+| GET | `/applications/{id}` | Bearer (applicant or job owner) | — | 200 `ApplicationOut` | 403, 404, 422 |
+| DELETE | `/applications/{id}` | Bearer (applicant) | — | 204 → `withdrawn` + WS `application_updated` to employer | 404, 409, 422 |
+| GET | `/jobs/{id}/applications` | Bearer (job owner) | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 403, 404, 422 |
+| PATCH | `/applications/{id}/status` | Bearer (job owner) | `{status, note? ≤ 500}` | 200 `ApplicationOut` + WS `application_updated` to applicant | 403, 404, 409 transition not allowed, 422 |
 
 **`GET /jobs/open` query:** `lat`, `lng`, `radius_km` (≤ 500; all three for radius), `schedule` (`full_time`, `part_time`, `internship`), `salary_min`, `salary_max`, `urgency` (`normal`, `urgent`, `hot`), `keyword` (full-text), `position` (title contains), `sort_by` (`newest` default, `nearest` needs lat/lng), `cursor`, `limit` 1–100 (default 20).
 
 - `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
 - `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, company_logo_url, views_count, applications_count, new_applications_count, distance_km, created_by_id, updated_by_id, created_at, updated_at}` (`company_logo_url` from `Storage.logo_url`, `distance_km` populated by `GET /jobs/open` when `lat` and `lng` are given, BE-26).
-- `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at}`.
+- `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at, job_title, company_name, applicant_first_name, applicant_last_name, applicant_position, applicant_avatar_url, intro_video_url}` (BE-28; `intro_video_url` is a short-lived signed GET link when the video is not deleted).
+- **Application state machine (BE-28):** only `open` jobs of active companies accept applications. Employer transitions via `PATCH /applications/{id}/status`: `submitted → viewed | shortlisted | rejected`, `viewed → shortlisted | rejected`, `shortlisted → contacted | hired | rejected`, `contacted → hired | rejected` (moving to `contacted` atomically creates or reuses a direct conversation linked to the job and application; moving to `viewed` records `viewed_at`). Applicant withdrawal via `DELETE /applications/{id}`: `submitted | viewed | shortlisted | contacted → withdrawn`. Any other move returns `409`. Every creation and transition writes an `application_events` row and pushes a live WebSocket event to the other side.
 - `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, logo_url, status, country, city, district, country_code, created_at, updated_at}`. `logo_url` (new backend, BE-08): the logo's public address, or `null` without a logo (see Media).
 
 ## Media
@@ -249,6 +250,8 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `message_deleted` | `{id, conversation_id}` | Author soft-deleted a message (BE-24) |
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
+| server → client | `application_created` | `ApplicationOut` | Candidate applied to one of the employer's jobs (BE-28) |
+| server → client | `application_updated` | `ApplicationOut` | Employer updated an application status (sent to applicant) or applicant withdrew (sent to employer) (BE-28) |
 | server → client | `game_room_formed` | `{room_id}` | Matchmaking put me in a room |
 | server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room (`participant.id` is label number 1–5, BE-35) |
 | server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room (`participant.id` is label number 1–5, BE-35) |
