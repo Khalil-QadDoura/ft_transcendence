@@ -6,7 +6,11 @@ import React, {
   useState,
 } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { WebSocketClient, useWsEvent } from "../../api/ws";
+import {
+  WebSocketClient,
+  useWsEvent,
+  type WsConnectionState,
+} from "../../api/ws";
 import {
   Badge,
   Button,
@@ -29,6 +33,21 @@ import type {
 } from "./types";
 import "./game.css";
 
+function dedupeMessages(
+  existing: GameChatMessage[],
+  incoming: GameChatMessage[],
+): GameChatMessage[] {
+  const seen = new Set<number>();
+  const merged: GameChatMessage[] = [];
+  for (const msg of [...existing, ...incoming]) {
+    if (!seen.has(msg.id)) {
+      seen.add(msg.id);
+      merged.push(msg);
+    }
+  }
+  return merged.sort((a, b) => a.id - b.id);
+}
+
 export const GameRoomPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const roomId = Number(id);
@@ -48,6 +67,7 @@ export const GameRoomPage: React.FC = () => {
 
   const [newMessage, setNewMessage] = useState("");
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [wsState, setWsState] = useState<WsConnectionState>("connected");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -94,8 +114,14 @@ export const GameRoomPage: React.FC = () => {
         return;
       }
       try {
-        const data = await gameApi.getRoom(roomId, signal);
+        const [data, messagesRes] = await Promise.all([
+          gameApi.getRoom(roomId, signal),
+          gameApi.getRoomMessages(roomId, { signal }).catch(() => null),
+        ]);
         setRoom(data);
+        if (messagesRes?.items) {
+          setMessages((prev) => dedupeMessages(prev, messagesRes.items));
+        }
         if (data.state === "finished") {
           loadResults(signal);
         }
@@ -126,6 +152,12 @@ export const GameRoomPage: React.FC = () => {
     const unsubs: Array<() => void> = [];
 
     unsubs.push(
+      roomWs.onStateChange((state) => {
+        setWsState(state);
+      }),
+    );
+
+    unsubs.push(
       roomWs.subscribe<GameSnapshotPayload>("game_snapshot", (payload) => {
         if (payload.room) {
           setRoom(payload.room);
@@ -134,16 +166,14 @@ export const GameRoomPage: React.FC = () => {
           }
         }
         if (payload.messages) {
-          setMessages(payload.messages);
+          setMessages((prev) => dedupeMessages(prev, payload.messages));
         }
         if (payload.my_votes) {
-          setVotes((prev) => {
-            const next = { ...prev };
-            for (const v of payload.my_votes) {
-              next[v.target_participant_id] = v.guess;
-            }
-            return next;
-          });
+          const next: Record<number, VoteGuess> = {};
+          for (const v of payload.my_votes) {
+            next[v.target_participant_id] = v.guess;
+          }
+          setVotes(next);
         }
       }),
     );
@@ -420,6 +450,17 @@ export const GameRoomPage: React.FC = () => {
           </Link>
         </div>
       </header>
+
+      {/* Socket Reconnecting Banner */}
+      {wsState === "reconnecting" && (
+        <div
+          className="game-reconnecting-banner"
+          role="status"
+          aria-live="polite"
+        >
+          {t("game:room.socketDisconnected")}
+        </div>
+      )}
 
       {/* Main Grid */}
       <div className="game-room-grid">
