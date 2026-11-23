@@ -23,7 +23,8 @@ app/
                  (BE-11), plus constants (lifetimes, OAuth), security (Argon2id, JWT, reset
                  tokens, OAuth state), deps (get_current_user), oauth42 (the 42 intra API client)
   users/         /api/users/me: read, partial update, soft delete (BE-05), avatar_url (BE-08),
-                 plus constants (minimum age, field lengths)
+                 plus constants (minimum age, field lengths, the 30 days before anonymisation)
+                 and anonymise.py (the second stage of a deletion, BE-34)
   companies/     CRUD, /companies/me returns 200 null for job seekers (BE-21)
   friends/       friend requests, single-query friends list, /users/{id}/profile with
                  avatar_url and online status (BE-22)
@@ -34,7 +35,8 @@ app/
   media/         /api/media: intro video upload-url, confirm, mine, post, unpost, delete,
                  feed (BE-07); avatar and company logo upload-url and confirm, the default
                  avatar picture (BE-08); plus constants (video and picture limits, link lifetimes)
-  worker/        celery_app: the Celery app of the worker container (its tasks come with BE-29)
+  worker/        celery_app: the Celery app of the worker container and its beat schedule;
+                 tasks/: video moderation (BE-29), daily anonymisation of deleted accounts (BE-34)
   conversations/ direct chats, participants, idempotent messages, edits/deletes, read state (BE-23, BE-24)
   game/          /api/game: Redis-locked matchmaking queue, waiting room lifecycle, start now,
                  hidden random bot plan, staggered joins, template bot chat and server phases (BE-27);
@@ -106,7 +108,8 @@ two `docker run` lines. Without `TEST_MINIO_ENDPOINT`, `TEST_MINIO_ACCESS_KEY`,
 `TEST_MINIO_SECRET_KEY` and `TEST_REDIS_URL` they are skipped. The avatar and logo tests
 (`tests/test_pictures.py`) need the same MinIO but no Redis; they empty the `pictures-test`
 bucket and give it the anonymous policy of `minio-init` (download under `avatars/` and
-`logos/`).
+`logos/`). The anonymisation tests (`tests/test_anonymise.py`, BE-34) need the database and
+the MinIO too; they empty the `anonymise-test` bucket.
 
 ## Conventions
 
@@ -140,6 +143,39 @@ bucket and give it the anonymous policy of `minio-init` (download under `avatars
   migration (`ALTER TYPE ... ADD VALUE`). The jobs search trigger exists only in the migration, so
   a database is always built with Alembic, never with `Base.metadata.create_all()`.
 
+## Deleting an account: two stages (BE-34)
+
+The Privacy Policy (section 6) promises two stages. `DELETE /api/users/me` deactivates the
+account at once and writes `users.deleted_at`. Every day at 00:00 UTC the worker's beat runs
+`app.worker.tasks.anonymise`: each account deleted more than 30 days ago
+(`ANONYMISE_AFTER_DAYS` in `app/users/constants.py`) loses its email (it becomes
+`deleted-<id>@invalid`), password, names, position, birth date, bio and avatar, every file it
+has in storage is deleted, and its videos become `deleted`. Its row stays, so its
+applications, game records and messages stay, shown as from "Deleted user". The rules are in
+`app/users/anonymise.py`. Each account is done in one transaction, files first: if MinIO
+fails, nothing of that account is saved, the log says `account not anonymised, tried again on
+the next run` with its id, and the next run (the next night, or the command below) starts it
+again. A second run changes nothing. The log lines carry the account's id only.
+
+**On demand (the demo)**, on the running stack, without waiting 30 days:
+
+```sh
+make anonymise-deleted days=0   # every deleted account, at once
+make anonymise-deleted          # only those deleted more than 30 days ago, as the nightly run
+# the same, by hand:
+docker compose exec worker python -m app.worker.tasks.anonymise --older-than-days 0
+```
+
+It always skips the accounts on hold, and exits with 1 if an account could not be done.
+
+**Retention hold.** While a complaint, dispute or legal claim about a deleted account is open,
+a team member keeps its data by setting `users.retention_hold` (false by default) by hand, then
+sets it back to false once the matter is closed (42 is the account's id):
+
+```sh
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    -c "UPDATE users SET retention_hold = true WHERE id = 42"'
+```
 
 ## Transactional test fixtures (BE-20)
 
