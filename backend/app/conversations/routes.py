@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from app.companies.models import Company
 from app.conversations import repo, service
 from app.conversations.models import ConversationParticipant
 from app.conversations.schemas import (
+    MAX_ID,
     AddParticipantRequest,
     ConversationCreate,
     ConversationOut,
@@ -32,6 +33,10 @@ from app.core.storage import Storage, get_storage
 from app.db.session import get_session
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+# An id in the path: 1 to the largest BIGINT, else 422. A bigger number used to reach the
+# database and fail there with a 500 (BE-13).
+DbId = Annotated[int, Path(ge=1, le=MAX_ID)]
 
 
 def _msg_out(m: Any) -> MessageOut:
@@ -143,6 +148,8 @@ async def create_conversation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(err),
             ) from None
+        except LookupError as err:  # no such user, or a deleted one (BE-13)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err)) from None
     else:
         conv = await service.create_ai_conversation(session, user_id=me.id)
 
@@ -188,7 +195,7 @@ async def get_unread(
 
 @router.get("/{conv_id}", response_model=ConversationOut)
 async def get_conversation(
-    conv_id: int,
+    conv_id: DbId,
     session: Annotated[AsyncSession, Depends(get_session)],
     storage: Annotated[Storage, Depends(get_storage)],
     me: CurrentUser,
@@ -205,7 +212,7 @@ async def get_conversation(
 
 @router.delete("/{conv_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
 async def leave_conversation(
-    conv_id: int,
+    conv_id: DbId,
     session: Annotated[AsyncSession, Depends(get_session)],
     me: CurrentUser,
 ) -> None:
@@ -220,7 +227,7 @@ async def leave_conversation(
 
 @router.get("/{conv_id}/participants", response_model=list[ParticipantOut])
 async def list_participants(
-    conv_id: int,
+    conv_id: DbId,
     session: Annotated[AsyncSession, Depends(get_session)],
     me: CurrentUser,
 ) -> list[ParticipantOut]:
@@ -232,7 +239,7 @@ async def list_participants(
 
 @router.post("/{conv_id}/participants", status_code=status.HTTP_201_CREATED)
 async def add_participant(
-    conv_id: int,
+    conv_id: DbId,
     body: AddParticipantRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     me: CurrentUser,
@@ -251,8 +258,8 @@ async def add_participant(
 
 @router.delete("/{conv_id}/participants/{uid}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_participant(
-    conv_id: int,
-    uid: int,
+    conv_id: DbId,
+    uid: DbId,
     session: Annotated[AsyncSession, Depends(get_session)],
     me: CurrentUser,
 ) -> None:
@@ -272,10 +279,10 @@ async def remove_participant(
 
 @router.get("/{conv_id}/messages", response_model=MessagesPage)
 async def list_messages(
-    conv_id: int,
+    conv_id: DbId,
     session: Annotated[AsyncSession, Depends(get_session)],
     me: CurrentUser,
-    before_id: int | None = Query(None, ge=0),
+    before_id: int | None = Query(None, ge=0, le=MAX_ID),
     limit: int = Query(50, ge=1, le=100),
 ) -> MessagesPage:
     """List messages with cursor pagination."""
@@ -286,7 +293,7 @@ async def list_messages(
 
 @router.post("/{conv_id}/messages", response_model=SendResponse)
 async def send_message(
-    conv_id: int,
+    conv_id: DbId,
     body: SendMessageRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     redis: Annotated[Redis, Depends(get_redis)],
@@ -313,8 +320,8 @@ async def send_message(
 
 @router.patch("/{conv_id}/messages/{mid}", response_model=MessageOut)
 async def edit_message(
-    conv_id: int,
-    mid: int,
+    conv_id: DbId,
+    mid: DbId,
     body: EditMessageRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     redis: Annotated[Redis, Depends(get_redis)],
@@ -339,8 +346,8 @@ async def edit_message(
 
 @router.delete("/{conv_id}/messages/{mid}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_message(
-    conv_id: int,
-    mid: int,
+    conv_id: DbId,
+    mid: DbId,
     session: Annotated[AsyncSession, Depends(get_session)],
     redis: Annotated[Redis, Depends(get_redis)],
     me: CurrentUser,
@@ -360,7 +367,7 @@ async def delete_message(
 
 @router.post("/{conv_id}/read", status_code=status.HTTP_204_NO_CONTENT)
 async def mark_read(
-    conv_id: int,
+    conv_id: DbId,
     body: ReadRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     redis: Annotated[Redis, Depends(get_redis)],

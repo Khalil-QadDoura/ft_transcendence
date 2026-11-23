@@ -10,8 +10,15 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.conversations.models import Conversation, ConversationParticipant, Message
+from app.users.models import User
 
 # ── Conversations ─────────────────────────────────────────────────────────────
+
+
+async def is_active_user(session: AsyncSession, user_id: int) -> bool:
+    """True when this user exists and is not deleted (BE-13)."""
+    query = select(User.id).where(User.id == user_id, User.status == "active")
+    return await session.scalar(query) is not None
 
 
 async def create_conversation(
