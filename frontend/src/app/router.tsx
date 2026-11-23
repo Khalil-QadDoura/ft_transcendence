@@ -19,6 +19,7 @@ import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
 import { ComponentPreview } from "../features/dev/ComponentPreview";
 import { MyApplicationsPage } from "../features/applications/MyApplicationsPage";
+import { EmployerApplicationsPage } from "../features/applications/EmployerApplicationsPage";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
 import { GameLobbyPage } from "../features/game/GameLobbyPage";
@@ -103,6 +104,14 @@ export const routes: RouteObject[] = [
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
           { path: "applications", element: <MyApplicationsPage /> },
+          {
+            path: "employer/jobs/:id/applications",
+            element: <EmployerApplicationsPage />,
+          },
+          {
+            path: "my-jobs/:id/applications",
+            element: <EmployerApplicationsPage />,
+          },
           { path: "game", element: <GameLobbyPage /> },
           ...pages([
             ["friends", "routes.friends"],
