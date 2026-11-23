@@ -1,5 +1,6 @@
 import { PublicProfile } from "../features/people/PublicProfile";
 import { ProfilePage } from "../features/profile/ProfilePage";
+import { CompanyPage } from "../features/companies/CompanyPage";
 import { useText } from "../i18n/useText";
 import {
   ForgotPassword,
@@ -20,6 +21,7 @@ import { ComponentPreview } from "../features/dev/ComponentPreview";
 import { MyApplicationsPage } from "../features/applications/MyApplicationsPage";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
+import { GameLobbyPage } from "../features/game/GameLobbyPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
 import { StatusPage } from "../features/status/StatusPage";
 import { GameRulesPage } from "../features/game/rules/GameRulesPage";
@@ -97,13 +99,14 @@ export const routes: RouteObject[] = [
         children: [
           { path: "settings", element: <AccountSettings /> },
           { path: "profile", element: <ProfilePage /> },
+          { path: "company", element: <CompanyPage /> },
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
           { path: "applications", element: <MyApplicationsPage /> },
+          { path: "game", element: <GameLobbyPage /> },
           ...pages([
             ["friends", "routes.friends"],
             ["employer/*", "routes.employer"],
-            ["game", "routes.game"],
             ["game/rooms/:id", "routes.room"],
           ]),
           { path: "chat", element: <ConversationsPage /> },

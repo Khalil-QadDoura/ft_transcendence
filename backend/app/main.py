@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 import structlog
 from fastapi import APIRouter, Depends, FastAPI
 
+from app.applications import routes as applications
 from app.auth import routes as auth
 from app.companies import routes as companies
 from app.conversations import routes as conversations
@@ -105,6 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(companies.router)
     api.include_router(conversations.router)
     api.include_router(jobs.router)
+    api.include_router(applications.router)
     api.include_router(game.router)
     api.include_router(realtime.router)  # POST /api/ws/ticket
     api.include_router(media.router)

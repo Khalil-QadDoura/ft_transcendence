@@ -152,17 +152,15 @@ services:
     restart: unless-stopped
     logging: *logging
 
-  # Celery worker + beat for video moderation. The Celery app exists since BE-07
-  # (backend/app/worker/celery_app.py), but there is no task to run until BE-29 adds the
-  # moderation task, so the service is off by default and starts only with `--profile worker`.
-  # No health check until it runs by default (INF-07 exemption); then it gets one, e.g.
-  # `celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME`.
+  # Celery worker + beat for video moderation (BE-29 / M9). Runs on the worker stage
+  # (runtime plus ffmpeg/ffprobe) as uid 10001; beat state lives in /tmp because /app is
+  # root-owned. Writes worker:heartbeat in Redis on startup and every 20 s (TTL 60 s), which
+  # both this health check and GET /api/health inspect.
   worker:
-    profiles: ["worker"]
     build:
       context: ./backend
-      target: runtime
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "-B", "--loglevel=INFO"]
+      target: worker
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-B", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO"]
     environment:
       <<: *backend-env
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -172,6 +170,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import os, redis, sys; r = redis.Redis.from_url(os.environ['REDIS_URL'], socket_timeout=2); sys.exit(0 if r.get('worker:heartbeat') else 1)"]
     restart: unless-stopped
     logging: *logging
 

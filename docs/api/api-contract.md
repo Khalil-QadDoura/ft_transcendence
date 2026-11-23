@@ -130,19 +130,20 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 | GET | `/jobs/mine` | Bearer (employer) | — | 200 `JobOut[]` with `views_count`, `applications_count`, `new_applications_count` | 404 no company |
 | GET | `/jobs/open` | — | query below | 200 `{items: JobOut[], next_cursor}` | 422 (nearest without lat/lng falls back to newest; cursor must be a visible open job) |
 | GET | `/jobs/{id}` | optional | — | 200 `JobOut` (non-open only for the owner) | 404, 422 id under 1 or too large |
-| POST | `/jobs/{id}/view` | optional | — | 204 (counted once per user per 24 h) | — |
-| POST | `/jobs/{id}/apply` | Bearer | `{cover_note? ≤ 1000}` | 201 `ApplicationOut` | 422 `{code: profile_incomplete or no_video, next_step}`, 403 own job, 404, 409 duplicate |
-| GET | `/applications/mine` | Bearer | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | — |
-| GET | `/applications/{id}` | Bearer (applicant or job owner) | — | 200 `ApplicationOut` | 403, 404 |
-| DELETE | `/applications/{id}` | Bearer (applicant) | — | 204 → `withdrawn` | 404, 409 |
-| GET | `/jobs/{id}/applications` | Bearer (job owner) | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 403, 404 |
-| PATCH | `/applications/{id}/status` | Bearer (job owner) | `{status, note? ≤ 500}` | 200 `ApplicationOut` | 403, 409 transition not allowed |
+| POST | `/jobs/{id}/view` | optional | — | 204 (counted once per viewer per 24 h on `open` jobs; draft is a 204 no-op) | 404, 422 |
+| POST | `/jobs/{id}/apply` | Bearer | `{cover_note? ≤ 1000}` (optional body) | 201 `ApplicationOut` + WS `application_created` to employer | 422 `{code: profile_incomplete or no_video, next_step}`, 403 own job, 404, 409 duplicate |
+| GET | `/applications/mine` | Bearer | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 422 |
+| GET | `/applications/{id}` | Bearer (applicant or job owner) | — | 200 `ApplicationOut` | 403, 404, 422 |
+| DELETE | `/applications/{id}` | Bearer (applicant) | — | 204 → `withdrawn` + WS `application_updated` to employer | 404, 409, 422 |
+| GET | `/jobs/{id}/applications` | Bearer (job owner) | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 403, 404, 422 |
+| PATCH | `/applications/{id}/status` | Bearer (job owner) | `{status, note? ≤ 500}` | 200 `ApplicationOut` + WS `application_updated` to applicant | 403, 404, 409 transition not allowed, 422 |
 
 **`GET /jobs/open` query:** `lat`, `lng`, `radius_km` (≤ 500; all three for radius), `schedule` (`full_time`, `part_time`, `internship`), `salary_min`, `salary_max`, `urgency` (`normal`, `urgent`, `hot`), `keyword` (full-text), `position` (title contains), `sort_by` (`newest` default, `nearest` needs lat/lng), `cursor`, `limit` 1–100 (default 20).
 
 - `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
 - `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, company_logo_url, views_count, applications_count, new_applications_count, distance_km, created_by_id, updated_by_id, created_at, updated_at}` (`company_logo_url` from `Storage.logo_url`, `distance_km` populated by `GET /jobs/open` when `lat` and `lng` are given, BE-26).
-- `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at}`.
+- `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at, job_title, company_name, applicant_first_name, applicant_last_name, applicant_position, applicant_avatar_url, intro_video_url}` (BE-28; `intro_video_url` is a short-lived signed GET link when the video is not deleted).
+- **Application state machine (BE-28):** only `open` jobs of active companies accept applications. Employer transitions via `PATCH /applications/{id}/status`: `submitted → viewed | shortlisted | rejected`, `viewed → shortlisted | rejected`, `shortlisted → contacted | hired | rejected`, `contacted → hired | rejected` (moving to `contacted` atomically creates or reuses a direct conversation linked to the job and application; moving to `viewed` records `viewed_at`). Applicant withdrawal via `DELETE /applications/{id}`: `submitted | viewed | shortlisted | contacted → withdrawn`. Any other move returns `409`. Every creation and transition writes an `application_events` row and pushes a live WebSocket event to the other side.
 - `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, logo_url, status, country, city, district, country_code, created_at, updated_at}`. `logo_url` (new backend, BE-08): the logo's public address, or `null` without a logo (see Media).
 
 ## Media
@@ -153,7 +154,7 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 | --- | --- | --- | --- | --- | --- |
 | POST | `/media/intro-video/upload-url` | Bearer | `{content_type: "video/mp4", ext: "mp4", expires_sec 60–3600}` | 200 `{object_key, put_url, get_url, expires_sec, max_bytes}` | 415 not mp4 (`content_type` or `ext`), 422 `expires_sec` |
 | POST | `/media/intro-video/confirm` | Bearer | `{object_key, duration_sec 1–30, size_bytes ≤ 52428800, content_type: "video/mp4"}` | 201 `{id, moderation_status: pending, lifecycle_status: loaded}` | 400 key not yours or no file uploaded there, 409 3 videos already / already confirmed, 413 the stored file is over 50 MiB, 415 the stored file is not an MP4, 422 |
-| GET | `/media/intro-video/mine` | Bearer | query `expires_sec` | 200 `{items: [{id, object_key, duration_sec, size_bytes, content_type, moderation_status, lifecycle_status, created_at, updated_at, signed_url, expires_sec}]}`, not the deleted ones, newest first | 422 `expires_sec` |
+| GET | `/media/intro-video/mine` | Bearer | query `expires_sec` | 200 `{items: [{id, object_key, duration_sec, size_bytes, content_type, moderation_status, rejected_reason, lifecycle_status, created_at, updated_at, signed_url, expires_sec}]}`, not the deleted ones, newest first | 422 `expires_sec` |
 | POST | `/media/intro-video/{id}/post` | Bearer | — | 200 `{id, moderation_status, lifecycle_status}`; previous posted video becomes `unposted` | 404 not mine / deleted, 409 not approved / already posted, 422 `id` under 1 or too large |
 | POST | `/media/intro-video/{id}/unpost` | Bearer | — | 200 same shape | 404, 409 not posted, 422 `id` under 1 or too large |
 | POST | `/media/intro-video/{id}/delete` | Bearer | — | 200 same shape (soft delete) | 404 not mine / already deleted, 422 `id` under 1 or too large |
@@ -164,7 +165,7 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 | POST | `/media/company-logo/upload-url` | Bearer (employer) | same query as the avatar | 200 same shape | 404 no company, 415, 422 |
 | POST | `/media/company-logo/confirm` | Bearer (employer) | `{object_key}` | 204; `GET /companies/me` then gives the new `logo_url` | 404 no company, 400, 413, 415, 422 |
 
-- Statuses: moderation `pending → approved | rejected` (+ `moderation_error` once fixed); lifecycle `loaded → posted ⇄ unposted`, any → `deleted`. Poll `/media/intro-video/mine` while a video is `pending` (or listen for a WS event once added).
+- Statuses: moderation `pending → approved | rejected | moderation_error`; lifecycle `loaded → posted ⇄ unposted`, any → `deleted`. When moderation succeeds (`approved`), a video in `loaded` status is automatically published (`lifecycle_status = posted`), and any previously posted video by the user is automatically set to `unposted`. The client receives a real-time WebSocket push event `video_moderated` with `{id, moderation_status, lifecycle_status, rejected_reason}` (clients may also poll `GET /media/intro-video/mine`). Rejected or error reasons include: duration limit exceeded (`Video exceeds maximum duration of 30 seconds`), `Processing failed` (e.g. ffprobe/ffmpeg extraction failure or zero frames), `Moderation API error`, `Transcription API error` (when `MODERATION_FAIL_OPEN=false`), `OpenAI API key not configured`, `Download failed`, or comma-separated OpenAI flagged categories (e.g. `harassment, violence`).
 - The browser PUT to `put_url` is a plain PUT of the file bytes to `https://<host>/files/<object_key>?X-Amz-…`. That is the frontend's own origin, so no CORS is involved (INF-04, Infrastructure doc). Use XHR or fetch with upload progress for the progress bar.
 - With `job_id`, the employer feed lists that job's applicants first, then candidates whose position matches the job title, then everyone else.
 - Avatar and logo: the reference returns only `avatar_object_key` / `logo_object_key`, which the frontend cannot turn into a URL; the new backend returns `avatar_url` (BE-08, below).
@@ -196,8 +197,9 @@ Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/g
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued", room_id}` | 409 already in active room |
+| POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued", room_id}` | 409 already in a room that has started (`discussion` or `voting`): `GET /game/rooms/active` names it |
 | DELETE | `/game/queue/leave` | Bearer | — | 204 | — |
+| GET | `/game/rooms/active` | Bearer | — | 200 the shape of `GET /game/rooms/{id}` for my own room while it is `waiting`, `discussion` or `voting`; 200 `null` when I have none (BE-09 follow-up) | — |
 | GET | `/game/rooms/{id}` | Bearer (participant) | — | 200 `{id, state, target_size, participant_count, my_participant_id, room_expires_at, phase_ends_at, participants: [{id, display_label, is_you}]}` | 403, 404 |
 | GET | `/game/rooms/{id}/messages` | Bearer (participant) | query `before_id`, `limit` (1–100, default 50) | 200 `{items: [{id, participant_id, display_label, text}] oldest→newest, prev_before_id}`: the room chat, `participant_id` = label number 1–5 (BE-09) | 403 not a participant, 404, 422 |
 | POST | `/game/rooms/{id}/start` | Bearer (participant) | — | 200 `RoomOut` (starts waiting room at 2–4 participants; idempotent if already `discussion`) | 403, 404, 409 outside 2–4 participants or wrong state |
@@ -205,6 +207,8 @@ Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/g
 | GET | `/game/rooms/{id}/results` | Bearer (participant) | — | 200 `{room_id, state: "finished", my_participant_id, winner_participant_ids, is_draw, participants: [{participant_id, display_label, is_bot, score, outcome, deception_rate}]}` (BE-10) | 403, 404, 409 not finished |
 
 Room states (BE-27): `waiting (180 s max) → discussion (120 s) → voting (45 s) → finished`, or `closed` if timer expires with 1 participant or the last human leaves `waiting`. Every participant payload before results exposes only `{id, display_label, is_you}` identically for humans and bots, where `id` and `my_participant_id` are the participant's stable room label number (1–5, e.g. 2 for "Player 2"), never database participant ids (BE-35).
+
+**My room (BE-09 follow-up).** `GET /game/rooms/active` answers with the room I am in while it is `waiting`, `discussion` or `voting`, and `null` once it is `finished` or `closed`, or after I left it while it was waiting. It is never another user's room, and it has the same fields, label numbers and missing bot flag as `GET /game/rooms/{id}`. No room is a 200 with `null`, not a 404, so the browser console stays clean (as `GET /companies/me`). The lobby asks it before `POST /game/queue/join`: a room in `discussion` or `voting` means the match is running, so it opens `/game/rooms/{id}` instead of joining. A 409 from join (a match that started in another tab in between) is followed by the same call.
 
 **Votes and results (BE-10).** Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5 to 7.
 
@@ -257,6 +261,9 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `message_deleted` | `{id, conversation_id}` | Author soft-deleted a message (BE-24) |
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
+| server → client | `application_created` | `ApplicationOut` | Candidate applied to one of the employer's jobs (BE-28) |
+| server → client | `application_updated` | `ApplicationOut` | Employer updated an application status (sent to applicant) or applicant withdrew (sent to employer) (BE-28) |
+| server → client | `video_moderated` | `{id, moderation_status, lifecycle_status, rejected_reason}` | Moderation worker finished or errored on one of my intro videos (BE-29) |
 | server → client | `game_room_formed` | `{room_id}` | Matchmaking put me in a room |
 | server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room (`participant.id` is label number 1–5, BE-35) |
 | server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room (`participant.id` is label number 1–5, BE-35) |
@@ -293,9 +300,10 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
 | \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
 | \[x\] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` (BE-06) | Access tokens no longer in URLs and logs |
-| \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` (`presence` is sent since BE-06) | Live edits, online dots, no polling for moderation |
-| \[x\] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
+| [x] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status, lifecycle_status, rejected_reason}` (`presence` since BE-06, `message_*` since BE-24, `video_moderated` since BE-29) | Live edits, online dots, no polling for moderation |
+| [x] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
+| \[x\] | Game: `GET /api/game/rooms/active` → my room while it is `waiting`, `discussion` or `voting` (the shape of `GET /game/rooms/{id}`), else 200 `null` | The lobby sends a player back to a running match, without a 409 or a 404 in the console (BE-09 follow-up) |
 | \[x\] | Game votes: `POST /game/rooms/{id}/votes` `{target_participant_id, guess}` names its target by label number (1–5): the same number as `participants[].id` and `my_participant_id` in the room state, never the database participant id. A vote request replaces the voter's mark for that target: it is idempotent and allowed any number of times until voting ends, so there is no "already voted" error. A target without a mark counts as `human`; `my_votes` in `game_snapshot` lists the saved marks the same way. Answer and errors: the Game table (BE-10). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5, 6 and 9 | Marks preset to human and changeable until voting ends; no database ids before results (DOC-08 follow-up, BE-10) |
 | [x] | Game payloads before the results name each participant by its label number (1–5, "Player N"), the same field as in the votes row above, never by the database participant id: `GET /game/rooms/{id}` (`my_participant_id` and `participants[].id`), `game_participant_joined` and `game_participant_left` (`participant.id`), and `game_message` (`participant_id`). `display_label` stays. `GET /game/rooms/{id}/results` uses the same label numbers (BE-10), so no database participant id reaches a client. BE-35 (Nader, new card: hide database participant ids from game payloads before results) owns the REST room state and the room events; BE-09 owns `game_message` on `/ws/game`. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), section 9 | No database ids before results, so ids cannot hint at join order or at bots (DOC-08 follow-up, BE-35, BE-09) |
 | \[x\] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
