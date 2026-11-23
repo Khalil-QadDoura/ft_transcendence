@@ -4,13 +4,16 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app.auth.constants import PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH
+from app.auth.constants import PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, TOKEN_MAX_LENGTH
 
 # A valid email address, in lower case: Ana@Example.com and ana@example.com are one account.
 Email = Annotated[EmailStr, AfterValidator(str.lower)]
 
 # A new password, on a change or a reset: the same rule as at sign-up (RegisterIn).
 NewPassword = Annotated[str, Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)]
+
+# A token that the client sends back to us (refresh, reset link, verification link).
+Token = Annotated[str, Field(max_length=TOKEN_MAX_LENGTH)]
 
 
 class RegisterIn(BaseModel):
@@ -42,7 +45,7 @@ class TokenPairOut(BaseModel):
 
 
 class RefreshIn(BaseModel):
-    refresh_token: str
+    refresh_token: Token
 
 
 class LogoutIn(BaseModel):
@@ -61,7 +64,7 @@ class ForgotPasswordIn(BaseModel):
 
 
 class ResetPasswordIn(BaseModel):
-    token: str  # from the email's link: <FRONTEND_BASE_URL>/reset-password?token=...
+    token: Token  # from the email's link: <FRONTEND_BASE_URL>/reset-password?token=...
     new_password: NewPassword
 
 

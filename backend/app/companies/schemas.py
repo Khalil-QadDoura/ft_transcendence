@@ -70,7 +70,8 @@ _VALID_COUNTRY_CODES = {
 
 class CompanyBase(BaseModel):
     name: str | None = Field(default=None, max_length=150)
-    description: str | None = None
+    # A TEXT column has no size of its own; this keeps one company from filling it (BE-13).
+    description: str | None = Field(default=None, max_length=2000)
     country: str | None = Field(default=None, max_length=100)
     city: str | None = Field(default=None, max_length=100)
     district: str | None = Field(default=None, max_length=100)

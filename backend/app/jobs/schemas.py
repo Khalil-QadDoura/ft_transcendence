@@ -14,7 +14,8 @@ JobUrgency = Literal["normal", "urgent", "hot"]
 JobSortBy = Literal["newest", "nearest"]
 
 JobTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-JobDescription = Annotated[str, StringConstraints(strip_whitespace=True)]
+# The column is TEXT (no size); 5000 characters keeps one job from filling the database (BE-13).
+JobDescription = Annotated[str, StringConstraints(strip_whitespace=True, max_length=5000)]
 JobLocation = Annotated[str, StringConstraints(strip_whitespace=True, max_length=150)]
 Latitude = Annotated[float, Field(ge=-90.0, le=90.0, allow_inf_nan=False)]
 Longitude = Annotated[float, Field(ge=-180.0, le=180.0, allow_inf_nan=False)]
