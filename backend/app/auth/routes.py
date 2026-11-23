@@ -11,17 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import oauth42, service
 from app.auth.constants import (
-    CHANGE_PASSWORD_RATE_LIMIT,
-    FORGOT_PASSWORD_RATE_LIMIT,
-    LOGIN_RATE_LIMIT,
     OAUTH_CALLBACK_PATH,
     OAUTH_FRONTEND_PATH,
-    OAUTH_START_RATE_LIMIT,
     OAUTH_STATE_COOKIE,
     OAUTH_STATE_LIFETIME,
-    REFRESH_RATE_LIMIT,
-    REGISTER_RATE_LIMIT,
-    RESET_PASSWORD_RATE_LIMIT,
 )
 from app.auth.deps import CurrentUser
 from app.auth.schemas import (
@@ -37,6 +30,15 @@ from app.auth.schemas import (
     VerifyOut,
 )
 from app.core.limiter import limiter
+from app.core.limits import (
+    CHANGE_PASSWORD_RATE_LIMIT,
+    FORGOT_PASSWORD_RATE_LIMIT,
+    LOGIN_RATE_LIMIT,
+    OAUTH_START_RATE_LIMIT,
+    REFRESH_RATE_LIMIT,
+    REGISTER_RATE_LIMIT,
+    RESET_PASSWORD_RATE_LIMIT,
+)
 from app.core.mailer import Mailer, get_mailer
 from app.core.redis_client import get_redis
 from app.db.session import get_session

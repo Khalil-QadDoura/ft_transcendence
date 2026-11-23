@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException
 
+from app.core.limiter import seconds_to_wait
+
 
 def error_response(
     status: int, detail: object, headers: dict[str, str] | None = None
@@ -30,7 +32,11 @@ async def validation_error(request: Request, exc: RequestValidationError) -> JSO
 
 
 async def rate_limited(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    return error_response(429, f"Rate limit exceeded: {exc.detail}")
+    """A login or sign-up limit (@limiter.limit) is used up. The write limits of every other
+    route answer the same body and header from core/limiter.py, as an HTTPException."""
+    item, identifiers = request.state.view_rate_limit  # what slowapi just counted
+    headers = {"Retry-After": str(seconds_to_wait(item, *identifiers))}
+    return error_response(429, f"Rate limit exceeded: {exc.detail}", headers)
 
 
 async def server_error(request: Request, exc: Exception) -> JSONResponse:

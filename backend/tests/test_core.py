@@ -110,6 +110,7 @@ def test_rate_limiter_returns_429_with_the_error_body(client):
     assert response.json() == {
         "error": {"code": "429", "detail": "Rate limit exceeded: 2 per 1 minute"}
     }
+    assert 1 <= int(response.headers["retry-after"]) <= 60  # seconds until the count restarts
 
 
 def test_rate_limits_count_each_client_ip_separately(client):

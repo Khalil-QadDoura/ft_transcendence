@@ -14,7 +14,7 @@ from app.conversations import routes as conversations
 from app.core.config import Settings, get_settings
 from app.core.errors import add_error_handlers
 from app.core.internal import require_internal_key
-from app.core.limiter import limiter
+from app.core.limiter import limit_writes, limiter
 from app.core.logging import configure_logging
 from app.core.metrics import setup_metrics
 from app.core.queue import TaskQueue
@@ -96,7 +96,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.middleware("http")(request_id_middleware)
 
     # Public API: every router goes under /api. WebSockets live under /ws.
-    api = APIRouter(prefix="/api")
+    # limit_writes: every write route under /api gets a rate limit, those added later too.
+    api = APIRouter(prefix="/api", dependencies=[Depends(limit_writes)])
     api.include_router(health.router)
     api.include_router(auth.router)
     api.include_router(users.router)

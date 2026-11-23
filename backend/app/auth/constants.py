@@ -20,15 +20,6 @@ EMAIL_VERIFY_SCOPE = "email_verify"
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
 
-# Requests allowed per client IP (api-contract.md, "Rate limit").
-REGISTER_RATE_LIMIT = "5/minute"
-LOGIN_RATE_LIMIT = "10/minute"
-REFRESH_RATE_LIMIT = "20/minute"
-CHANGE_PASSWORD_RATE_LIMIT = "5/minute"
-FORGOT_PASSWORD_RATE_LIMIT = "3/minute"
-RESET_PASSWORD_RATE_LIMIT = "5/minute"
-OAUTH_START_RATE_LIMIT = "10/minute"  # the same as login: it is a login too
-
 # Login with 42 (BE-11).
 # Our own address that 42 sends the browser back to, after FRONTEND_BASE_URL. It must be
 # written exactly like this in the 42 intra app settings ("Redirect URI").

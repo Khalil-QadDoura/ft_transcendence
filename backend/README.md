@@ -7,7 +7,8 @@ FastAPI + SQLAlchemy 2 (async) + Alembic + Redis, Python 3.11. Every route lives
 ```
 app/
   main.py        app factory: settings, logging, middleware, error handlers, routers, lifespan
-  core/          config (env), errors, logging (JSON), limiter, request_id, internal (/_internal guard),
+  core/          config (env), errors, logging (JSON), limiter and limits (every rate limit, BE-12),
+                 request_id, internal (/_internal guard),
                  mailer (SMTP, or Brevo's API when BREVO_API_KEY is set),
                  redis_client (each app's Redis client, get_redis),
                  storage (MinIO: signed links, file checks, public picture addresses),
@@ -19,7 +20,7 @@ app/
                  and the internal database check (BE-31)
   auth/          /api/auth: register, verify, login, refresh, logout (BE-03), change-password,
                  forgot-password, reset-password (BE-04), oauth/42/start and oauth/42/callback
-                 (BE-11), plus constants (lifetimes, rate limits), security (Argon2id, JWT, reset
+                 (BE-11), plus constants (lifetimes, OAuth), security (Argon2id, JWT, reset
                  tokens, OAuth state), deps (get_current_user), oauth42 (the 42 intra API client)
   users/         /api/users/me: read, partial update, soft delete (BE-05), avatar_url (BE-08),
                  plus constants (minimum age, field lengths)
@@ -111,8 +112,8 @@ bucket and give it the anonymous policy of `minio-init` (download under `avatars
 
 - **Errors** always look like `{"error": {"code": "<status>", "detail": ...}}`. Raise `HTTPException(status_code, detail)`; validation errors report only the first failing field, e.g. `"body → email: Field required"`.
 - **Request id**: every response has an `x-request-id` header, and every log line of that request carries the same `request_id`.
-- **Rate limits** are opt-in per route: `@limiter.limit("5/minute")` from `app.core.limiter`, with a `request: Request` argument on the route. Limits count per client IP, taken from the `X-Real-IP` header the proxy sets (the direct connection's IP when there is no proxy). Over the limit → 429 with the error body.
-- **Login check**: a route that needs a logged-in user takes `user: CurrentUser` (from `app.auth.deps`). It answers 401 when the `Authorization: Bearer` token is missing, wrong, expired, or older than the user's `token_version`. Token lifetimes and the auth rate limits are in `app/auth/constants.py`.
+- **Rate limits** (numbers in `app/core/limits.py`): every POST, PUT, PATCH and DELETE under `/api` is limited without a word from the route (`limit_writes` on the `/api` router): per route, per user with a valid access token, else per client IP. A route gets its own number with one line in `ROUTE_RATE_LIMITS`. Login and sign-up also count per IP with `@limiter.limit(LOGIN_RATE_LIMIT)` and a `request: Request` argument on the route. The client IP comes from the `X-Real-IP` header the proxy sets (the direct connection's IP when there is no proxy). Over a limit → 429 with the error body and `Retry-After`.
+- **Login check**: a route that needs a logged-in user takes `user: CurrentUser` (from `app.auth.deps`). It answers 401 when the `Authorization: Bearer` token is missing, wrong, expired, or older than the user's `token_version`. Token lifetimes are in `app/auth/constants.py`, the auth rate limits in `app/core/limits.py`.
 - **Answers**: a route returns its `...Out` schema, e.g. `VideoStatusOut.model_validate(video)` or `users.service.to_user_out(storage, user)`, never the table model, so only the fields listed in the schema leave the server (never `password_hash` or `token_version`).
 - **Partial updates (PATCH)**: every field of the request schema has a default and the schema has `extra="forbid"`; the service applies only `data.model_dump(exclude_unset=True)`. A field that is not sent keeps its value, and an unknown field gets 422 (see `app/users/`).
 - **Email**: a route takes `mailer: Annotated[Mailer, Depends(get_mailer)]` and sends with `background.add_task(mailer.send, to, subject, body)`, so the answer does not wait for the mail server; a failed send is logged. Tests replace `get_mailer` with a fake; the `smtp_server` fixture in `tests/conftest.py` is a real SMTP server for tests that send through the real mailer. Locally, emails land in Mailpit (INF-05) at `https://localhost/mail`.
