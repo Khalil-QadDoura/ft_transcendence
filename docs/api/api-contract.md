@@ -12,7 +12,7 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 | --- | --- |
 | Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind the nginx + ModSecurity front proxy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
 | Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. A missing, invalid or expired token, or one made before a password change (`token_version`), gets 401 with `WWW-Authenticate: Bearer`. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
-| Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
+| Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). A NUL character (`\u0000` in JSON, `%00` in a query) anywhere in the query or the JSON body of a route under `/api` is 422 too, e.g. `"body → bio: Text cannot contain the NUL character (\u0000)"`: PostgreSQL cannot store it (BE-13). Unexpected errors: 500, detail `"Internal server error"` |
 | Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
 | Rate limit | 429 with the same error body, detail `"Rate limit exceeded: <n> per 1 minute"`, and a `Retry-After` header (seconds until the count starts again). Login and sign-up count per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min, login with 42 (`/auth/oauth/42/start`) 10/min. Every write (POST, PUT, PATCH, DELETE) under `/api` also counts per route: per user with a valid access token, else per IP; 60/min, or the route's own number in the table below (BE-12). Reads (GET) are never limited. All numbers live in `backend/app/core/limits.py` |
 | Pagination | Request `cursor` (id of the last item seen) + `limit`; response `{items: [...], next_cursor: id or null}`. Messages use `before_id` → `prev_before_id` (older pages) |
@@ -39,15 +39,15 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
 | POST | `/auth/register` | — | `{email, password}` password 8–128 | 202 `{message}`; the verification email is sent after the answer | 409 email already verified, 422, 429 |
-| GET | `/auth/verify` | — | query `token` | 200 `{verified, email, updated}` | 400 invalid, expired, or replaced by a newer link |
+| GET | `/auth/verify` | — | query `token` ≤ 1000 | 200 `{verified, email, updated}` | 400 invalid, expired, or replaced by a newer link |
 | POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials (same answer for an unknown email), 403 email not verified, 429 |
-| POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
+| POST | `/auth/refresh` | — | `{refresh_token ≤ 1000}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
 | POST | `/auth/logout` | — | `{refresh_token}` (optional) | 204 always, even with no token or a bad one | — |
 | POST | `/auth/change-password` | Bearer | `{current_password, new_password}` new password 8–128 | 204; all tokens revoked | 400 wrong current password, 401, 422, 429 |
 | POST | `/auth/forgot-password` | — | `{email}` | 202 `{message}` always, whether the email has an account or not | 422 not an email, 429 |
-| POST | `/auth/reset-password` | — | `{token, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
+| POST | `/auth/reset-password` | — | `{token ≤ 1000, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
 | GET | `/auth/oauth/42/start` | — | — (the "Log in with 42" link opens it) | 302 to 42's login page, with a new `state`; sets the `oauth42_state` cookie | 503 login with 42 is not set up (no `FT_CLIENT_ID` or `FT_CLIENT_SECRET`), 429 |
-| GET | `/auth/oauth/42/callback` | — | query `code` and `state` from 42 (or `error`); the `oauth42_state` cookie | 302 to `<FRONTEND_BASE_URL>/oauth/callback#access_token=…&refresh_token=…&token_type=bearer` | always a 302 to the same page with `#error=<reason>` (see below), never a JSON error |
+| GET | `/auth/oauth/42/callback` | — | query `code` and `state` from 42 (or `error`); the `oauth42_state` cookie | 302 to `<FRONTEND_BASE_URL>/oauth/callback#access_token=…&refresh_token=…&token_type=bearer` | always a 302 to the same page with `#error=<reason>` (see below), never a JSON error (except the NUL 422 of the Conventions, for an address with `%00`) |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
 | PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
 | DELETE | `/users/me` | Bearer | — | 204 (soft delete; the user's company is soft-deleted too) | 401 |
@@ -96,7 +96,7 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | DELETE | `/friends/{id}` | Bearer | — | 204 | 403, 404 |
 | GET | `/friends` | Bearer | — | 200 `[{friendship_id, user_id, first_name, last_name, position, avatar_object_key, avatar_url, is_online}]` | — |
 | GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, avatar_url, is_online, friendship_status, friendship_id}` | 404 |
-| POST | `/conversations` | Bearer | `{type: "direct", peer_user_id, job_id?}` | 201 `ConversationOut` (existing one if the pair already has a chat) | 400 no peer, 403 job not yours |
+| POST | `/conversations` | Bearer | `{type: "direct", peer_user_id, job_id?}` | 201 `ConversationOut` (existing one if the pair already has a chat) | 400 no peer, 403 job not yours, 404 `"User not found"` (no such user, or a deleted one; BE-13) |
 | GET | `/conversations` | Bearer | query `limit` ≤ 100 | 200 `ConversationOut[]`, newest first | — |
 | GET | `/conversations/unread` | Bearer | — | 200 `{total_unread}` | — |
 | GET | `/conversations/{id}` | Bearer | — | 200 `ConversationOut` | 404 |
@@ -111,7 +111,8 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403, 404 |
 
 - `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`; `friendship_id`: `int | null` pointing to the friendship row when a relationship exists.
-- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at, peer}`. For direct conversations (`type: "direct"`), `peer` is `{id, first_name, last_name, display_name, avatar_url}` representing the other participant; `peer` is `null` for non-direct chats.
+- Every id of these routes (in the path, `before_id`, and `peer_user_id`, `job_id`, `reply_to_id`, `last_message_id`, `user_id` in a body) is 1 to 2^63−1 (BIGINT), else 422 (BE-13).
+- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at, peer}`. `last_message_content` and `last_message_author_id` are `null` when the last message was deleted (BE-13). For direct conversations (`type: "direct"`), `peer` is `{id, first_name, last_name, display_name, avatar_url}` representing the other participant; `peer` is `null` for non-direct chats.
 - `MessageOut` = `{id, conversation_id, author_id, content, status (sent / delivered / read), message_type, reply_to_id, idempotency_key, edited_at, deleted_at, created_at}`.
 
 ## Companies, jobs and applications
@@ -120,7 +121,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/companies` | Bearer | `{name, description?, country?, city?, district?}` | 201 `CompanyOut` | 409 already has one |
+| POST | `/companies` | Bearer | `{name, description? ≤ 2000, country?, city?, district?}` | 201 `CompanyOut` | 409 already has one |
 | GET | `/companies/me` | Bearer | — | 200 `CompanyOut` or `null` | — |
 | PATCH | `/companies/me` | Bearer | `{name, country, city, district?, country_code?}` | 200 `CompanyOut` | 404, 422 |
 | DELETE | `/companies` | Bearer | — | 204 (soft, idempotent; the logo file is deleted, BE-08) | — |
@@ -140,7 +141,7 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 
 **`GET /jobs/open` query:** `lat`, `lng`, `radius_km` (≤ 500; all three for radius), `schedule` (`full_time`, `part_time`, `internship`), `salary_min`, `salary_max`, `urgency` (`normal`, `urgent`, `hot`), `keyword` (full-text), `position` (title contains), `sort_by` (`newest` default, `nearest` needs lat/lng), `cursor`, `limit` 1–100 (default 20).
 
-- `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
+- `JobCreate` = `{title 1–200, description ≤ 5000, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
 - `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, company_logo_url, views_count, applications_count, new_applications_count, distance_km, created_by_id, updated_by_id, created_at, updated_at}` (`company_logo_url` from `Storage.logo_url`, `distance_km` populated by `GET /jobs/open` when `lat` and `lng` are given, BE-26).
 - `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at, job_title, company_name, applicant_first_name, applicant_last_name, applicant_position, applicant_avatar_url, intro_video_url}` (BE-28; `intro_video_url` is a short-lived signed GET link when the video is not deleted).
 - **Application state machine (BE-28):** only `open` jobs of active companies accept applications. Employer transitions via `PATCH /applications/{id}/status`: `submitted → viewed | shortlisted | rejected`, `viewed → shortlisted | rejected`, `shortlisted → contacted | hired | rejected`, `contacted → hired | rejected` (moving to `contacted` atomically creates or reuses a direct conversation linked to the job and application; moving to `viewed` records `viewed_at`). Applicant withdrawal via `DELETE /applications/{id}`: `submitted | viewed | shortlisted | contacted → withdrawn`. Any other move returns `409`. Every creation and transition writes an `application_events` row and pushes a live WebSocket event to the other side.
@@ -274,6 +275,7 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `game_phase_finished` | `{room_id, state: "finished", phase_ends_at: null}` | Voting ended, scores stored, results ready (BE-10) |
 
 - **Unread counts in `conversation_updated`**: For the reader who emitted the read receipt, `unread_count` is their updated **total unread messages count** across all conversations (matching `GET /conversations/unread`), allowing the client to update global navigation badges directly while setting that specific conversation row's unread counter to 0. For other participants in the room, `unread_count` is `null`.
+- **Receipt ids**: an id that is not a whole number from 1 to 2^63−1 makes the frame ignored; the socket stays open (BE-13).
 - **Receipt envelopes**: Client-sent `delivered` and `read` frames are accepted both at top level (`{"type": "delivered", "message_id": 6}`) and inside a `payload` dictionary (`{"type": "delivered", "payload": {"message_id": 6}}`).
 
 **Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.

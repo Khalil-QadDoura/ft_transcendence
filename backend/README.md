@@ -95,6 +95,10 @@ docker run -d --name wozu-test-redis -p 6379:6379 redis:7-alpine
 TEST_DATABASE_URL=... TEST_REDIS_URL=redis://localhost:6379/1 pytest -q
 ```
 
+The security tests (`tests/test_security_routes.py`, `test_security_access.py`,
+`test_security_inputs.py`, BE-13) need the database and a Redis too: every route's login check,
+one user against another's data, and hostile input on every route and socket.
+
 The login with 42 tests (`tests/test_oauth42.py`) need the database and a Redis too. They never
 contact 42: each test starts a small fake 42 (an HTTP server on a free local port) and points
 `FT_AUTHORIZE_URL`, `FT_TOKEN_URL` and `FT_ME_URL` at it. They delete only the Redis keys they
@@ -111,9 +115,10 @@ bucket and give it the anonymous policy of `minio-init` (download under `avatars
 ## Conventions
 
 - **Errors** always look like `{"error": {"code": "<status>", "detail": ...}}`. Raise `HTTPException(status_code, detail)`; validation errors report only the first failing field, e.g. `"body → email: Field required"`.
+- **Text input**: a NUL character anywhere in the query or the JSON body is a 422 before the route runs (`refuse_nul` on the `/api` router, `app/core/inputs.py`), because PostgreSQL cannot store it. Every id in a path, a query or a body takes `ge=1, le=MAX_ID` (2^63−1), and every text field that is saved a `max_length`.
 - **Request id**: every response has an `x-request-id` header, and every log line of that request carries the same `request_id`.
 - **Rate limits** (numbers in `app/core/limits.py`): every POST, PUT, PATCH and DELETE under `/api` is limited without a word from the route (`limit_writes` on the `/api` router): per route, per user with a valid access token, else per client IP. A route gets its own number with one line in `ROUTE_RATE_LIMITS`. Login and sign-up also count per IP with `@limiter.limit(LOGIN_RATE_LIMIT)` and a `request: Request` argument on the route. The client IP comes from the `X-Real-IP` header the proxy sets (the direct connection's IP when there is no proxy). Over a limit → 429 with the error body and `Retry-After`.
-- **Login check**: a route that needs a logged-in user takes `user: CurrentUser` (from `app.auth.deps`). It answers 401 when the `Authorization: Bearer` token is missing, wrong, expired, or older than the user's `token_version`. Token lifetimes are in `app/auth/constants.py`, the auth rate limits in `app/core/limits.py`.
+- **Login check**: a route that needs a logged-in user takes `user: CurrentUser` (from `app.auth.deps`). It answers 401 when the `Authorization: Bearer` token is missing, wrong, expired, or older than the user's `token_version`. Token lifetimes are in `app/auth/constants.py`, the auth rate limits in `app/core/limits.py`. A route meant for visitors goes into `PUBLIC` in `tests/test_security_routes.py`, with the reason: that test fails for any route that has neither a login check nor a line there (BE-13).
 - **Answers**: a route returns its `...Out` schema, e.g. `VideoStatusOut.model_validate(video)` or `users.service.to_user_out(storage, user)`, never the table model, so only the fields listed in the schema leave the server (never `password_hash` or `token_version`).
 - **Partial updates (PATCH)**: every field of the request schema has a default and the schema has `extra="forbid"`; the service applies only `data.model_dump(exclude_unset=True)`. A field that is not sent keeps its value, and an unknown field gets 422 (see `app/users/`).
 - **Email**: a route takes `mailer: Annotated[Mailer, Depends(get_mailer)]` and sends with `background.add_task(mailer.send, to, subject, body)`, so the answer does not wait for the mail server; a failed send is logged. Tests replace `get_mailer` with a fake; the `smtp_server` fixture in `tests/conftest.py` is a real SMTP server for tests that send through the real mailer. Locally, emails land in Mailpit (INF-05) at `https://localhost/mail`.
