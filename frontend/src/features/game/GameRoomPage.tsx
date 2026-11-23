@@ -295,16 +295,23 @@ export const GameRoomPage: React.FC = () => {
   const handleVote = async (targetId: number, guess: VoteGuess) => {
     if (
       room?.state !== "voting" ||
-      (secondsLeft !== null && secondsLeft <= 0)
+      (secondsLeft !== null && secondsLeft <= 0) ||
+      savingVotes[targetId]
     ) {
       return;
     }
+    const previousGuess = votes[targetId] ?? "human";
+    if (previousGuess === guess) {
+      return;
+    }
+
     setVotes((prev) => ({ ...prev, [targetId]: guess }));
     setSavingVotes((prev) => ({ ...prev, [targetId]: true }));
     setVoteError(null);
     try {
       await gameApi.castVote(roomId, targetId, guess);
     } catch {
+      setVotes((prev) => ({ ...prev, [targetId]: previousGuess }));
       setVoteError(t("game:room.voteError"));
     } finally {
       setSavingVotes((prev) => ({ ...prev, [targetId]: false }));

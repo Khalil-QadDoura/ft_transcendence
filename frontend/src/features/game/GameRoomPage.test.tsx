@@ -441,7 +441,7 @@ test("renders draw and loss outcomes correctly in results phase", async () => {
   expect(container.textContent).toContain("50% deception rate");
 });
 
-test("shows vote error if castVote fails with 409 conflict", async () => {
+test("shows vote error and rolls back mark if castVote fails with 409 conflict", async () => {
   const room = makeDiscussionRoom({ state: "voting" });
   vi.spyOn(gameApi, "getRoom").mockResolvedValueOnce(room);
   vi.spyOn(gameApi, "castVote").mockRejectedValueOnce(
@@ -451,15 +451,62 @@ test("shows vote error if castVote fails with 409 conflict", async () => {
   await renderRoom();
 
   const votingCards = container.querySelectorAll(".game-voting-card");
+  const humanButton = votingCards[0]?.querySelectorAll(
+    ".game-btn-toggle",
+  )[0] as HTMLButtonElement;
   const botButton = votingCards[0]?.querySelectorAll(
     ".game-btn-toggle",
   )[1] as HTMLButtonElement;
+
+  expect(humanButton.classList.contains("is-active")).toBe(true);
+  expect(botButton.classList.contains("is-active")).toBe(false);
 
   await act(async () => {
     botButton.click();
   });
 
   expect(container.textContent).toContain("couldn’t save your mark");
+  // Verified rollback: mark reverted back to human
+  expect(humanButton.classList.contains("is-active")).toBe(true);
+  expect(botButton.classList.contains("is-active")).toBe(false);
+});
+
+test("guards against concurrent in-flight vote requests for the same target", async () => {
+  const room = makeDiscussionRoom({ state: "voting" });
+  vi.spyOn(gameApi, "getRoom").mockResolvedValueOnce(room);
+
+  let resolveVote!: () => void;
+  const votePromise = new Promise<void>((resolve) => {
+    resolveVote = resolve;
+  });
+  const castVoteSpy = vi
+    .spyOn(gameApi, "castVote")
+    .mockImplementation(
+      () => votePromise as unknown as ReturnType<typeof gameApi.castVote>,
+    );
+
+  await renderRoom();
+
+  const votingCards = container.querySelectorAll(".game-voting-card");
+  const botButton = votingCards[0]?.querySelectorAll(
+    ".game-btn-toggle",
+  )[1] as HTMLButtonElement;
+
+  // Click once while in-flight
+  await act(async () => {
+    botButton.click();
+  });
+  expect(castVoteSpy).toHaveBeenCalledTimes(1);
+
+  // Click second time while first request is still in-flight
+  await act(async () => {
+    botButton.click();
+  });
+  expect(castVoteSpy).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    resolveVote();
+  });
 });
 
 test("shows waiting notice and back to lobby if room is still waiting", async () => {
