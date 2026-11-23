@@ -119,7 +119,8 @@ async def list_conversations_for_user(
             peer_u.id AS peer_id,
             peer_u.first_name AS peer_first_name,
             peer_u.last_name AS peer_last_name,
-            peer_u.avatar_object_key AS peer_avatar_key
+            peer_u.avatar_object_key AS peer_avatar_key,
+            peer_u.status AS peer_status
         FROM conversations c
         JOIN conversation_participants cp
           ON cp.conversation_id = c.id AND cp.user_id = :user_id AND cp.left_at IS NULL
@@ -164,7 +165,8 @@ async def list_conversations_for_user(
             peer_u.id AS peer_id,
             peer_u.first_name AS peer_first_name,
             peer_u.last_name AS peer_last_name,
-            peer_u.avatar_object_key AS peer_avatar_key
+            peer_u.avatar_object_key AS peer_avatar_key,
+            peer_u.status AS peer_status
         FROM conversations c
         JOIN conversation_participants cp
           ON cp.conversation_id = c.id AND cp.user_id = :user_id AND cp.left_at IS NULL
@@ -212,7 +214,8 @@ async def get_conversation_for_user(
             peer_u.id AS peer_id,
             peer_u.first_name AS peer_first_name,
             peer_u.last_name AS peer_last_name,
-            peer_u.avatar_object_key AS peer_avatar_key
+            peer_u.avatar_object_key AS peer_avatar_key,
+            peer_u.status AS peer_status
         FROM conversations c
         JOIN conversation_participants cp
           ON cp.conversation_id = c.id AND cp.user_id = :user_id AND cp.left_at IS NULL
@@ -247,7 +250,8 @@ async def get_conversation_for_user(
             peer_u.id AS peer_id,
             peer_u.first_name AS peer_first_name,
             peer_u.last_name AS peer_last_name,
-            peer_u.avatar_object_key AS peer_avatar_key
+            peer_u.avatar_object_key AS peer_avatar_key,
+            peer_u.status AS peer_status
         FROM conversations c
         JOIN conversation_participants cp
           ON cp.conversation_id = c.id AND cp.user_id = :user_id AND cp.left_at IS NULL

@@ -31,6 +31,7 @@ from app.conversations.schemas import (
 from app.core.redis_client import get_redis
 from app.core.storage import Storage, get_storage
 from app.db.session import get_session
+from app.users.constants import DELETED_USER_NAME
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -53,14 +54,20 @@ def _conv_out(row: dict[str, Any], storage: Storage | None = None) -> Conversati
             storage = Storage(settings=settings)
         first_name = row.get("peer_first_name")
         last_name = row.get("peer_last_name")
+        avatar_key = row.get("peer_avatar_key")
         parts = [p for p in (first_name, last_name) if p]
         display_name = " ".join(parts) if parts else f"User {peer_id}"
+        if row.get("peer_status") == "deleted":
+            # A deleted account shows no profile, from its deletion on and once anonymised
+            # (BE-34): "Deleted user", no name, the default picture. Its messages stay.
+            first_name = last_name = avatar_key = None
+            display_name = DELETED_USER_NAME
         peer = PeerOut(
             id=peer_id,
             first_name=first_name,
             last_name=last_name,
             display_name=display_name,
-            avatar_url=storage.avatar_url(row.get("peer_avatar_key")),
+            avatar_url=storage.avatar_url(avatar_key),
         )
     return ConversationOut(
         id=row["id"],
