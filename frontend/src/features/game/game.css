@@ -178,6 +178,29 @@
   align-items: center;
   gap: 16px;
 }
+.game-connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-ink-muted);
+}
+.game-connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+.game-connection-dot.is-connected {
+  background-color: #10b981;
+}
+.game-connection-dot.is-reconnecting {
+  background-color: #f59e0b;
+}
+.game-connection-dot.is-offline {
+  background-color: #ef4444;
+}
 .game-reconnecting-banner {
   background: var(--color-surface);
   color: var(--color-ink);

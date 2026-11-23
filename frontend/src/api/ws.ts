@@ -60,7 +60,9 @@ export class WebSocketClient {
   private hasConnectedOnce = false;
 
   private listeners = new Map<string, Set<WsEventHandler<unknown>>>();
-  private stateListeners = new Set<(state: WsConnectionState) => void>();
+  private stateListeners = new Set<
+    (state: WsConnectionState, attempt?: number) => void
+  >();
   private queryClient: QueryClient | null = null;
   private options: WsClientOptions;
 
@@ -85,14 +87,18 @@ export class WebSocketClient {
     return this.state;
   }
 
+  public getReconnectAttempt(): number {
+    return this.reconnectAttempt;
+  }
+
   /**
    * Subscribe to connection state changes. Returns an unsubscribe callback.
    */
   public onStateChange(
-    listener: (state: WsConnectionState) => void,
+    listener: (state: WsConnectionState, attempt?: number) => void,
   ): () => void {
     this.stateListeners.add(listener);
-    listener(this.state);
+    listener(this.state, this.reconnectAttempt);
     return () => {
       this.stateListeners.delete(listener);
     };
@@ -103,7 +109,7 @@ export class WebSocketClient {
       this.state = newState;
       for (const listener of this.stateListeners) {
         try {
-          listener(newState);
+          listener(newState, this.reconnectAttempt);
         } catch (e) {
           console.error("Error in WsClient state listener:", e);
         }
@@ -346,6 +352,13 @@ export class WebSocketClient {
     this.setState("reconnecting");
     const delay = this.getReconnectDelay(this.reconnectAttempt);
     this.reconnectAttempt += 1;
+    for (const listener of this.stateListeners) {
+      try {
+        listener(this.state, this.reconnectAttempt);
+      } catch (e) {
+        console.error("Error in WsClient state listener:", e);
+      }
+    }
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

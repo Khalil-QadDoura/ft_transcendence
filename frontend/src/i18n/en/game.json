@@ -70,6 +70,12 @@
     "roomNotFound": "This match room does not exist or has expired.",
     "backToLobby": "Back to Lobby",
     "socketDisconnected": "Reconnecting to room…",
+    "connected": "Connected",
+    "reconnectingWithAttempt": "Reconnecting (attempt {{count}})…",
+    "offline": "Offline",
+    "reconnectingBanner": "Reconnecting to room (attempt {{count}})… Inputs are paused.",
+    "offlineBanner": "Connection lost. Reconnecting to room… Inputs are paused.",
+    "inputPaused": "Connection paused…",
     "loadError": "We couldn’t load the room right now. Please try again.",
     "loadResultsError": "We couldn’t load the results right now. Please try again."
   }
