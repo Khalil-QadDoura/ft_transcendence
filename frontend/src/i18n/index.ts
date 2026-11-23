@@ -1,4 +1,5 @@
 import company from "./en/company.json";
+import game from "./en/game.json";
 import people from "./en/people.json";
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
@@ -69,6 +70,7 @@ void i18next.init({
       company,
       status: statusEn,
       gameRules: gameRulesEn,
+      game,
     },
     ar: { common: ar, status: statusAr, gameRules: gameRulesAr },
     az: { common: az, status: statusAz, gameRules: gameRulesAz },
@@ -84,6 +86,7 @@ void i18next.init({
     "company",
     "status",
     "gameRules",
+    "game",
   ],
   initAsync: false,
   interpolation: { escapeValue: false },
