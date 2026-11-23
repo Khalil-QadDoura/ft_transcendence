@@ -20,6 +20,10 @@ EMAIL_VERIFY_SCOPE = "email_verify"
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
 
+# The longest token a request may send back to us (BE-13). Ours are about 300 characters (a
+# signed token) or 64 (a reset link), so anything longer cannot be one of them: 422.
+TOKEN_MAX_LENGTH = 1000
+
 # Login with 42 (BE-11).
 # Our own address that 42 sends the browser back to, after FRONTEND_BASE_URL. It must be
 # written exactly like this in the 42 intra app settings ("Redirect URI").

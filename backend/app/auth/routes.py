@@ -4,7 +4,7 @@ from typing import Annotated
 from urllib.parse import urlencode
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from app.auth.constants import (
     OAUTH_FRONTEND_PATH,
     OAUTH_STATE_COOKIE,
     OAUTH_STATE_LIFETIME,
+    TOKEN_MAX_LENGTH,
 )
 from app.auth.deps import CurrentUser
 from app.auth.schemas import (
@@ -65,7 +66,11 @@ async def register(
 
 
 @router.get("/verify")
-async def verify(request: Request, token: str, session: Session) -> VerifyOut:
+async def verify(
+    request: Request,
+    token: Annotated[str, Query(max_length=TOKEN_MAX_LENGTH)],
+    session: Session,
+) -> VerifyOut:
     """Called by the frontend's /verify-email page with the token from the email's link."""
     return await service.verify_email(session, request.app.state.settings, token)
 

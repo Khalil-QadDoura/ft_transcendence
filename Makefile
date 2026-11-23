@@ -13,8 +13,8 @@ s ?=
 # Optional: `make anonymise-deleted days=0` anonymises every deleted account at once.
 days ?=
 
-.PHONY: all env certs up down logs logs-reset test https-check images-check files-check mail-check metrics-check \
-	grafana-check schema-diagram anonymise-deleted fclean re
+.PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
+	mail-check metrics-check grafana-check schema-diagram anonymise-deleted fclean re
 
 all: env up
 
@@ -112,6 +112,13 @@ https-check:
 # and no .env.
 images-check:
 	@./scripts/images-check.sh
+
+# Secrets (keys, passwords, tokens) in any commit of any branch, with gitleaks (pinned) on a
+# fresh mirror clone: never reads .env or another ignored file; prints REDACTED instead of
+# a value. Findings checked by hand and known not to be secrets: .gitleaksignore. Needs only
+# Docker and git (BE-13).
+secrets-check:
+	@./scripts/secrets-check.sh
 
 # Draws docs/db/schema.svg, the database picture in the README, from a throwaway PostgreSQL +
 # PostGIS built by `alembic upgrade head` (eralchemy and Graphviz, pinned versions); removes

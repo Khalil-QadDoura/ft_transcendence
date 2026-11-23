@@ -10,8 +10,15 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.conversations.models import Conversation, ConversationParticipant, Message
+from app.users.models import User
 
 # ── Conversations ─────────────────────────────────────────────────────────────
+
+
+async def is_active_user(session: AsyncSession, user_id: int) -> bool:
+    """True when this user exists and is not deleted (BE-13)."""
+    query = select(User.id).where(User.id == user_id, User.status == "active")
+    return await session.scalar(query) is not None
 
 
 async def create_conversation(
@@ -103,11 +110,11 @@ async def list_conversations_for_user(
             ) AS unread_count,
             (
                 SELECT m2.content FROM messages m2
-                WHERE m2.id = c.last_message_id
+                WHERE m2.id = c.last_message_id AND m2.deleted_at IS NULL
             ) AS last_message_content,
             (
                 SELECT m2.author_id FROM messages m2
-                WHERE m2.id = c.last_message_id
+                WHERE m2.id = c.last_message_id AND m2.deleted_at IS NULL
             ) AS last_message_author_id,
             peer_u.id AS peer_id,
             peer_u.first_name AS peer_first_name,
@@ -149,11 +156,11 @@ async def list_conversations_for_user(
             ) AS unread_count,
             (
                 SELECT m2.content FROM messages m2
-                WHERE m2.id = c.last_message_id
+                WHERE m2.id = c.last_message_id AND m2.deleted_at IS NULL
             ) AS last_message_content,
             (
                 SELECT m2.author_id FROM messages m2
-                WHERE m2.id = c.last_message_id
+                WHERE m2.id = c.last_message_id AND m2.deleted_at IS NULL
             ) AS last_message_author_id,
             peer_u.id AS peer_id,
             peer_u.first_name AS peer_first_name,
@@ -198,9 +205,11 @@ async def get_conversation_for_user(
                   AND m.deleted_at IS NULL
                   AND m.author_id IS DISTINCT FROM :user_id
             ) AS unread_count,
-            (SELECT m2.content FROM messages m2 WHERE m2.id = c.last_message_id)
+            (SELECT m2.content FROM messages m2
+             WHERE m2.id = c.last_message_id AND m2.deleted_at IS NULL)
                 AS last_message_content,
-            (SELECT m2.author_id FROM messages m2 WHERE m2.id = c.last_message_id)
+            (SELECT m2.author_id FROM messages m2
+             WHERE m2.id = c.last_message_id AND m2.deleted_at IS NULL)
                 AS last_message_author_id,
             peer_u.id AS peer_id,
             peer_u.first_name AS peer_first_name,
@@ -232,9 +241,11 @@ async def get_conversation_for_user(
                   AND m.deleted_at IS NULL
                   AND m.author_id IS DISTINCT FROM :user_id
             ) AS unread_count,
-            (SELECT m2.content FROM messages m2 WHERE m2.id = c.last_message_id)
+            (SELECT m2.content FROM messages m2
+             WHERE m2.id = c.last_message_id AND m2.deleted_at IS NULL)
                 AS last_message_content,
-            (SELECT m2.author_id FROM messages m2 WHERE m2.id = c.last_message_id)
+            (SELECT m2.author_id FROM messages m2
+             WHERE m2.id = c.last_message_id AND m2.deleted_at IS NULL)
                 AS last_message_author_id,
             peer_u.id AS peer_id,
             peer_u.first_name AS peer_first_name,
