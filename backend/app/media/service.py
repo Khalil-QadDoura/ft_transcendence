@@ -190,6 +190,7 @@ async def list_my_videos(
                 size_bytes=video.size_bytes,
                 content_type=video.content_type,
                 moderation_status=video.moderation_status,
+                rejected_reason=video.rejected_reason,
                 lifecycle_status=video.lifecycle_status,
                 created_at=video.created_at,
                 updated_at=video.updated_at,
