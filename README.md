@@ -195,7 +195,6 @@ flowchart LR
 
     worker -.-> redis
     worker -.-> db
-    worker -.-> minio
 
     prometheus -->|"scrape /metrics"| api
     prometheus --> exporters
