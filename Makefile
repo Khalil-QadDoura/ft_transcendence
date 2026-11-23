@@ -10,9 +10,11 @@ COMPOSE := docker compose
 COMPOSE_ALL := $(COMPOSE) --profile '*'
 # Optional: `make logs s=api` follows one service.
 s ?=
+# Optional: `make anonymise-deleted days=0` anonymises every deleted account at once.
+days ?=
 
 .PHONY: all env certs up down logs logs-reset test https-check images-check files-check mail-check metrics-check \
-	grafana-check schema-diagram fclean re
+	grafana-check schema-diagram anonymise-deleted fclean re
 
 all: env up
 
@@ -146,6 +148,13 @@ metrics-check:
 # container, never printed; retries for up to 60 s (INF-09).
 grafana-check:
 	@./infra/grafana/smoke-test.sh
+
+# The second stage of account deletion now, instead of at the worker's nightly run (BE-34), on
+# the running stack: anonymises the deleted accounts that are due and deletes their files.
+# By default those deleted more than 30 days ago, as the nightly run; `days=0` takes every
+# deleted account at once (the demo). Accounts on retention hold are always skipped.
+anonymise-deleted:
+	$(COMPOSE) exec -T worker python -m app.worker.tasks.anonymise $(if $(days),--older-than-days $(days))
 
 # Removes containers, volumes (database, files), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
