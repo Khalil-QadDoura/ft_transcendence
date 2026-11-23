@@ -10,7 +10,7 @@ import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
-from app.auth.constants import PASSWORD_RESET_TOKEN_BYTES
+from app.auth.constants import OAUTH_STATE_BYTES, PASSWORD_RESET_TOKEN_BYTES
 
 # Argon2id with the library's defaults (the RFC 9106 settings: 64 MiB of memory, 3 passes,
 # 4 lanes). Each hash gets its own random salt, kept inside the hash string itself.
@@ -74,6 +74,12 @@ def new_reset_token() -> str:
     generator, written as 64 URL-safe characters (A-Z, a-z, 0-9, - and _). Too many
     possibilities to guess, and safe to put in a link as it is."""
     return secrets.token_urlsafe(PASSWORD_RESET_TOKEN_BYTES)
+
+
+def new_oauth_state() -> str:
+    """A new `state` for a login with 42 (BE-11): 32 random bytes from the same secure
+    generator, written as 43 URL-safe characters. Nobody can guess one that we handed out."""
+    return secrets.token_urlsafe(OAUTH_STATE_BYTES)
 
 
 def hash_reset_token(token: str) -> str:

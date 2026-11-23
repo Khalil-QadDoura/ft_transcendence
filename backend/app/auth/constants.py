@@ -27,3 +27,24 @@ REFRESH_RATE_LIMIT = "20/minute"
 CHANGE_PASSWORD_RATE_LIMIT = "5/minute"
 FORGOT_PASSWORD_RATE_LIMIT = "3/minute"
 RESET_PASSWORD_RATE_LIMIT = "5/minute"
+OAUTH_START_RATE_LIMIT = "10/minute"  # the same as login: it is a login too
+
+# Login with 42 (BE-11).
+# Our own address that 42 sends the browser back to, after FRONTEND_BASE_URL. It must be
+# written exactly like this in the 42 intra app settings ("Redirect URI").
+OAUTH_CALLBACK_PATH = "/api/auth/oauth/42/callback"
+# The frontend page that receives our tokens (in the part of the address after "#").
+OAUTH_FRONTEND_PATH = "/oauth/callback"
+# What we ask 42 for: "public" is the basic profile, which includes the email.
+OAUTH_SCOPE = "public"
+# How long a login with 42 can take, from the button to the callback.
+OAUTH_STATE_LIFETIME = timedelta(minutes=10)
+# The state is this many random bytes, written as 43 URL-safe characters.
+OAUTH_STATE_BYTES = 32
+# Where the state is kept in Redis: this prefix, then the state itself.
+OAUTH_STATE_KEY_PREFIX = "oauth42:state:"
+# The cookie that ties the state to the browser that clicked the button. Sent back only to
+# the callback (its path) and only over HTTPS.
+OAUTH_STATE_COOKIE = "oauth42_state"
+# How long we wait for 42 to answer one request before giving up.
+FT_REQUEST_TIMEOUT_SEC = 10

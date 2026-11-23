@@ -14,7 +14,7 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 | Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. A missing, invalid or expired token, or one made before a password change (`token_version`), gets 401 with `WWW-Authenticate: Bearer`. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
 | Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
 | Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
-| Rate limit | 429 with the same error body. Limits per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min |
+| Rate limit | 429 with the same error body. Limits per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min, login with 42 (`/auth/oauth/42/start`) 10/min |
 | Pagination | Request `cursor` (id of the last item seen) + `limit`; response `{items: [...], next_cursor: id or null}`. Messages use `before_id` → `prev_before_id` (older pages) |
 | Times | ISO 8601 with timezone, UTC (`2026-10-27T14:03:00+00:00`) |
 | Ids | Integers |
@@ -35,6 +35,8 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | POST | `/auth/change-password` | Bearer | `{current_password, new_password}` new password 8–128 | 204; all tokens revoked | 400 wrong current password, 401, 422, 429 |
 | POST | `/auth/forgot-password` | — | `{email}` | 202 `{message}` always, whether the email has an account or not | 422 not an email, 429 |
 | POST | `/auth/reset-password` | — | `{token, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
+| GET | `/auth/oauth/42/start` | — | — (the "Log in with 42" link opens it) | 302 to 42's login page, with a new `state`; sets the `oauth42_state` cookie | 503 login with 42 is not set up (no `FT_CLIENT_ID` or `FT_CLIENT_SECRET`), 429 |
+| GET | `/auth/oauth/42/callback` | — | query `code` and `state` from 42 (or `error`); the `oauth42_state` cookie | 302 to `<FRONTEND_BASE_URL>/oauth/callback#access_token=…&refresh_token=…&token_type=bearer` | always a 302 to the same page with `#error=<reason>` (see below), never a JSON error |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
 | PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
 | DELETE | `/users/me` | Bearer | — | 204 (soft delete; the user's company is soft-deleted too) | 401 |
@@ -55,6 +57,15 @@ Passwords in the new backend (BE-04):
 - `POST /auth/reset-password` is called by that page with `{token, new_password}`. 204: the password is replaced and `token_version` goes up, as for a change. A wrong, expired or already used token gets 400 `"Invalid or expired link"`; a 422 (a bad new password) does not use up the link.
 - After a change or a reset, every other reset link of the user that still works is closed too: all of the user's tokens (access, refresh, reset) stop working together.
 - Both emails (verify and reset) go through one sender: SMTP to Mailpit by default (`SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM`), Brevo's API only when `BREVO_API_KEY` is set.
+
+Login with 42 in the new backend (BE-11), OAuth 2.0 with the authorization code flow:
+
+- The frontend's "Log in with 42" link opens `GET /api/auth/oauth/42/start`. It makes a random `state` (43 URL-safe characters), keeps it in Redis for 10 minutes (`oauth42:state:<state>`) and in the cookie `oauth42_state` (HttpOnly, Secure, SameSite=Lax, path `/api/auth/oauth/42/callback`, 10 minutes), then answers 302 to `FT_AUTHORIZE_URL?client_id=…&redirect_uri=…&response_type=code&scope=public&state=…`. The redirect URI is `<FRONTEND_BASE_URL>/api/auth/oauth/42/callback`, e.g. `https://localhost/api/auth/oauth/42/callback`; the 42 intra app settings must list exactly that. Without both keys it answers 503 `"Login with 42 is not set up on this server"` and redirects nowhere.
+- 42 sends the browser back to `GET /api/auth/oauth/42/callback?code=…&state=…`. The `state` must equal the cookie (so only the browser that pressed the button can finish: no login CSRF) and must still be in Redis; it is deleted there at once, so it works once, and of two callbacks with the same state only one goes on. Then our server, not the browser, posts the code with `FT_CLIENT_ID` and `FT_CLIENT_SECRET` to `FT_TOKEN_URL`, reads `FT_ME_URL` (`/v2/me`) with the 42 token it gets, and takes the profile's `email` (lower case).
+- The account with that email logs in. With no account, one is created: `is_email_verified = true`, no password (`password_hash` null), `first_name` and `last_name` from 42 (trimmed, at most 50 characters). An account that was never verified becomes verified, loses its password (whoever signed up with the email may not own it; the owner sets one with "Forgot password?") and gets `token_version + 1`. A deleted account is refused, as at login. The account row is locked while this happens, so a sign-up, a verification or a deletion at the same moment waits; two 42 logins for one new email make one account.
+- The answer is always a 302 to `<FRONTEND_BASE_URL>/oauth/callback` with no query string. On success the token pair (the same as `/auth/login` gives) is after the `#`: the browser never sends that part to a server, so the tokens stay out of proxy and server logs. The page stores them as a login does, then replaces the address with `/profile`. The answer has `Cache-Control: no-store` and clears the cookie.
+- Failures, as `#error=<reason>`: `invalid_state` (no state, not this browser's, never handed out, expired or already used), `access_denied` (the user pressed "Cancel" on 42), `invalid_request` (neither `code` nor `error`), `ft_unavailable` (42 sent another `error`, refused the code, refused its own token at `/v2/me`, did not answer within 10 s, or answered something that is not JSON), `no_email` (the 42 profile has no valid `email`), `account_disabled` (the account with that email is deleted). No account is created or changed on a failure.
+- Settings: `FT_CLIENT_ID`, `FT_CLIENT_SECRET` (both empty by default: login with 42 is off), and the three 42 addresses `FT_AUTHORIZE_URL` (`https://api.intra.42.fr/oauth/authorize`), `FT_TOKEN_URL` (`https://api.intra.42.fr/oauth/token`) and `FT_ME_URL` (`https://api.intra.42.fr/v2/me`), changed only to use a fake 42 in tests or a demo.
 
 The profile in the new backend (BE-05):
 
@@ -279,7 +290,7 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[x\] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |
-| \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
+| [x] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair (BE-11: after the `#` of a redirect to the frontend page `/oauth/callback`) | OAuth module (tier B) |
 | [x] | `GET /metrics` for Prometheus, internal only | Monitoring module |
 
 The `avatar_url` row (BE-08 + BE-22): `UserOut` (`avatar_url`), `CompanyOut` (`logo_url`), `GET /api/friends`, and `GET /api/users/{id}/profile` all return public/default image URLs through `Storage.avatar_url` / `Storage.logo_url`.

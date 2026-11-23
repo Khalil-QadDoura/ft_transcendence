@@ -8,7 +8,11 @@ import {
 } from "../features/account/AccountPages";
 import { LegalPage } from "../features/legal/LegalPage";
 import { Link, type RouteObject } from "react-router-dom";
-import { AuthForm, VerifyEmail } from "../features/auth/AuthScreens";
+import {
+  AuthForm,
+  OAuthCallback,
+  VerifyEmail,
+} from "../features/auth/AuthScreens";
 import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
@@ -85,6 +89,7 @@ export const routes: RouteObject[] = [
         ],
       },
       { path: "verify-email", element: <VerifyEmail /> },
+      { path: "oauth/callback", element: <OAuthCallback /> },
       { path: "forgot-password", element: <ForgotPassword /> },
       { path: "reset-password", element: <ResetPassword /> },
       {

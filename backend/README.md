@@ -18,8 +18,9 @@ app/
   health/        GET /api/health with per-component checks (db, redis, minio, worker)
                  and the internal database check (BE-31)
   auth/          /api/auth: register, verify, login, refresh, logout (BE-03), change-password,
-                 forgot-password, reset-password (BE-04), plus constants (lifetimes, rate limits),
-                 security (Argon2id, JWT, reset tokens), deps (get_current_user)
+                 forgot-password, reset-password (BE-04), oauth/42/start and oauth/42/callback
+                 (BE-11), plus constants (lifetimes, rate limits), security (Argon2id, JWT, reset
+                 tokens, OAuth state), deps (get_current_user), oauth42 (the 42 intra API client)
   users/         /api/users/me: read, partial update, soft delete (BE-05), avatar_url (BE-08),
                  plus constants (minimum age, field lengths)
   companies/     CRUD, /companies/me returns 200 null for job seekers (BE-21)
@@ -92,6 +93,11 @@ use only `TEST_REDIS_URL` and delete only the keys they make (names starting wit
 docker run -d --name wozu-test-redis -p 6379:6379 redis:7-alpine
 TEST_DATABASE_URL=... TEST_REDIS_URL=redis://localhost:6379/1 pytest -q
 ```
+
+The login with 42 tests (`tests/test_oauth42.py`) need the database and a Redis too. They never
+contact 42: each test starts a small fake 42 (an HTTP server on a free local port) and points
+`FT_AUTHORIZE_URL`, `FT_TOKEN_URL` and `FT_ME_URL` at it. They delete only the Redis keys they
+make (names starting with `oauth42:state:`).
 
 The media tests also need a MinIO and a Redis, again only through `TEST_*` variables (they empty
 the `media-test` bucket and the `celery` queue); the docstring of `tests/test_media.py` shows the
