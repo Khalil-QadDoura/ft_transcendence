@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { presenceStore, type PresenceStore } from "./presenceStore";
 
 /**
@@ -16,26 +16,20 @@ export function useUserPresence(
     store.seed(userId, initialOnline);
   }
 
-  const [isOnline, setIsOnline] = useState<boolean>(() => {
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (userId == null) return () => {};
+      return store.subscribe(userId, () => {
+        onStoreChange();
+      });
+    },
+    [userId, store],
+  );
+
+  const getSnapshot = useCallback(() => {
     if (userId == null) return false;
     return store.getPresence(userId, initialOnline ?? false);
-  });
-
-  useEffect(() => {
-    if (userId == null) {
-      setIsOnline(false);
-      return;
-    }
-
-    if (initialOnline !== undefined) {
-      store.seed(userId, initialOnline);
-      setIsOnline(store.getPresence(userId, initialOnline));
-    }
-
-    return store.subscribe(userId, (nextOnline) => {
-      setIsOnline(nextOnline);
-    });
   }, [userId, initialOnline, store]);
 
-  return isOnline;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

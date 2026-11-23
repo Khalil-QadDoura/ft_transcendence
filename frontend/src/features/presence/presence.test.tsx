@@ -223,4 +223,73 @@ describe("useUserPresence Hook & UI Components (FE-12)", () => {
 
     expect(dot?.classList.contains("bg-emerald-500")).toBe(true);
   });
+
+  it("immediately returns new peer cached status when switching peers without initialOnline", async () => {
+    // Seed user 1 online and user 2 offline
+    testStore.seed(1, true);
+    testStore.seed(2, false);
+
+    const SwitchingComponent: React.FC<{ peerId: number }> = ({ peerId }) => {
+      const isOnline = useUserPresence(peerId, undefined, testStore);
+      return (
+        <div>
+          <span data-testid="status">{isOnline ? "online" : "offline"}</span>
+        </div>
+      );
+    };
+
+    await act(async () => {
+      root.render(<SwitchingComponent peerId={1} />);
+    });
+    expect(container.querySelector('[data-testid="status"]')?.textContent).toBe(
+      "online",
+    );
+
+    // Switch peer to user 2 (without initialOnline)
+    await act(async () => {
+      root.render(<SwitchingComponent peerId={2} />);
+    });
+    expect(container.querySelector('[data-testid="status"]')?.textContent).toBe(
+      "offline",
+    );
+  });
+
+  it("reconciles presence on reconnect and does not overwrite newer live events", async () => {
+    const mockWs = new WebSocketClient();
+    testStore.initWebSocketListener(mockWs);
+
+    // Initial state: user 1 is online, user 2 is online
+    testStore.setPresence(1, true, { immediate: true });
+    testStore.setPresence(2, true, { immediate: true });
+
+    let resolveReconcile!: (value: unknown) => void;
+    const fetcherPromise = new Promise((resolve) => {
+      resolveReconcile = resolve;
+    });
+
+    // Reconcile is triggered (e.g. after reconnect)
+    const reconcilePromise = testStore.reconcile(
+      () => fetcherPromise as Promise<any>,
+    );
+
+    // While reconcile is in-flight, a newer live WS event arrives: user 2 is confirmed online
+    mockWs["handleMessage"](
+      JSON.stringify({
+        type: "presence",
+        payload: { user_id: 2, is_online: true },
+      }),
+    );
+
+    // Now resolve snapshot saying user 1 is offline and user 2 is offline
+    resolveReconcile([
+      { user_id: 1, is_online: false },
+      { user_id: 2, is_online: false },
+    ]);
+    await reconcilePromise;
+
+    // User 1 was reconciled to offline (no newer live event)
+    expect(testStore.getPresence(1)).toBe(false);
+    // User 2 stayed online because a newer live event arrived during the in-flight snapshot
+    expect(testStore.getPresence(2)).toBe(true);
+  });
 });

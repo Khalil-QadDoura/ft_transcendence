@@ -12,6 +12,8 @@ import {
 } from "./api";
 import { MessageBubble } from "./MessageBubble";
 import { MessageInput } from "./MessageInput";
+import { useUserPresence } from "../presence";
+import { PresenceDot } from "../presence/PresenceDot";
 import type {
   ConversationItem,
   MessageItem,
@@ -63,6 +65,8 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
     (conversation?.type === "ai"
       ? t("chat.assistant")
       : t("chat.directConversation"));
+
+  const isPeerOnline = useUserPresence(conversation?.peer?.id);
 
   // Scroll to bottom helper
   const scrollToBottom = useCallback((smooth = false) => {
@@ -400,12 +404,19 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
           )}
 
           <div className="min-w-0">
-            <h2
-              className="truncate text-base font-semibold text-ink"
-              data-testid="thread-peer-name"
-            >
-              {peerDisplayName}
-            </h2>
+            <div className="flex items-center space-x-2">
+              <h2
+                className="truncate text-base font-semibold text-ink"
+                data-testid="thread-peer-name"
+              >
+                {peerDisplayName}
+              </h2>
+              {conversation?.peer && (
+                <span data-testid="chat-header-presence">
+                  <PresenceDot isOnline={isPeerOnline} showLabel={true} />
+                </span>
+              )}
+            </div>
             {conversation?.job_title && (
               <p className="truncate text-xs text-ink-muted">
                 {t("chat.appliedFor", { job: conversation.job_title })}

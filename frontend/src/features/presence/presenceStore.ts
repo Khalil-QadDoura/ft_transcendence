@@ -14,7 +14,10 @@ export class PresenceStore {
   private listeners = new Map<number, Set<PresenceListener>>();
   private hasLiveEvent = new Set<number>();
   private wsUnsubscribe: (() => void) | null = null;
+  private wsStateUnsubscribe: (() => void) | null = null;
   private debounceMs: number;
+  private eventSequence = 0;
+  private userEventEpoch = new Map<number, number>();
 
   constructor(debounceMs = DEFAULT_PRESENCE_DEBOUNCE_MS) {
     this.debounceMs = debounceMs;
@@ -56,6 +59,7 @@ export class PresenceStore {
     isOnline: boolean,
     options: { immediate?: boolean } = {},
   ): void {
+    this.userEventEpoch.set(userId, ++this.eventSequence);
     this.hasLiveEvent.add(userId);
 
     if (isOnline) {
@@ -80,6 +84,9 @@ export class PresenceStore {
       if (existingTimer) {
         clearTimeout(existingTimer);
         this.debounceTimers.delete(userId);
+      }
+      if (this.status.get(userId) === false) {
+        return;
       }
       this.status.set(userId, false);
       this.notify(userId, false);
@@ -132,12 +139,57 @@ export class PresenceStore {
   }
 
   /**
-   * Attach listener to WebSocket "presence" event.
+   * Reconcile presence snapshot from /friends or custom fetcher without overwriting
+   * newer live WebSocket events received while the request was in-flight.
+   */
+  public async reconcile(
+    fetcher?: () => Promise<FriendPresenceItem[]>,
+  ): Promise<void> {
+    const requestSeq = ++this.eventSequence;
+    try {
+      const friends = fetcher
+        ? await fetcher()
+        : await apiClient<FriendPresenceItem[]>("/friends");
+      if (!Array.isArray(friends)) return;
+
+      for (const friend of friends) {
+        if (!friend || typeof friend.user_id !== "number") continue;
+        const uid = friend.user_id;
+        const lastEvent = this.userEventEpoch.get(uid) ?? 0;
+        if (lastEvent > requestSeq) {
+          // A newer live event arrived while this snapshot was in-flight. Skip!
+          continue;
+        }
+
+        const nextStatus = Boolean(friend.is_online);
+        const current = this.status.get(uid);
+
+        if (current !== nextStatus) {
+          const timer = this.debounceTimers.get(uid);
+          if (timer) {
+            clearTimeout(timer);
+            this.debounceTimers.delete(uid);
+          }
+          this.status.set(uid, nextStatus);
+          this.notify(uid, nextStatus);
+        }
+      }
+    } catch {
+      // Reconcile is background best-effort
+    }
+  }
+
+  /**
+   * Attach listener to WebSocket "presence" event and reconnect lifecycle.
    */
   public initWebSocketListener(client: WebSocketClient = wsClient): () => void {
     if (this.wsUnsubscribe) {
       this.wsUnsubscribe();
       this.wsUnsubscribe = null;
+    }
+    if (this.wsStateUnsubscribe) {
+      this.wsStateUnsubscribe();
+      this.wsStateUnsubscribe = null;
     }
 
     this.wsUnsubscribe = client.subscribe<PresenceEventPayload>(
@@ -148,10 +200,24 @@ export class PresenceStore {
       },
     );
 
+    let hadDisconnect = false;
+    this.wsStateUnsubscribe = client.onStateChange((state) => {
+      if (state === "reconnecting" || state === "offline") {
+        hadDisconnect = true;
+      } else if (state === "connected" && hadDisconnect) {
+        hadDisconnect = false;
+        void this.reconcile();
+      }
+    });
+
     return () => {
       if (this.wsUnsubscribe) {
         this.wsUnsubscribe();
         this.wsUnsubscribe = null;
+      }
+      if (this.wsStateUnsubscribe) {
+        this.wsStateUnsubscribe();
+        this.wsStateUnsubscribe = null;
       }
     };
   }
@@ -160,18 +226,17 @@ export class PresenceStore {
    * Fetch friends list via REST to seed initial online statuses.
    */
   public async fetchAndSeedFriends(): Promise<void> {
-    try {
-      const friends = await apiClient<FriendPresenceItem[]>("/friends");
-      this.seedFromFriends(friends);
-    } catch {
-      // Non-critical background seed; failure will fall back to per-user REST values
-    }
+    await this.reconcile();
   }
 
   public reset(): void {
     if (this.wsUnsubscribe) {
       this.wsUnsubscribe();
       this.wsUnsubscribe = null;
+    }
+    if (this.wsStateUnsubscribe) {
+      this.wsStateUnsubscribe();
+      this.wsStateUnsubscribe = null;
     }
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
@@ -180,6 +245,8 @@ export class PresenceStore {
     this.status.clear();
     this.listeners.clear();
     this.hasLiveEvent.clear();
+    this.userEventEpoch.clear();
+    this.eventSequence = 0;
   }
 }
 
