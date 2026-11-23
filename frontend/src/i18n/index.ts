@@ -1,3 +1,5 @@
+import company from "./en/company.json";
+import game from "./en/game.json";
 import people from "./en/people.json";
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
@@ -8,6 +10,16 @@ import ar from "./ar/common.json";
 import az from "./az/common.json";
 import tr from "./tr/common.json";
 import ru from "./ru/common.json";
+import statusEn from "./en/status.json";
+import statusAr from "./ar/status.json";
+import statusAz from "./az/status.json";
+import statusTr from "./tr/status.json";
+import statusRu from "./ru/status.json";
+import gameRulesEn from "./en/gameRules.json";
+import gameRulesAr from "./ar/gameRules.json";
+import gameRulesAz from "./az/gameRules.json";
+import gameRulesTr from "./tr/gameRules.json";
+import gameRulesRu from "./ru/gameRules.json";
 
 export const languages = ["en", "ar", "az", "tr", "ru"] as const;
 export type Language = (typeof languages)[number];
@@ -50,14 +62,32 @@ void i18next.init({
   fallbackLng: "en",
   supportedLngs: [...languages],
   resources: {
-    en: { common: en, screens, profile, people },
-    ar: { common: ar },
-    az: { common: az },
-    tr: { common: tr },
-    ru: { common: ru },
+    en: {
+      common: en,
+      screens,
+      profile,
+      people,
+      company,
+      status: statusEn,
+      gameRules: gameRulesEn,
+      game,
+    },
+    ar: { common: ar, status: statusAr, gameRules: gameRulesAr },
+    az: { common: az, status: statusAz, gameRules: gameRulesAz },
+    tr: { common: tr, status: statusTr, gameRules: gameRulesTr },
+    ru: { common: ru, status: statusRu, gameRules: gameRulesRu },
   },
   defaultNS: "common",
-  ns: ["common", "screens", "profile", "people"],
+  ns: [
+    "common",
+    "screens",
+    "profile",
+    "people",
+    "company",
+    "status",
+    "gameRules",
+    "game",
+  ],
   initAsync: false,
   interpolation: { escapeValue: false },
 });

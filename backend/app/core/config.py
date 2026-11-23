@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     # Optional: when set, emails go out through Brevo's API (real inboxes) instead of SMTP.
     brevo_api_key: str = ""
 
+    # Login with 42 (BE-11). The app's two keys, from its page in the 42 intra app settings.
+    # Empty = login with 42 is off: /api/auth/oauth/42/start answers 503.
+    ft_client_id: str = ""
+    ft_client_secret: str = ""
+    # The three addresses of 42 intra. Only tests and the demo change them (to a fake 42).
+    ft_authorize_url: str = "https://api.intra.42.fr/oauth/authorize"
+    ft_token_url: str = "https://api.intra.42.fr/oauth/token"
+    ft_me_url: str = "https://api.intra.42.fr/v2/me"
+
     # Redis: WebSocket tickets, live events between API processes (pub/sub) and who is online.
     # The default is the "redis" service of the team's Docker Compose (no password, database 0).
     # The background queue lives there too: confirming a video puts a moderation task on it,
@@ -70,6 +79,16 @@ class Settings(BaseSettings):
     # The server clock of the game rooms (run_scheduler, started in the app's lifespan).
     # Off in tests that do not exercise game timers.
     game_scheduler_enabled: bool = True
+
+    # Video moderation worker & Celery beat (BE-29, M9).
+    # Keep MODERATION_FAIL_OPEN=false on defense day so API errors record moderation_error
+    # instead of silently approving unmoderated videos.
+    openai_api_key: str = ""
+    moderation_fail_open: bool = False
+    moderation_stuck_minutes: int = Field(default=10, ge=1)
+    moderation_beat_interval_sec: float = Field(default=300.0, gt=0.0)
+    worker_heartbeat_interval_sec: float = Field(default=20.0, gt=0.0)
+    worker_heartbeat_ttl_sec: int = Field(default=60, ge=5)
 
 
 @lru_cache

@@ -1,4 +1,5 @@
-"""Turing Duel matchmaking, hidden bot plans, room controls, and server-clock phase loop."""
+"""Turing Duel matchmaking, hidden bot plans, room controls, server-clock phase loop, votes
+and results."""
 
 import asyncio
 import random
@@ -15,7 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.game import repo
+from app.game import repo, scoring
 from app.game.constants import (
     BOT_CHAT_TEMPLATES,
     MAX_PARTICIPANTS,
@@ -23,6 +24,7 @@ from app.game.constants import (
     PLAYER_LABELS,
     START_NOW_MAX_PARTICIPANTS,
     START_NOW_MIN_PARTICIPANTS,
+    label_number,
 )
 from app.game.models import GameParticipant, GameRoom
 from app.game.schemas import (
@@ -31,9 +33,13 @@ from app.game.schemas import (
     GamePhaseEventOut,
     GameRoomEventOut,
     ParticipantOut,
+    ParticipantResultOut,
     QueueJoinOut,
     RoomOut,
     RoomParticipantOut,
+    RoomResultsOut,
+    VoteIn,
+    VoteOut,
 )
 from app.realtime import service as realtime_service
 from app.users.models import User
@@ -112,12 +118,12 @@ def _serialize_room(
         state=room.state,
         target_size=room.target_size,
         participant_count=len(participants),
-        my_participant_id=me.id,
+        my_participant_id=label_number(me.display_label),
         room_expires_at=room.room_expires_at,
         phase_ends_at=_phase_ends_at(room, settings),
         participants=[
             RoomParticipantOut(
-                id=p.id,
+                id=label_number(p.display_label),
                 display_label=p.display_label,
                 is_you=(p.id == me.id),
             )
@@ -289,6 +295,19 @@ async def get_room(session: AsyncSession, settings: Settings, user: User, room_i
     return _serialize_room(room, participants, me, settings)
 
 
+async def get_active_room(session: AsyncSession, settings: Settings, user: User) -> RoomOut | None:
+    """The caller's own room while it is waiting, in discussion or in voting, else None.
+
+    The lobby asks for it before joining, so a player whose match is running goes back to it
+    instead of getting a 409. Same payload as get_room: label numbers only, no bot flag."""
+    membership = await repo.get_user_active_membership(session, user.id)
+    if membership is None:
+        return None
+    room, me = membership
+    participants = await repo.list_participants(session, room.id)
+    return _serialize_room(room, participants, me, settings)
+
+
 async def start_room(
     session: AsyncSession,
     redis: Redis,
@@ -324,6 +343,78 @@ async def start_room(
 
     await _push_events(redis, events)
     return result
+
+
+async def cast_vote(
+    session: AsyncSession, settings: Settings, user: User, room_id: int, vote: VoteIn
+) -> VoteOut:
+    """Save the caller's mark on another participant of this room while voting is open.
+
+    Sending a mark again replaces it, as often as the voter likes (rules, section 5).
+    """
+    # The shared lock keeps the server clock from finishing the room while this vote is saved.
+    room = await repo.get_room_for_share(session, room_id)
+    if room is None:
+        raise HTTPException(status_code=404, detail="Room not found")
+    me = await repo.get_participant_for_user(session, room_id, user.id)
+    if me is None:
+        raise HTTPException(status_code=403, detail="Not a participant of this room")
+    voting_ends_at = _phase_ends_at(room, settings)
+    if room.state != "voting" or voting_ends_at is None or _utcnow() >= voting_ends_at:
+        raise HTTPException(status_code=409, detail="Voting is not open in this room")
+    if vote.target_participant_id == label_number(me.display_label):
+        raise HTTPException(status_code=400, detail="You cannot vote for yourself")
+    label = PLAYER_LABELS[vote.target_participant_id - 1]
+    target = await repo.get_participant_by_label(session, room_id, label)
+    if target is None:
+        raise HTTPException(status_code=422, detail="No participant with this number in the room")
+    await repo.save_mark(
+        session, room_id=room_id, voter_id=me.id, target_id=target.id, guess=vote.guess
+    )
+    await session.commit()
+    return VoteOut(target_participant_id=vote.target_participant_id, guess=vote.guess)
+
+
+async def get_results(session: AsyncSession, user: User, room_id: int) -> RoomResultsOut:
+    """Who was a bot, each human's score and outcome, and each bot's deception rate.
+
+    Only once the room is finished, so nothing tells bots from humans earlier (rules, section 9).
+    """
+    room = await repo.get_room(session, room_id)
+    if room is None:
+        raise HTTPException(status_code=404, detail="Room not found")
+    me = await repo.get_participant_for_user(session, room_id, user.id)
+    if me is None:
+        raise HTTPException(status_code=403, detail="Not a participant of this room")
+    if room.state != "finished":
+        raise HTTPException(status_code=409, detail="Results are ready when the game has finished")
+
+    participants = await repo.list_participants(session, room_id)
+    marks = await repo.list_marks(session, room_id)
+    humans = [p for p in participants if p.user_id is not None]
+    human_ids = [p.id for p in humans]
+    outcomes = scoring.outcomes({p.id: p.score for p in humans})
+    rows = []
+    for p in participants:
+        is_bot = p.user_id is None
+        rows.append(
+            ParticipantResultOut(
+                participant_id=label_number(p.display_label),
+                display_label=p.display_label,
+                is_bot=is_bot,
+                score=None if is_bot else p.score,
+                outcome=None if is_bot else outcomes[p.id],
+                deception_rate=scoring.deception_rate(p.id, human_ids, marks) if is_bot else None,
+            )
+        )
+    return RoomResultsOut(
+        room_id=room.id,
+        state=room.state,
+        my_participant_id=label_number(me.display_label),
+        winner_participant_ids=[row.participant_id for row in rows if row.outcome == "win"],
+        is_draw=any(row.outcome == "draw" for row in rows),
+        participants=rows,
+    )
 
 
 async def process_room_tick(
@@ -459,7 +550,7 @@ async def _tick_discussion_room(
                 "game_message",
                 GameMessageEventOut(
                     id=message.id,
-                    participant_id=bot.id,
+                    participant_id=label_number(bot.display_label),
                     display_label=bot.display_label,
                     text=message.text,
                 ),
@@ -481,8 +572,26 @@ async def _tick_voting_room(
     human_ids = await repo.list_human_user_ids(session, room.id)
     room.state = "finished"
     room.finished_at = now
+    await _store_scores(session, room.id)
     await session.commit()
-    events.append((human_ids, "game_phase_finished", GameRoomEventOut(room_id=room.id)))
+    events.append(
+        (
+            human_ids,
+            "game_phase_finished",
+            GamePhaseEventOut(room_id=room.id, state="finished", phase_ends_at=None),
+        )
+    )
+
+
+async def _store_scores(session: AsyncSession, room_id: int) -> None:
+    """Score every human on the marks as they stand when voting ends (rules, section 6)."""
+    participants = await repo.list_participants(session, room_id)
+    marks = await repo.list_marks(session, room_id)
+    everyone = [p.id for p in participants]
+    bot_ids = {p.id for p in participants if p.user_id is None}
+    for p in participants:
+        if p.user_id is not None:
+            p.score = scoring.human_score(p.id, everyone, bot_ids, marks)
 
 
 async def tick_all_active_rooms(app: FastAPI) -> None:

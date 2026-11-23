@@ -1,0 +1,25 @@
+{
+  "title": "Hizmet durumu",
+  "intro": "WOZU hizmetlerinin canlı durumu. Bu sayfa her {{seconds}} saniyede bir yeniden kontrol edilir.",
+  "overall": {
+    "checking": "Kontrol ediliyor…",
+    "operational": "Tüm sistemler çalışıyor",
+    "degraded": "Kısmen çalışıyor",
+    "unreachable": "API'ye ulaşılamıyor"
+  },
+  "componentsHeading": "Bileşenler",
+  "component": {
+    "api": "API",
+    "database": "Veritabanı",
+    "redis": "Redis",
+    "storage": "Dosya depolama",
+    "worker": "Arka plan işleyicisi"
+  },
+  "state": {
+    "up": "Çalışıyor",
+    "down": "Çalışmıyor",
+    "unknown": "Bilinmiyor"
+  },
+  "lastChecked": "Son kontrol:",
+  "notChecked": "Henüz kontrol edilmedi"
+}

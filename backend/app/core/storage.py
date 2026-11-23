@@ -11,6 +11,7 @@ import structlog
 import urllib3
 from fastapi import Request
 from minio import Minio
+from minio.commonconfig import REPLACE, CopySource
 from minio.datatypes import Object
 from minio.error import S3Error
 
@@ -93,6 +94,12 @@ class Storage:
         """Delete the file at this key. A key with no file is not an error."""
         self.internal.remove_object(self.bucket, key)
 
+    def keys_in(self, folder: str) -> list[str]:
+        """The key of every file under this folder, e.g. "avatars/12/" (end it with "/":
+        "avatars/1" would also match the files of user 12)."""
+        found = self.internal.list_objects(self.bucket, prefix=folder, recursive=True)
+        return [stored.object_name for stored in found]
+
     def read(self, key: str, max_bytes: int) -> bytes | None:
         """The stored file, but never more than max_bytes of it: a bigger file is cut there.
         None if there is no file at this key."""
@@ -114,6 +121,24 @@ class Storage:
             self.bucket, key, io.BytesIO(data), len(data), content_type=content_type
         )
 
+    def copy(self, key: str, new_key: str, content_type: str) -> bool:
+        """Copy the file at key to new_key, with the Content-Type we choose (never the
+        uploader's). MinIO makes the copy itself: the file never passes through the API.
+        False if there is no file at key."""
+        try:
+            self.internal.copy_object(
+                self.bucket,
+                new_key,
+                CopySource(self.bucket, key),
+                metadata={"Content-Type": content_type},
+                metadata_directive=REPLACE,
+            )
+        except S3Error as error:
+            if error.code == "NoSuchKey":
+                return False
+            raise
+        return True
+
     def first_bytes(self, key: str, count: int) -> bytes:
         """The first bytes of the stored file, without downloading the rest."""
         response = self.internal.get_object(self.bucket, key, offset=0, length=count)
@@ -122,6 +147,10 @@ class Storage:
         finally:
             response.close()
             response.release_conn()
+
+    def download_to_file(self, key: str, dest_path: str) -> None:
+        """Stream an object straight from internal MinIO (minio:9000) to a local file path."""
+        self.internal.fget_object(self.bucket, key, dest_path)
 
 
 def get_storage(request: Request) -> Storage:

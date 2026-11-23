@@ -1,5 +1,6 @@
 import { useText } from "../../i18n/useText";
 import { Link } from "react-router-dom";
+import { GAME_RULES_PATH } from "../game/rules/paths";
 export function Welcome() {
   const { t } = useText();
   return (
@@ -132,7 +133,7 @@ export function Welcome() {
             ],
             [
               "03",
-              "/game/rules",
+              GAME_RULES_PATH,
               t("home.gameTitle"),
               t("home.gameDescription"),
               t("home.gameLabel"),

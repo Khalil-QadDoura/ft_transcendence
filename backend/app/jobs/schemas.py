@@ -11,9 +11,11 @@ JobStatus = Literal["draft", "open", "deleted"]
 SalaryType = Literal["hourly", "daily", "weekly", "monthly"]
 JobSchedule = Literal["full_time", "part_time", "internship"]
 JobUrgency = Literal["normal", "urgent", "hot"]
+JobSortBy = Literal["newest", "nearest"]
 
 JobTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-JobDescription = Annotated[str, StringConstraints(strip_whitespace=True)]
+# The column is TEXT (no size); 5000 characters keeps one job from filling the database (BE-13).
+JobDescription = Annotated[str, StringConstraints(strip_whitespace=True, max_length=5000)]
 JobLocation = Annotated[str, StringConstraints(strip_whitespace=True, max_length=150)]
 Latitude = Annotated[float, Field(ge=-90.0, le=90.0, allow_inf_nan=False)]
 Longitude = Annotated[float, Field(ge=-180.0, le=180.0, allow_inf_nan=False)]
@@ -64,6 +66,7 @@ class JobOut(BaseModel):
     id: int
     owner_id: int
     company_name: str | None = None
+    company_logo_url: str | None = None
     title: str
     description: str
     status: JobStatus
@@ -78,7 +81,15 @@ class JobOut(BaseModel):
     views_count: int = 0
     applications_count: int = 0
     new_applications_count: int = 0
+    distance_km: float | None = None
     created_by_id: int | None = None
     updated_by_id: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class JobsPage(BaseModel):
+    """Cursor-paginated public job search response (BE-26)."""
+
+    items: list[JobOut]
+    next_cursor: int | None

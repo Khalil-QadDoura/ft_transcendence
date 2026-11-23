@@ -28,7 +28,9 @@ class UploadUrlIn(BaseModel):
 class UploadUrlOut(BaseModel):
     object_key: str  # where the file will be: users/<my id>/intro/<uuid>.mp4
     put_url: str  # the browser PUTs the file here
-    get_url: str  # and can watch it here once it is uploaded
+    # and can watch it here once it is uploaded, until confirm: confirm keeps a copy of the
+    # file elsewhere (videos/...) and deletes the upload. mine then gives the link.
+    get_url: str
     expires_sec: int
     max_bytes: int  # so the browser can refuse a file that is too big before sending it
 
@@ -63,6 +65,7 @@ class MyVideoOut(BaseModel):
     size_bytes: int
     content_type: str
     moderation_status: str
+    rejected_reason: str | None = None
     lifecycle_status: str
     created_at: datetime
     updated_at: datetime

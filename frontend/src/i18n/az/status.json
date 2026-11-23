@@ -1,0 +1,25 @@
+{
+  "title": "Xidmət statusu",
+  "intro": "WOZU xidmətlərinin canlı vəziyyəti. Bu səhifə hər {{seconds}} saniyədən bir yenidən yoxlanılır.",
+  "overall": {
+    "checking": "Yoxlanılır…",
+    "operational": "Bütün sistemlər işləyir",
+    "degraded": "Qismən işləyir",
+    "unreachable": "API əlçatan deyil"
+  },
+  "componentsHeading": "Komponentlər",
+  "component": {
+    "api": "API",
+    "database": "Verilənlər bazası",
+    "redis": "Redis",
+    "storage": "Fayl yaddaşı",
+    "worker": "Arxa fon prosesi"
+  },
+  "state": {
+    "up": "İşləyir",
+    "down": "İşləmir",
+    "unknown": "Naməlum"
+  },
+  "lastChecked": "Son yoxlama:",
+  "notChecked": "Hələ yoxlanılmayıb"
+}
