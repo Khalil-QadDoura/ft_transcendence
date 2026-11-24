@@ -1,3 +1,4 @@
+import { localizeMessage } from "../../i18n/copy";
 import "../../i18n";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -110,7 +111,9 @@ export function FriendsPage() {
           {t("requestsTab")}
         </Button>
       </div>
-      {error && !target && <p role="alert">{error}</p>}
+      {error && !target && (
+        <p role="alert">{localizeMessage("people", error)}</p>
+      )}
       {active.isPending ? (
         <div aria-busy="true">
           <p role="status">{t("loading")}</p>
@@ -140,9 +143,11 @@ export function FriendsPage() {
                     <li className="friend-card" key={friend.user_id}>
                       <Avatar src={friend.avatar_url} alt={name} size="lg" />
                       <h2>
-                        <Link to={`/users/${friend.user_id}`}>{name}</Link>
+                        <Link to={`/users/${friend.user_id}`}>
+                          <bdi>{name}</bdi>
+                        </Link>
                       </h2>
-                      <p>{friend.position}</p>
+                      <p dir="auto">{friend.position}</p>
                       <p className="people-presence">
                         <span
                           className={
@@ -215,7 +220,7 @@ export function FriendsPage() {
         title={t("removeTitle")}
         description={t("removeHint")}
       >
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{localizeMessage("people", error)}</p>}
         <div className="people-actions">
           <Button
             disabled={busy}

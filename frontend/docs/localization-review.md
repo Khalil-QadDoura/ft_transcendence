@@ -5,7 +5,7 @@ Owner: Zayid Elkahir. Sprint 3, due November 24, 2026 at 18:00 Abu Dhabi.
 
 ## Implementation
 
-English, Arabic, Azerbaijani, Turkish and Russian now have every shipped interface namespace. This includes auth, account settings, profile, people, jobs, applications, video, chat, the legal-page shell, common controls, status and game rules. Employer and friends resources include the keys needed by pending PRs #91 and #90; their screens are not part of this branch. Routes still marked Coming Soon on main remain placeholders.
+English, Arabic, Azerbaijani, Turkish and Russian now have every shipped interface namespace. This includes auth, account settings, profile, people, jobs, applications, video, chat, the legal-page shell, common controls, status, company, employer and the game lobby/rules. Reviewed friends #90 and employer jobs #91 are merged into main and integrated into this branch. Routes still marked Coming Soon on main remain placeholders.
 
 `src/i18n/index.ts` discovers each locale's JSON resources. `useTranslation` subscribes components to language changes. Existing auth/account copy helpers resolve translations at render time through `translatedCopy`; form values and session state survive switching. Known persisted UI errors are retranslated by `localizeMessage`. General jobs/chat/media failures use translated recovery messages; arbitrary backend validation details on profile/auth are preserved, not falsely described as fully translated. API error-code coverage needs to grow with backend contracts.
 
@@ -48,12 +48,26 @@ Merged main at 1ca48d6 into the PR and addressed Khalil's changes-requested revi
 - Typecheck, lint, formatting, catalog validation, legal validation, all 318 frontend tests and the production build passed. The existing large-bundle warning remains (355 kB gzip).
 - Browser-control initialization again timed out on November 24. These results are automated evidence, not a fresh browser or fluent-speaker approval.
 
+### Final integrated verification
+
+Main `ea2c031` (including approved #90, #91 and #92) is integrated. The catalog loader retains all five languages and every namespace. Newly merged employer/friends pages now isolate user text, mirror the employer create arrow, and retranslate persisted action/field errors when switching language. A missing-company error links directly to company setup, addressing Khalil's optional #91 comment.
+
+- All 335 existing frontend tests passed on the combined implementation; the employer suite then passed 14 tests including a new regression for switching a failed deletion dialog to Arabic without closing it or retrying the mutation. Typecheck, lint, formatting, catalog checks and build passed. The existing bundle-size warning remains (357 kB gzip).
+- The standard browser-control service stayed unavailable, but an independent clean headless Chrome context (158.0.8127.38) provided fresh evidence. Privacy, Terms and Sign-in passed all 15 language/page combinations at 360px, including language/direction, legal original/translation toggles, reload persistence and no horizontal overflow; Arabic Privacy was also checked at 1440px. No uncaught page errors occurred.
+- That pass found Russian Privacy's long heading overflowing at 360px. The heading now wraps long words with `overflow-wrap: anywhere` and `hyphens: auto`; the same check passes after the fix.
+- Company, game lobby, friends, employer list/new/edit passed 30 further locale/page combinations at 360px using explicit API/socket render fixtures. Arabic empty company inputs compute to RTL; typed Latin text computes to LTR. No horizontal overflow or uncaught page errors occurred. These fixtures prove rendering, not live backend authorization, mutations or websocket behavior.
+- Screenshot samples below were inspected on November 24. These supersede the earlier service-unavailable limitation for the stated scope, not native-speaker approval or a complete cross-browser audit.
+
+![Arabic Privacy at 360px, November 24](evidence/fe07-fe08/nov24/ar-privacy-mobile-viewport.png)
+![Arabic employer jobs with render fixtures, November 24](evidence/fe07-fe08/nov24/ar-employer-jobs-fixture-mobile.png)
+![Arabic company form with mixed user text, November 24](evidence/fe07-fe08/nov24/ar-company-fixture-mobile.png)
+
 ## Acceptance still pending
 
 1. Fluent speakers/content owner must review the new translations. The legal texts are now implemented, but approval is not implied by structural tests. Record actual reviewers below. Hide incomplete languages at code freeze as the card requires.
 2. Account persistence remains local until the backend contract is agreed and implemented. See [the proposal sent to Khalil](language-preference-contract.md). No unsupported PATCH calls were added.
-3. Company and game-lobby catalogs are complete as of November 24. The temporary fallback mechanism remains available for reviewed incoming screens, but no current namespace is exempt. Pending game/employer/friends implementations need their own final RTL pass after they land.
-4. Fresh browser verification of this November 23 update could not run because the browser-control service timed out. The images above are November 22 evidence, not new legal-page screenshots. Automated render/direction/navigation tests cover every legal locale; visual approval is still pending.
+3. No current namespace is exempt from translation checks. Incoming game-room and employer-applications changes must add their new keys and receive a layout pass when they land; their pending PRs are not covered by the current catalogs.
+4. The fresh public-page and authenticated-page render-fixture checks above do not replace real authenticated backend walkthroughs or fluent/content review. Older November 22 screenshots remain dated historical evidence.
 5. Khalil's fresh review and current-head green CI are merge gates. These cards are not Done.
 
 | Language    | Fluent reviewer | Status  |
