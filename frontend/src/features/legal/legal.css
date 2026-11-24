@@ -16,6 +16,8 @@
     line-height: 1.04;
     letter-spacing: -0.055em;
     margin-block: 1rem 1.5rem;
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
   .legal-hero > p {
     max-width: 60ch;
