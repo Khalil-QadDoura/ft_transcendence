@@ -452,10 +452,16 @@ function CompanyEditor({
         <span className="company-spark" aria-hidden="true">
           ✳
         </span>
-        <h2>{baseline.name}</h2>
-        <p className="company-location">{locationLine || t("noLocation")}</p>
+        <h2>
+          <bdi>{baseline.name}</bdi>
+        </h2>
+        <p className="company-location" dir="auto">
+          {locationLine || t("noLocation")}
+        </p>
         {baseline.description && (
-          <p className="company-description-copy">{baseline.description}</p>
+          <p className="company-description-copy" dir="auto">
+            {baseline.description}
+          </p>
         )}
         <Link className="company-jobs-link" to="/employer/jobs">
           {t("manageJobs")}

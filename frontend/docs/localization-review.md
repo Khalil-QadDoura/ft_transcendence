@@ -41,11 +41,18 @@ Merged main at 1ca48d6 into the PR and addressed Khalil's changes-requested revi
 - Added complete reading translations of Privacy and Terms in AR/AZ/TR/RU. The legal body and table of contents follow the chosen language; Arabic uses RTL. A localized review-pending notice and English-original toggle remain visible. Canonical source hashes, dates, structural coverage and packaged-copy drift are checked by legal:check. Translation date is distinct from source policy dates.
 - Removed the old jobs-search blocker: BE-26 /api/jobs/open is now on main. This update does not claim a new live job-search test.
 
+## November 24 sprint closeout
+
+- Added all 67 company messages and 27 game-lobby messages in AR/AZ/TR/RU (376 translated values). The English source is unchanged. No current namespace needs the temporary fallback exemption; the checker still supports explicit future exceptions during the agreed pre-freeze integration window.
+- Isolated company names with `bdi` and gave company locations/descriptions automatic text direction, so Latin user content retains punctuation order inside the Arabic layout.
+- Typecheck, lint, formatting, catalog validation, legal validation, all 318 frontend tests and the production build passed. The existing large-bundle warning remains (355 kB gzip).
+- Browser-control initialization again timed out on November 24. These results are automated evidence, not a fresh browser or fluent-speaker approval.
+
 ## Acceptance still pending
 
 1. Fluent speakers/content owner must review the new translations. The legal texts are now implemented, but approval is not implied by structural tests. Record actual reviewers below. Hide incomplete languages at code freeze as the card requires.
 2. Account persistence remains local until the backend contract is agreed and implemented. See [the proposal sent to Khalil](language-preference-contract.md). No unsupported PATCH calls were added.
-3. Company/game catalogs are temporarily English-only under Khalil's requested exception. Pending game/employer/friends implementations need their own final RTL pass after they land.
+3. Company and game-lobby catalogs are complete as of November 24. The temporary fallback mechanism remains available for reviewed incoming screens, but no current namespace is exempt. Pending game/employer/friends implementations need their own final RTL pass after they land.
 4. Fresh browser verification of this November 23 update could not run because the browser-control service timed out. The images above are November 22 evidence, not new legal-page screenshots. Automated render/direction/navigation tests cover every legal locale; visual approval is still pending.
 5. Khalil's fresh review and current-head green CI are merge gates. These cards are not Done.
 

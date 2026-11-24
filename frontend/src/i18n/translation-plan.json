@@ -1,7 +1,4 @@
 {
-  "englishFallbackNamespaces": {
-    "company": ["ar", "az", "tr", "ru"],
-    "game": ["ar", "az", "tr", "ru"]
-  },
-  "reason": "Temporary review-approved fallback for newly merged company/game screens until code freeze on 2026-11-26. Other namespaces require complete catalogs. Legal translations are reading translations pending content-owner and fluent-speaker review."
+  "englishFallbackNamespaces": {},
+  "reason": "All namespaces on main as of 2026-11-24 have complete catalogs, including company and the game lobby. The explicit fallback mechanism remains available for reviewed incoming screens until code freeze on 2026-11-26. Legal translations are reading translations pending content-owner and fluent-speaker review."
 }
