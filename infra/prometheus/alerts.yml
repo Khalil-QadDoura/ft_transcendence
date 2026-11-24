@@ -1,0 +1,101 @@
+# Alert rules (INF-10, module M12), loaded by Prometheus through rule_files in
+# infra/prometheus/prometheus.yml and evaluated every 15 s (evaluation_interval). No
+# Alertmanager: an alert is not sent anywhere. Its state (pending, then firing) shows in
+# Prometheus (/api/v1/alerts, the ALERTS series), in Grafana's Alerting > Alert rules page
+# (data source-managed rules of the datasource uid prometheus) and in the "Firing alerts"
+# panel of the WOZU Infrastructure dashboard.
+# `for`: how long the condition must hold, at every evaluation, before a pending alert
+# fires; a shorter blip never fires.
+# Checks: `make metrics-check` runs `promtool check rules` on this file and
+# `promtool test rules` on alerts.test.yml (one firing and one not-firing case per rule)
+# inside the prometheus container. Live demo: `make alert-demo` (RedisDown).
+# Details: "Alerting (INF-10)" in docs/infra/infrastructure.md.
+
+groups:
+  - name: m12-alerts
+    rules:
+      # The demo alert. redis_up comes from redis-exporter, which stays up when Redis
+      # stops, so this is "Redis down" and not "the exporter down" (that is TargetDown).
+      # Stop Redis: the next scrape (at most 15 s) reads 0, the next evaluation (at most
+      # 15 s) makes the alert pending, 30 s later it fires: about 45 to 75 s in all.
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "redis-exporter ({{ $labels.instance }}) cannot reach Redis: redis_up has been 0 for more than 30 seconds. Sessions, rate limits, WebSocket events and the worker queue need Redis."
+
+      # Any scrape target (prometheus, api, postgres, redis, cadvisor): the last scrape
+      # failed (container stopped, crashed or not answering within 10 s). 1 minute is four
+      # failed scrapes in a row, so a restart or one slow scrape does not fire.
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scrape target {{ $labels.job }} is down"
+          description: "Prometheus has not been able to scrape {{ $labels.instance }} (job {{ $labels.job }}) for more than 1 minute."
+
+      # The share of API responses with a 5xx status over 5 minutes. The status label
+      # holds the code itself ("500", "503"). It is the expression of the "Error rate
+      # (share of requests)" panel of the WOZU API dashboard without the health check:
+      # both selectors leave out handler="/api/health", the panel still counts every
+      # request. On an idle stack the Docker health check is the only API traffic, and it
+      # answers 503 while Redis is stopped, so two `make alert-demo` runs in a row made
+      # this alert fire about 5 minutes later (Khalil, INF-10 review). A broken
+      # dependency is RedisDown's or TargetDown's job. No traffic does not fire: with no
+      # request series the division has no result, and with counters that do not move it
+      # is 0 / 0 (NaN), which is not above 0.05.
+      - alert: ApiHighErrorRate
+        expr: |
+          (sum(rate(http_requests_total{job="api", handler!="/api/health", status=~"5.."}[5m])) or vector(0))
+            / sum(rate(http_requests_total{job="api", handler!="/api/health"}[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 5xx error rate above 5 %"
+          description: "{{ $value | humanizePercentage }} of API responses over the last 5 minutes had a 5xx status, above the 5 % threshold, for more than 5 minutes."
+
+      # The expression of the "p95 latency (all routes)" panel of the WOZU API dashboard.
+      # It uses http_request_duration_highr_seconds (buckets from 10 ms, no route label),
+      # not the per-route http_request_duration_seconds: that one's first bucket ends at
+      # 100 ms, so its p95 never reads below 95 ms (Khalil, INF-09 review). No traffic does
+      # not fire: every bucket rate is 0 and histogram_quantile returns NaN.
+      - alert: ApiHighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_highr_seconds_bucket{job="api"}[5m])))
+          > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency above 500 ms"
+          description: "95 % of API requests over the last 5 minutes took up to {{ $value | humanizeDuration }}, above the 500 ms threshold, for more than 5 minutes."
+
+      # "Disk almost full". There is no node-exporter on purpose (one more image; on
+      # Docker Desktop the disk is the Linux VM's, not the Mac's), so this watches what
+      # this stack writes most: Prometheus' own storage against its size cap,
+      # --storage.tsdb.retention.size=1GB (prometheus_tsdb_retention_limit_bytes). The cap
+      # counts the blocks, the WAL and the head chunks together, as the sum below does.
+      # Above 80 % the cap is near and Prometheus starts deleting the oldest blocks before
+      # the 30 days. The division by "limit > 0" gives no result when no size cap is set.
+      - alert: MonitoringDiskAlmostFull
+        expr: |
+          (
+            prometheus_tsdb_storage_blocks_bytes
+            + prometheus_tsdb_wal_storage_size_bytes
+            + prometheus_tsdb_head_chunks_storage_size_bytes
+          )
+            / (prometheus_tsdb_retention_limit_bytes > 0)
+          > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus storage above 80 % of its 1 GB cap"
+          description: "Prometheus storage (blocks, WAL and head chunks) uses {{ $value | humanizePercentage }} of its retention size cap (--storage.tsdb.retention.size, 1 GB), above the 80 % threshold, for more than 10 minutes."
