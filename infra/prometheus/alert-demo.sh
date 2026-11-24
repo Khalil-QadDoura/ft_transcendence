@@ -3,17 +3,20 @@
 # 1. `docker compose stop redis`;
 # 2. polls Prometheus' /api/v1/alerts every 5 s until RedisDown is firing, printing when it
 #    turns pending and when it fires, in seconds since the stop; fails after 120 s;
-# 3. `docker compose up -d --wait redis`;
-# 4. polls until RedisDown is gone (resolved), printing the seconds since Redis was started
+# 3. keeps Redis down ALERT_HOLD_SEC more seconds (default 25; `ALERT_HOLD_SEC=0` skips
+#    it), so the red "Firing alerts" panel can be shown: Grafana refreshes the dashboard
+#    every few seconds and the alert is gone soon after Redis is back (Khalil, INF-10 review);
+# 4. `docker compose up -d --wait redis`;
+# 5. polls until RedisDown is gone (resolved), printing the seconds since Redis was started
 #    again; fails after 120 s;
-# 5. prints ok.
+# 6. prints ok.
 # redis-exporter stays up while Redis is stopped and reports redis_up 0, so RedisDown
 # (redis_up == 0 for 30 s, infra/prometheus/alerts.yml) fires: one scrape (at most 15 s) +
 # one evaluation (at most 15 s) + 30 s = about 45 to 75 s. While it fires, the "Firing
 # alerts" panel of the WOZU Infrastructure dashboard goes up by one and Grafana's
 # Alerting > Alert rules page shows RedisDown as firing.
 # Redis is started again whenever the script ends after stopping it (failure or Ctrl-C
-# included), so the stack is never left without Redis.
+# included, also during the hold), so the stack is never left without Redis.
 # Prometheus has no host port, so it is asked inside its container, as metrics-check does.
 # Run it with `make alert-demo`. Works with bash 3.2 (macOS) and python3 3.9 or newer.
 set -euo pipefail
@@ -24,6 +27,13 @@ ALERT=RedisDown
 LIMIT_SEC=120
 POLL_SEC=5
 PROM=http://127.0.0.1:9090
+ALERT_HOLD_SEC="${ALERT_HOLD_SEC:-25}"
+case "$ALERT_HOLD_SEC" in
+    '' | *[!0-9]*)
+        echo "alert-demo: ALERT_HOLD_SEC must be a whole number of seconds" >&2
+        exit 1
+        ;;
+esac
 
 for service in prometheus redis redis-exporter; do
     if [ -z "$(docker compose ps -q --status running "$service")" ]; then
@@ -92,6 +102,11 @@ docker compose stop redis
 stopped_at="$(date +%s)"
 wait_for firing "$stopped_at"
 fired=$(($(date +%s) - stopped_at))
+
+if [ "$ALERT_HOLD_SEC" -gt 0 ]; then
+    echo "alert-demo: keeping Redis down for ${ALERT_HOLD_SEC} s so the Firing alerts panel shows it"
+    sleep "$ALERT_HOLD_SEC"
+fi
 
 restart_redis
 redis_stopped=0

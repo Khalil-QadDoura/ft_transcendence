@@ -168,8 +168,10 @@ anonymise-deleted:
 	$(COMPOSE) exec -T worker python -m app.worker.tasks.anonymise $(if $(days),--older-than-days $(days))
 
 # Live alert demo, manual only (not in CI): stops Redis, waits until the RedisDown alert
-# fires (prints the seconds; fails after 120 s), starts Redis again and waits until the
-# alert is resolved (fails after 120 s). Redis is started again however it ends (INF-10).
+# fires (prints the seconds; fails after 120 s), keeps Redis down 25 s more so the Firing
+# alerts panel shows it (`ALERT_HOLD_SEC=0 make alert-demo` skips that), starts Redis again
+# and waits until the alert is resolved (fails after 120 s). Redis is started again however
+# it ends (INF-10).
 alert-demo:
 	@./infra/prometheus/alert-demo.sh
 
