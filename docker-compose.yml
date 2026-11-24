@@ -453,9 +453,46 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # Secrets store (INF-12, module M13): HashiCorp Vault in server mode, never dev mode, with
+  # file storage on the volume vault-data; configuration in infra/vault/vault.hcl. No host
+  # port, no proxy route: only the Docker network reaches it, and nothing reads it before
+  # INF-13. Vault starts sealed every time this container starts. `make` starts this service
+  # first and runs scripts/vault-init.sh before the rest of the stack: it initializes Vault
+  # once (key shares and root token in the Git-ignored scripts/vault-keys.local), unseals it
+  # and applies the audit device, KV v2, AppRole and the policies (docs/infra/vault.md).
+  # The image runs Vault as its own user (uid 100), not root. mlock stays on, so keys and
+  # secrets in memory never go to swap: Vault locks all its memory at start and stops if it
+  # cannot. Since Vault 2.0.2 the binary carries no file capability, so IPC_LOCK (kept, as
+  # decided) never reaches the non-root process; the memlock limit, raised to unlimited
+  # here, is what lets it lock its memory (with 8 MB, a common Linux default, it fails to
+  # start). Rootless Docker cannot raise it; see docs/infra/vault.md.
+  # The command is the full `vault server -config=...`: the image's entrypoint turns a bare
+  # `server` into one with -dev-* flags that reads the whole /vault/config directory.
+  # Health: `vault status` exits 0 when unsealed, 2 when sealed and 1 when Vault does not
+  # answer. Sealed counts as healthy (the server runs; vault-init.sh unseals it), so that
+  # `make` can wait for it before unsealing.
+  vault:
+    image: hashicorp/vault:2.2.2@sha256:dfa48c2fa2b0099ccb47681ec5c4804bf5aec9d6879ecfee07ad4b92a5427ad6
+    command: ["vault", "server", "-config=/vault/config/vault.hcl"]
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+    ulimits:
+      memlock: -1
+    volumes:
+      - ./infra/vault/vault.hcl:/vault/config/vault.hcl:ro
+      - vault-data:/vault/file
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "vault status >/dev/null 2>&1; s=$$?; [ $$s -eq 0 ] || [ $$s -eq 2 ]"]
+    restart: unless-stopped
+    logging: *logging
+
 volumes:
   db-data:
   redis-data:
   minio-data:
   prometheus-data:
   grafana-data:
+  vault-data:
