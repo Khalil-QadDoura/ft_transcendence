@@ -7,13 +7,15 @@ from contextlib import asynccontextmanager, suppress
 import structlog
 from fastapi import APIRouter, Depends, FastAPI
 
+from app.applications import routes as applications
 from app.auth import routes as auth
 from app.companies import routes as companies
 from app.conversations import routes as conversations
 from app.core.config import Settings, get_settings
 from app.core.errors import add_error_handlers
+from app.core.inputs import refuse_nul
 from app.core.internal import require_internal_key
-from app.core.limiter import limiter
+from app.core.limiter import limit_writes, limiter
 from app.core.logging import configure_logging
 from app.core.metrics import setup_metrics
 from app.core.queue import TaskQueue
@@ -95,7 +97,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.middleware("http")(request_id_middleware)
 
     # Public API: every router goes under /api. WebSockets live under /ws.
-    api = APIRouter(prefix="/api")
+    # limit_writes: every write route under /api gets a rate limit, those added later too.
+    # refuse_nul: a NUL character anywhere in the query or the JSON body is a 422 (BE-13).
+    api = APIRouter(prefix="/api", dependencies=[Depends(limit_writes), Depends(refuse_nul)])
     api.include_router(health.router)
     api.include_router(auth.router)
     api.include_router(users.router)
@@ -104,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(companies.router)
     api.include_router(conversations.router)
     api.include_router(jobs.router)
+    api.include_router(applications.router)
     api.include_router(game.router)
     api.include_router(realtime.router)  # POST /api/ws/ticket
     api.include_router(media.router)

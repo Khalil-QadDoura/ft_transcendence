@@ -18,6 +18,8 @@ export interface AuthGateway {
   register(data: Credentials): Promise<void>;
   verify(token: string): Promise<void>;
   login(data: Credentials): Promise<void>;
+  // Login with 42 (BE-11): the backend's callback hands the pair to /oauth/callback.
+  loginWithTokens(pair: TokenPair): void;
   logout(): Promise<void>;
   restore(): Promise<void>;
   getSessionVersion(): number;
@@ -38,6 +40,12 @@ const pairSchema = z.object({
   refresh_token: z.string().min(1),
   token_type: z.literal("bearer"),
 });
+export type TokenPair = z.infer<typeof pairSchema>;
+// The pair the 42 callback put after "#" in the address, or null when it is not a valid one.
+export function parseTokenPair(value: unknown): TokenPair | null {
+  const result = pairSchema.safeParse(value);
+  return result.success ? result.data : null;
+}
 
 // Domain adapter only: FE-20 owns tokens, persistence, rotation and bearer requests.
 export function createAuthGateway(): AuthGateway {
@@ -107,6 +115,15 @@ export function createAuthGateway(): AuthGateway {
         await request("login", { email, password }),
       );
       if (attempt !== getSessionVersion()) return;
+      setTokens({
+        accessToken: pair.access_token,
+        refreshToken: pair.refresh_token,
+      });
+    },
+    loginWithTokens(pair) {
+      // Stored exactly as after a password login: access token in memory, refresh token saved.
+      restoring = false;
+      clearTokens();
       setTokens({
         accessToken: pair.access_token,
         refreshToken: pair.refresh_token,

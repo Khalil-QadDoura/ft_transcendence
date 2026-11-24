@@ -12,14 +12,25 @@ JSON in, JSON out; JWT bearer auth; one error shape; cursor pagination.
 | --- | --- |
 | Base path | Reference: routes at the root (`/auth/login`). New backend: everything under `/api` behind the nginx + ModSecurity front proxy (`https://<host>/api/auth/login`), WebSockets under `/ws` |
 | Auth | `Authorization: Bearer <access_token>`; access token lives 15 min. A missing, invalid or expired token, or one made before a password change (`token_version`), gets 401 with `WWW-Authenticate: Bearer`. On 401 call `POST /auth/refresh` once, retry, else log out. Refresh before expiry to avoid 401s in the console |
-| Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). Unexpected errors: 500, detail `"Internal server error"` |
+| Error body | `{"error": {"code": "<http status as string>", "detail": <string or object>}}`. `detail` is an object only for the apply guard (`{"code", "next_step"}`). Validation errors: status 422, detail `"body → field: message"` (first error only). A NUL character (`\u0000` in JSON, `%00` in a query) anywhere in the query or the JSON body of a route under `/api` is 422 too, e.g. `"body → bio: Text cannot contain the NUL character (\u0000)"`: PostgreSQL cannot store it (BE-13). Unexpected errors: 500, detail `"Internal server error"` |
 | Request id | Every response carries an `x-request-id` header (the caller's own value when it sends one, up to 64 characters); every server log line of that request has the same id |
-| Rate limit | 429 with the same error body. Limits per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min |
+| Rate limit | 429 with the same error body, detail `"Rate limit exceeded: <n> per 1 minute"`, and a `Retry-After` header (seconds until the count starts again). Login and sign-up count per IP: register 5/min, login 10/min, refresh 20/min, forgot 3/min, reset 5/min, change password 5/min, login with 42 (`/auth/oauth/42/start`) 10/min. Every write (POST, PUT, PATCH, DELETE) under `/api` also counts per route: per user with a valid access token, else per IP; 60/min, or the route's own number in the table below (BE-12). Reads (GET) are never limited. All numbers live in `backend/app/core/limits.py` |
 | Pagination | Request `cursor` (id of the last item seen) + `limit`; response `{items: [...], next_cursor: id or null}`. Messages use `before_id` → `prev_before_id` (older pages) |
 | Times | ISO 8601 with timezone, UTC (`2026-10-27T14:03:00+00:00`) |
 | Ids | Integers |
 | Money | `salary_amount` decimal as string or number, `salary_currency` ISO 4217 (3 capital letters) |
 | Files | Never through the API: the API returns a presigned URL; the browser PUTs the file to it, then calls a `confirm` endpoint |
+
+Write routes with their own limit (per user, or per IP without a valid token; BE-12). The chat line limit is on the `/ws/game` socket, where a line over it gets a `game_error` instead of a 429.
+
+| Route | Limit |
+| --- | --- |
+| Any other POST, PUT, PATCH, DELETE under `/api` | 60/min per route |
+| `POST /media/intro-video/upload-url`, `/media/avatar/upload-url`, `/media/company-logo/upload-url` | 10/min each |
+| `POST /conversations/{id}/messages` | 30/min |
+| `POST /friends/requests` | 10/min |
+| `POST /game/queue/join` | 10/min |
+| `chat_message` on `/ws/game` | 30/min per user, all rooms and tabs together |
 
 ## Auth and users
 
@@ -28,16 +39,18 @@ Sign-up is two steps (register, then verify from the email); login returns a tok
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
 | POST | `/auth/register` | — | `{email, password}` password 8–128 | 202 `{message}`; the verification email is sent after the answer | 409 email already verified, 422, 429 |
-| GET | `/auth/verify` | — | query `token` | 200 `{verified, email, updated}` | 400 invalid, expired, or replaced by a newer link |
+| GET | `/auth/verify` | — | query `token` ≤ 1000 | 200 `{verified, email, updated}` | 400 invalid, expired, or replaced by a newer link |
 | POST | `/auth/login` | — | `{email, password}` | 200 `{access_token, refresh_token, token_type}` | 401 wrong credentials (same answer for an unknown email), 403 email not verified, 429 |
-| POST | `/auth/refresh` | — | `{refresh_token}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
+| POST | `/auth/refresh` | — | `{refresh_token ≤ 1000}` | 200 new pair (old refresh revoked) | 401 invalid, reused, expired, or password changed; 429 |
 | POST | `/auth/logout` | — | `{refresh_token}` (optional) | 204 always, even with no token or a bad one | — |
 | POST | `/auth/change-password` | Bearer | `{current_password, new_password}` new password 8–128 | 204; all tokens revoked | 400 wrong current password, 401, 422, 429 |
 | POST | `/auth/forgot-password` | — | `{email}` | 202 `{message}` always, whether the email has an account or not | 422 not an email, 429 |
-| POST | `/auth/reset-password` | — | `{token, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
+| POST | `/auth/reset-password` | — | `{token ≤ 1000, new_password}` new password 8–128 | 204; all tokens revoked | 400 invalid, expired or already used link; 422, 429 |
+| GET | `/auth/oauth/42/start` | — | — (the "Log in with 42" link opens it) | 302 to 42's login page, with a new `state`; sets the `oauth42_state` cookie | 503 login with 42 is not set up (no `FT_CLIENT_ID` or `FT_CLIENT_SECRET`), 429 |
+| GET | `/auth/oauth/42/callback` | — | query `code` and `state` from 42 (or `error`); the `oauth42_state` cookie | 302 to `<FRONTEND_BASE_URL>/oauth/callback#access_token=…&refresh_token=…&token_type=bearer` | always a 302 to the same page with `#error=<reason>` (see below), never a JSON error (except the NUL 422 of the Conventions, for an address with `%00`) |
 | GET | `/users/me` | Bearer | — | 200 `UserOut` | 401 |
 | PATCH | `/users/me` | Bearer | any subset of `{first_name, last_name, position, birth_date, bio}`; age ≥ 18 | 200 `UserOut` | 401, 422 |
-| DELETE | `/users/me` | Bearer | — | 204 (soft delete; the user's company is soft-deleted too) | 401 |
+| DELETE | `/users/me` | Bearer | — | 204 (soft delete; the user's company is soft-deleted too; anonymised 30 days later, BE-34) | 401 |
 
 `UserOut` = `{id, email, first_name, last_name, position, birth_date, bio, avatar_object_key, avatar_url, is_email_verified}` (new backend, BE-05; `avatar_url` from BE-08: my picture's public address, or the default picture, see Media). The reference also sends `phone`, `username`, `is_phone_verified` and `account_number` (`WZ-000123`); the new backend drops them.
 
@@ -56,10 +69,21 @@ Passwords in the new backend (BE-04):
 - After a change or a reset, every other reset link of the user that still works is closed too: all of the user's tokens (access, refresh, reset) stop working together.
 - Both emails (verify and reset) go through one sender: SMTP to Mailpit by default (`SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM`), Brevo's API only when `BREVO_API_KEY` is set.
 
+Login with 42 in the new backend (BE-11), OAuth 2.0 with the authorization code flow:
+
+- The frontend's "Log in with 42" link opens `GET /api/auth/oauth/42/start`. It makes a random `state` (43 URL-safe characters), keeps it in Redis for 10 minutes (`oauth42:state:<state>`) and in the cookie `oauth42_state` (HttpOnly, Secure, SameSite=Lax, path `/api/auth/oauth/42/callback`, 10 minutes), then answers 302 to `FT_AUTHORIZE_URL?client_id=…&redirect_uri=…&response_type=code&scope=public&state=…`. The redirect URI is `<FRONTEND_BASE_URL>/api/auth/oauth/42/callback`, e.g. `https://localhost/api/auth/oauth/42/callback`; the 42 intra app settings must list exactly that. Without both keys it answers 503 `"Login with 42 is not set up on this server"` and redirects nowhere.
+- 42 sends the browser back to `GET /api/auth/oauth/42/callback?code=…&state=…`. The `state` must equal the cookie (so only the browser that pressed the button can finish: no login CSRF) and must still be in Redis; it is deleted there at once, so it works once, and of two callbacks with the same state only one goes on. Then our server, not the browser, posts the code with `FT_CLIENT_ID` and `FT_CLIENT_SECRET` to `FT_TOKEN_URL`, reads `FT_ME_URL` (`/v2/me`) with the 42 token it gets, and takes the profile's `email` (lower case).
+- The account with that email logs in. With no account, one is created: `is_email_verified = true`, no password (`password_hash` null), `first_name` and `last_name` from 42 (trimmed, at most 50 characters). An account that was never verified becomes verified, loses its password (whoever signed up with the email may not own it; the owner sets one with "Forgot password?") and gets `token_version + 1`. A deleted account is refused, as at login. The account row is locked while this happens, so a sign-up, a verification or a deletion at the same moment waits; two 42 logins for one new email make one account.
+- The answer is always a 302 to `<FRONTEND_BASE_URL>/oauth/callback` with no query string. On success the token pair (the same as `/auth/login` gives) is after the `#`: the browser never sends that part to a server, so the tokens stay out of proxy and server logs. The page stores them as a login does, then replaces the address with `/profile`. The answer has `Cache-Control: no-store` and clears the cookie.
+- Failures, as `#error=<reason>`: `invalid_state` (no state, not this browser's, never handed out, expired or already used), `access_denied` (the user pressed "Cancel" on 42), `invalid_request` (neither `code` nor `error`), `ft_unavailable` (42 sent another `error`, refused the code, refused its own token at `/v2/me`, did not answer within 10 s, or answered something that is not JSON), `no_email` (the 42 profile has no valid `email`), `account_disabled` (the account with that email is deleted). No account is created or changed on a failure.
+- Settings: `FT_CLIENT_ID`, `FT_CLIENT_SECRET` (both empty by default: login with 42 is off), and the three 42 addresses `FT_AUTHORIZE_URL` (`https://api.intra.42.fr/oauth/authorize`), `FT_TOKEN_URL` (`https://api.intra.42.fr/oauth/token`) and `FT_ME_URL` (`https://api.intra.42.fr/v2/me`), changed only to use a fake 42 in tests or a demo.
+
 The profile in the new backend (BE-05):
 
 - `PATCH /users/me` changes only the fields that are sent: a field left out keeps its value, and `{}` changes nothing (200). `first_name` and `last_name` 1–50 characters, `position` 1–100, `bio` up to 500; spaces around them are removed. `birth_date` is `YYYY-MM-DD`, and the user must be at least 18 full years old today, else 422 `"body → birth_date: You must be at least 18 years old"`. Only `bio` accepts `null` (it empties the bio). Any other field (`email`, `status`, `phone`, …) gets 422 `"body → <field>: Extra inputs are not permitted"`, and then nothing is changed. No body at all gets 422.
 - `DELETE /users/me` sets `users.status` to `deleted`; the row and the profile stay. From then on the user's access and refresh tokens get 401, login gets the same 401 as a wrong password, and the email stays taken (register answers 409). The files of the avatar and of the user's company logo are deleted from storage at once and both keys are emptied (BE-08), because their public addresses would otherwise keep working. The user's active company, if any, is soft-deleted in the same transaction (`companies.status` becomes `deleted`), so it and its jobs leave every public view: `GET /jobs/{id}` answers 404 and `GET /jobs/open` leaves them out. The jobs and the applications already sent stay as they are.
+- `DELETE /users/me` also records `users.deleted_at`. This is the first of the two stages of the Privacy Policy (section 6). The second comes from the worker (BE-34): every day at 00:00 UTC it anonymises each account deleted more than 30 days ago, unless the team has set `users.retention_hold` (an open complaint or dispute). The email becomes `deleted-<id>@invalid` (the real one is free again: register answers 202 and makes a new account), the password, names, position, birth date, bio and avatar key are emptied, every file of the account in storage (avatars, videos, the logos of its companies, uploads in `staging/`) is deleted, and its videos become `deleted`. The row stays with its id, so its applications, game records and chat messages stay, from "Deleted user". `backend/README.md` shows how to run it on demand and how to set the hold.
+- **"Deleted user":** from the deletion on (both stages), a deleted account shows no profile. `GET /users/{id}/profile` answers 404; the friends list and friend requests leave it out; as a chat peer it is `{id, first_name: null, last_name: null, display_name: "Deleted user", avatar_url: <default picture>}`; in `ApplicationOut` it is `applicant_display_name: "Deleted user"` with `applicant_first_name`, `applicant_last_name`, `applicant_position` and `intro_video_url` null and `applicant_avatar_url` the default picture. Messages keep their `author_id`.
 
 ## Friends, profiles and conversations
 
@@ -74,7 +98,7 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | DELETE | `/friends/{id}` | Bearer | — | 204 | 403, 404 |
 | GET | `/friends` | Bearer | — | 200 `[{friendship_id, user_id, first_name, last_name, position, avatar_object_key, avatar_url, is_online}]` | — |
 | GET | `/users/{id}/profile` | Bearer | — | 200 `{id, first_name, last_name, position, bio, avatar_object_key, avatar_url, is_online, friendship_status, friendship_id}` | 404 |
-| POST | `/conversations` | Bearer | `{type: "direct", peer_user_id, job_id?}` | 201 `ConversationOut` (existing one if the pair already has a chat) | 400 no peer, 403 job not yours |
+| POST | `/conversations` | Bearer | `{type: "direct", peer_user_id, job_id?}` | 201 `ConversationOut` (existing one if the pair already has a chat) | 400 no peer, 403 job not yours, 404 `"User not found"` (no such user, or a deleted one; BE-13) |
 | GET | `/conversations` | Bearer | query `limit` ≤ 100 | 200 `ConversationOut[]`, newest first | — |
 | GET | `/conversations/unread` | Bearer | — | 200 `{total_unread}` | — |
 | GET | `/conversations/{id}` | Bearer | — | 200 `ConversationOut` | 404 |
@@ -89,7 +113,8 @@ Friendship is one row per pair; conversations are the only chat. New messages al
 | POST | `/conversations/{id}/read` | Bearer | `{last_message_id}` | 204 + WS `conversation_updated` | 403, 404 |
 
 - `friendship_status`: `null`, `pending_sent`, `pending_received`, `accepted`; `friendship_id`: `int | null` pointing to the friendship row when a relationship exists.
-- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at, peer}`. For direct conversations (`type: "direct"`), `peer` is `{id, first_name, last_name, display_name, avatar_url}` representing the other participant; `peer` is `null` for non-direct chats.
+- Every id of these routes (in the path, `before_id`, and `peer_user_id`, `job_id`, `reply_to_id`, `last_message_id`, `user_id` in a body) is 1 to 2^63−1 (BIGINT), else 422 (BE-13).
+- `ConversationOut` = `{id, type, title, job_id, job_title, last_message_id, last_message_content, last_message_author_id, unread_count, updated_at, peer}`. `last_message_content` and `last_message_author_id` are `null` when the last message was deleted (BE-13). For direct conversations (`type: "direct"`), `peer` is `{id, first_name, last_name, display_name, avatar_url}` representing the other participant (`display_name` `"Deleted user"` once that account is deleted, BE-34); `peer` is `null` for non-direct chats.
 - `MessageOut` = `{id, conversation_id, author_id, content, status (sent / delivered / read), message_type, reply_to_id, idempotency_key, edited_at, deleted_at, created_at}`.
 
 ## Companies, jobs and applications
@@ -98,29 +123,30 @@ An employer is a user who owns an active company; jobs belong to the company. A 
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/companies` | Bearer | `{name, description?, country?, city?, district?}` | 201 `CompanyOut` | 409 already has one |
+| POST | `/companies` | Bearer | `{name, description? ≤ 2000, country?, city?, district?}` | 201 `CompanyOut` | 409 already has one |
 | GET | `/companies/me` | Bearer | — | 200 `CompanyOut` or `null` | — |
 | PATCH | `/companies/me` | Bearer | `{name, country, city, district?, country_code?}` | 200 `CompanyOut` | 404, 422 |
 | DELETE | `/companies` | Bearer | — | 204 (soft, idempotent; the logo file is deleted, BE-08) | — |
 | POST | `/jobs` | Bearer (employer) | `JobCreate` | 201 `JobOut` | 404 no company, 422 |
-| PATCH | `/jobs/{id}` | Bearer (owner) | any `JobCreate` fields | 200 `JobOut` | 404 |
-| DELETE | `/jobs/{id}` | Bearer (owner) | — | 204 (soft) | 404 |
+| PATCH | `/jobs/{id}` | Bearer (owner) | any `JobCreate` fields | 200 `JobOut` | 404, 422 id under 1 or too large |
+| DELETE | `/jobs/{id}` | Bearer (owner) | — | 204 (soft) | 404, 422 id under 1 or too large |
 | GET | `/jobs/mine` | Bearer (employer) | — | 200 `JobOut[]` with `views_count`, `applications_count`, `new_applications_count` | 404 no company |
-| GET | `/jobs/open` | — | query below | 200 `{items: JobOut[], next_cursor}` | 422 |
-| GET | `/jobs/{id}` | optional | — | 200 `JobOut` (non-open only for the owner) | 404 |
-| POST | `/jobs/{id}/view` | optional | — | 204 (counted once per user per 24 h) | — |
-| POST | `/jobs/{id}/apply` | Bearer | `{cover_note? ≤ 1000}` | 201 `ApplicationOut` | 422 `{code: profile_incomplete or no_video, next_step}`, 403 own job, 404, 409 duplicate |
-| GET | `/applications/mine` | Bearer | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | — |
-| GET | `/applications/{id}` | Bearer (applicant or job owner) | — | 200 `ApplicationOut` | 403, 404 |
-| DELETE | `/applications/{id}` | Bearer (applicant) | — | 204 → `withdrawn` | 404, 409 |
-| GET | `/jobs/{id}/applications` | Bearer (job owner) | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 403, 404 |
-| PATCH | `/applications/{id}/status` | Bearer (job owner) | `{status, note? ≤ 500}` | 200 `ApplicationOut` | 403, 409 transition not allowed |
+| GET | `/jobs/open` | — | query below | 200 `{items: JobOut[], next_cursor}` | 422 (nearest without lat/lng falls back to newest; cursor must be a visible open job) |
+| GET | `/jobs/{id}` | optional | — | 200 `JobOut` (non-open only for the owner) | 404, 422 id under 1 or too large |
+| POST | `/jobs/{id}/view` | optional | — | 204 (counted once per viewer per 24 h on `open` jobs; draft is a 204 no-op) | 404, 422 |
+| POST | `/jobs/{id}/apply` | Bearer | `{cover_note? ≤ 1000}` (optional body) | 201 `ApplicationOut` + WS `application_created` to employer | 422 `{code: profile_incomplete or no_video, next_step}`, 403 own job, 404, 409 duplicate |
+| GET | `/applications/mine` | Bearer | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 422 |
+| GET | `/applications/{id}` | Bearer (applicant or job owner) | — | 200 `ApplicationOut` | 403, 404, 422 |
+| DELETE | `/applications/{id}` | Bearer (applicant) | — | 204 → `withdrawn` + WS `application_updated` to employer | 404, 409, 422 |
+| GET | `/jobs/{id}/applications` | Bearer (job owner) | query `status`, `cursor`, `limit` | 200 `{items, next_cursor}` | 403, 404, 422 |
+| PATCH | `/applications/{id}/status` | Bearer (job owner) | `{status, note? ≤ 500}` | 200 `ApplicationOut` + WS `application_updated` to applicant | 403, 404, 409 transition not allowed, 422 |
 
 **`GET /jobs/open` query:** `lat`, `lng`, `radius_km` (≤ 500; all three for radius), `schedule` (`full_time`, `part_time`, `internship`), `salary_min`, `salary_max`, `urgency` (`normal`, `urgent`, `hot`), `keyword` (full-text), `position` (title contains), `sort_by` (`newest` default, `nearest` needs lat/lng), `cursor`, `limit` 1–100 (default 20).
 
-- `JobCreate` = `{title 1–200, description, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
-- `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, views_count, applications_count, new_applications_count, created_by_id, updated_by_id, created_at, updated_at}`.
-- `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at}`.
+- `JobCreate` = `{title 1–200, description ≤ 5000, latitude, longitude, location ≤ 150, status (draft or open, default draft), salary_amount?, salary_type (hourly, daily, weekly, monthly), salary_currency?, schedule, urgency}`.
+- `JobOut` = `JobCreate` fields + `{id, owner_id, company_name, company_logo_url, views_count, applications_count, new_applications_count, distance_km, created_by_id, updated_by_id, created_at, updated_at}` (`company_logo_url` from `Storage.logo_url`, `distance_km` populated by `GET /jobs/open` when `lat` and `lng` are given, BE-26).
+- `ApplicationOut` = `{id, job_id, applicant_id, company_id, intro_video_id, status, cover_note, conversation_id, applied_at, updated_at, viewed_at, job_title, company_name, applicant_display_name, applicant_first_name, applicant_last_name, applicant_position, applicant_avatar_url, intro_video_url}` (BE-28; `intro_video_url` is a short-lived signed GET link when the video is not deleted; `applicant_display_name` is the first and last name, or `"Deleted user"` for a deleted applicant, BE-34).
+- **Application state machine (BE-28):** only `open` jobs of active companies accept applications. Employer transitions via `PATCH /applications/{id}/status`: `submitted → viewed | shortlisted | rejected`, `viewed → shortlisted | rejected`, `shortlisted → contacted | hired | rejected`, `contacted → hired | rejected` (moving to `contacted` atomically creates or reuses a direct conversation linked to the job and application; moving to `viewed` records `viewed_at`). Applicant withdrawal via `DELETE /applications/{id}`: `submitted | viewed | shortlisted | contacted → withdrawn`. Any other move returns `409`. Every creation and transition writes an `application_events` row and pushes a live WebSocket event to the other side.
 - `CompanyOut` = `{id, owner_user_id, name, description, logo_object_key, logo_url, status, country, city, district, country_code, created_at, updated_at}`. `logo_url` (new backend, BE-08): the logo's public address, or `null` without a logo (see Media).
 
 ## Media
@@ -131,7 +157,7 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 | --- | --- | --- | --- | --- | --- |
 | POST | `/media/intro-video/upload-url` | Bearer | `{content_type: "video/mp4", ext: "mp4", expires_sec 60–3600}` | 200 `{object_key, put_url, get_url, expires_sec, max_bytes}` | 415 not mp4 (`content_type` or `ext`), 422 `expires_sec` |
 | POST | `/media/intro-video/confirm` | Bearer | `{object_key, duration_sec 1–30, size_bytes ≤ 52428800, content_type: "video/mp4"}` | 201 `{id, moderation_status: pending, lifecycle_status: loaded}` | 400 key not yours or no file uploaded there, 409 3 videos already / already confirmed, 413 the stored file is over 50 MiB, 415 the stored file is not an MP4, 422 |
-| GET | `/media/intro-video/mine` | Bearer | query `expires_sec` | 200 `{items: [{id, object_key, duration_sec, size_bytes, content_type, moderation_status, lifecycle_status, created_at, updated_at, signed_url, expires_sec}]}`, not the deleted ones, newest first | 422 `expires_sec` |
+| GET | `/media/intro-video/mine` | Bearer | query `expires_sec` | 200 `{items: [{id, object_key, duration_sec, size_bytes, content_type, moderation_status, rejected_reason, lifecycle_status, created_at, updated_at, signed_url, expires_sec}]}`, not the deleted ones, newest first | 422 `expires_sec` |
 | POST | `/media/intro-video/{id}/post` | Bearer | — | 200 `{id, moderation_status, lifecycle_status}`; previous posted video becomes `unposted` | 404 not mine / deleted, 409 not approved / already posted, 422 `id` under 1 or too large |
 | POST | `/media/intro-video/{id}/unpost` | Bearer | — | 200 same shape | 404, 409 not posted, 422 `id` under 1 or too large |
 | POST | `/media/intro-video/{id}/delete` | Bearer | — | 200 same shape (soft delete) | 404 not mine / already deleted, 422 `id` under 1 or too large |
@@ -142,7 +168,7 @@ Every upload is three steps: ask for a URL, PUT the file to it from the browser,
 | POST | `/media/company-logo/upload-url` | Bearer (employer) | same query as the avatar | 200 same shape | 404 no company, 415, 422 |
 | POST | `/media/company-logo/confirm` | Bearer (employer) | `{object_key}` | 204; `GET /companies/me` then gives the new `logo_url` | 404 no company, 400, 413, 415, 422 |
 
-- Statuses: moderation `pending → approved | rejected` (+ `moderation_error` once fixed); lifecycle `loaded → posted ⇄ unposted`, any → `deleted`. Poll `/media/intro-video/mine` while a video is `pending` (or listen for a WS event once added).
+- Statuses: moderation `pending → approved | rejected | moderation_error`; lifecycle `loaded → posted ⇄ unposted`, any → `deleted`. When moderation succeeds (`approved`), a video in `loaded` status is automatically published (`lifecycle_status = posted`), and any previously posted video by the user is automatically set to `unposted`. The client receives a real-time WebSocket push event `video_moderated` with `{id, moderation_status, lifecycle_status, rejected_reason}` (clients may also poll `GET /media/intro-video/mine`). Rejected or error reasons include: duration limit exceeded (`Video exceeds maximum duration of 30 seconds`), `Processing failed` (e.g. ffprobe/ffmpeg extraction failure or zero frames), `Moderation API error`, `Transcription API error` (when `MODERATION_FAIL_OPEN=false`), `OpenAI API key not configured`, `Download failed`, or comma-separated OpenAI flagged categories (e.g. `harassment, violence`).
 - The browser PUT to `put_url` is a plain PUT of the file bytes to `https://<host>/files/<object_key>?X-Amz-…`. That is the frontend's own origin, so no CORS is involved (INF-04, Infrastructure doc). Use XHR or fetch with upload progress for the progress bar.
 - With `job_id`, the employer feed lists that job's applicants first, then candidates whose position matches the job title, then everyone else.
 - Avatar and logo: the reference returns only `avatar_object_key` / `logo_object_key`, which the frontend cannot turn into a URL; the new backend returns `avatar_url` (BE-08, below).
@@ -174,8 +200,9 @@ Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/g
 
 | Method | Path | Auth | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued", room_id}` | 409 already in active room |
+| POST | `/game/queue/join` | Bearer | — | 202 `{message: "queued", room_id}` | 409 already in a room that has started (`discussion` or `voting`): `GET /game/rooms/active` names it |
 | DELETE | `/game/queue/leave` | Bearer | — | 204 | — |
+| GET | `/game/rooms/active` | Bearer | — | 200 the shape of `GET /game/rooms/{id}` for my own room while it is `waiting`, `discussion` or `voting`; 200 `null` when I have none (BE-09 follow-up) | — |
 | GET | `/game/rooms/{id}` | Bearer (participant) | — | 200 `{id, state, target_size, participant_count, my_participant_id, room_expires_at, phase_ends_at, participants: [{id, display_label, is_you}]}` | 403, 404 |
 | GET | `/game/rooms/{id}/messages` | Bearer (participant) | query `before_id`, `limit` (1–100, default 50) | 200 `{items: [{id, participant_id, display_label, text}] oldest→newest, prev_before_id}`: the room chat, `participant_id` = label number 1–5 (BE-09) | 403 not a participant, 404, 422 |
 | POST | `/game/rooms/{id}/start` | Bearer (participant) | — | 200 `RoomOut` (starts waiting room at 2–4 participants; idempotent if already `discussion`) | 403, 404, 409 outside 2–4 participants or wrong state |
@@ -183,6 +210,8 @@ Join the queue over REST, listen for room and phase events on `/ws`, open `/ws/g
 | GET | `/game/rooms/{id}/results` | Bearer (participant) | — | 200 `{room_id, state: "finished", my_participant_id, winner_participant_ids, is_draw, participants: [{participant_id, display_label, is_bot, score, outcome, deception_rate}]}` (BE-10) | 403, 404, 409 not finished |
 
 Room states (BE-27): `waiting (180 s max) → discussion (120 s) → voting (45 s) → finished`, or `closed` if timer expires with 1 participant or the last human leaves `waiting`. Every participant payload before results exposes only `{id, display_label, is_you}` identically for humans and bots, where `id` and `my_participant_id` are the participant's stable room label number (1–5, e.g. 2 for "Player 2"), never database participant ids (BE-35).
+
+**My room (BE-09 follow-up).** `GET /game/rooms/active` answers with the room I am in while it is `waiting`, `discussion` or `voting`, and `null` once it is `finished` or `closed`, or after I left it while it was waiting. It is never another user's room, and it has the same fields, label numbers and missing bot flag as `GET /game/rooms/{id}`. No room is a 200 with `null`, not a 404, so the browser console stays clean (as `GET /companies/me`). The lobby asks it before `POST /game/queue/join`: a room in `discussion` or `voting` means the match is running, so it opens `/game/rooms/{id}` instead of joining. A 409 from join (a match that started in another tab in between) is followed by the same call.
 
 **Votes and results (BE-10).** Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5 to 7.
 
@@ -228,13 +257,16 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | client → server (`/ws/game`) | `chat_message` | `{text}` at top level (or inside `payload`); 1–500 characters after trimming | Player sends a room message during discussion |
 | server → client | `pong` | `null` | Reply to ping |
 | server → client (`/ws/game`) | `game_snapshot` | `{room: RoomOut, messages: [game_message payload] (the last 50, oldest→newest), my_votes: [{target_participant_id, guess}]}` | First frame of every `/ws/game` connection; see "Room socket" below |
-| server → client (`/ws/game`) | `game_error` | `{detail}` | A `chat_message` was refused (outside the discussion, empty, too long, or with characters that cannot be stored); nothing was saved or sent |
+| server → client (`/ws/game`) | `game_error` | `{detail}` | A `chat_message` was refused (outside the discussion, empty, too long, with characters that cannot be stored, or over the chat limit: `"Rate limit exceeded: 30 per 1 minute"`); nothing was saved or sent, and the socket stays open |
 | server → client | `presence` | `{user_id, is_online}` | A friend's first socket opened (`true`) or last socket closed (`false`); see below |
 | server → client | `message` | `MessageOut` | New message in any of my conversations (mine too) |
 | server → client | `message_updated` | `MessageOut` | Author edited a message within 15 min (BE-24) |
 | server → client | `message_deleted` | `{id, conversation_id}` | Author soft-deleted a message (BE-24) |
 | server → client | `message_status` | `{message_id, status: "delivered"}` | A participant marked it delivered |
 | server → client | `conversation_updated` | `{conversation_id, unread_count}` (`null` for the other side) | Someone read a conversation |
+| server → client | `application_created` | `ApplicationOut` | Candidate applied to one of the employer's jobs (BE-28) |
+| server → client | `application_updated` | `ApplicationOut` | Employer updated an application status (sent to applicant) or applicant withdrew (sent to employer) (BE-28) |
+| server → client | `video_moderated` | `{id, moderation_status, lifecycle_status, rejected_reason}` | Moderation worker finished or errored on one of my intro videos (BE-29) |
 | server → client | `game_room_formed` | `{room_id}` | Matchmaking put me in a room |
 | server → client | `game_participant_joined` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human or bot joined the waiting room (`participant.id` is label number 1–5, BE-35) |
 | server → client | `game_participant_left` | `{room_id, participant: {id, display_label}, participant_count, room_expires_at}` | A human left the waiting room (`participant.id` is label number 1–5, BE-35) |
@@ -245,6 +277,7 @@ One socket per tab on `/ws`; every frame is JSON `{type, payload}`. Delivery is 
 | server → client | `game_phase_finished` | `{room_id, state: "finished", phase_ends_at: null}` | Voting ended, scores stored, results ready (BE-10) |
 
 - **Unread counts in `conversation_updated`**: For the reader who emitted the read receipt, `unread_count` is their updated **total unread messages count** across all conversations (matching `GET /conversations/unread`), allowing the client to update global navigation badges directly while setting that specific conversation row's unread counter to 0. For other participants in the room, `unread_count` is `null`.
+- **Receipt ids**: an id that is not a whole number from 1 to 2^63−1 makes the frame ignored; the socket stays open (BE-13).
 - **Receipt envelopes**: Client-sent `delivered` and `read` frames are accepted both at top level (`{"type": "delivered", "message_id": 6}`) and inside a `payload` dictionary (`{"type": "delivered", "payload": {"message_id": 6}}`).
 
 **Presence (new backend, BE-06):** a user is online while at least one of their sockets is open and pinging, on any API worker; the count lives in Redis. Only friends (accepted friendships) get `presence` events, and only on a change: the first socket of the user opening, or the last one closing. Several tabs count as one user. If an API process stops without closing its sockets, friends get no `false` event; that user stops counting as online at most 60 s later. To show who is online when a page opens, use the `is_online` field of the REST answers (friends list, public profile), then follow the events.
@@ -271,15 +304,16 @@ The frontend should code against these from day one; the backend Tech Lead confi
 | \[x\] | Drop `phone`, `is_phone_verified`, `username`, `account_number` from `UserOut` unless a feature uses them | Smaller contract, no dead fields |
 | \[x\] | Email links open frontend routes `/verify-email?token=` and `/reset-password?token=`, which call the API | Links currently show raw JSON or 405 |
 | \[x\] | WebSocket auth with a one-time ticket: `POST /api/ws/ticket` → `{ticket}` valid 30 s, then `wss://<host>/ws?ticket=` (BE-06) | Access tokens no longer in URLs and logs |
-| \[ \] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status}` (`presence` is sent since BE-06) | Live edits, online dots, no polling for moderation |
-| \[x\] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
+| [x] | New events `message_updated`, `message_deleted`, `presence` `{user_id, is_online}`, `video_moderated` `{id, moderation_status, lifecycle_status, rejected_reason}` (`presence` since BE-06, `message_*` since BE-24, `video_moderated` since BE-29) | Live edits, online dots, no polling for moderation |
+| [x] | Game: `GET /api/game/rooms/{id}/messages`; room payload and phase events include `phase_ends_at`; results include `winner_participant_ids` | Reconnect, countdown, clear win / loss |
 | \[ \] | Game: minimum room size 3; votes must target the same room | Multiplayer 3+ module; integrity |
+| \[x\] | Game: `GET /api/game/rooms/active` → my room while it is `waiting`, `discussion` or `voting` (the shape of `GET /game/rooms/{id}`), else 200 `null` | The lobby sends a player back to a running match, without a 409 or a 404 in the console (BE-09 follow-up) |
 | \[x\] | Game votes: `POST /game/rooms/{id}/votes` `{target_participant_id, guess}` names its target by label number (1–5): the same number as `participants[].id` and `my_participant_id` in the room state, never the database participant id. A vote request replaces the voter's mark for that target: it is idempotent and allowed any number of times until voting ends, so there is no "already voted" error. A target without a mark counts as `human`; `my_votes` in `game_snapshot` lists the saved marks the same way. Answer and errors: the Game table (BE-10). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), sections 5, 6 and 9 | Marks preset to human and changeable until voting ends; no database ids before results (DOC-08 follow-up, BE-10) |
 | [x] | Game payloads before the results name each participant by its label number (1–5, "Player N"), the same field as in the votes row above, never by the database participant id: `GET /game/rooms/{id}` (`my_participant_id` and `participants[].id`), `game_participant_joined` and `game_participant_left` (`participant.id`), and `game_message` (`participant_id`). `display_label` stays. `GET /game/rooms/{id}/results` uses the same label numbers (BE-10), so no database participant id reaches a client. BE-35 (Nader, new card: hide database participant ids from game payloads before results) owns the REST room state and the room events; BE-09 owns `game_message` on `/ws/game`. Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md), section 9 | No database ids before results, so ids cannot hint at join order or at bots (DOC-08 follow-up, BE-35, BE-09) |
 | \[x\] | Game results add `winner_participant_ids` (ids of the participants with outcome `win`; empty on a draw), `is_draw` (boolean: the top score is shared, or the single human scored 0) and per participant `outcome` (`win`, `draw` or `loss` for humans; `null` for bots). Rules: [game/turing-duel-rules.md](../game/turing-duel-rules.md) | Clear win / draw / loss result (DOC-08, BE-10) |
 | \[ \] | Jobs: `active` renamed `draft`; only `open` jobs accept applications or chats | One clear meaning per status |
 | \[ \] | Remove `/chat/*`, `/media/intro-video/draft/*`, `/media/feed/demo`, `/media/health` (moved to `/_internal`) | Legacy and leaks |
-| \[ \] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair | OAuth module (tier B) |
+| [x] | OAuth: `GET /api/auth/oauth/42/start` → redirect; `GET /api/auth/oauth/42/callback` → token pair (BE-11: after the `#` of a redirect to the frontend page `/oauth/callback`) | OAuth module (tier B) |
 | [x] | `GET /metrics` for Prometheus, internal only | Monitoring module |
 
 The `avatar_url` row (BE-08 + BE-22): `UserOut` (`avatar_url`), `CompanyOut` (`logo_url`), `GET /api/friends`, and `GET /api/users/{id}/profile` all return public/default image URLs through `Storage.avatar_url` / `Storage.logo_url`.

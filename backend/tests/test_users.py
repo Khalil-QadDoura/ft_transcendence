@@ -294,6 +294,10 @@ def test_delete_marks_the_account_deleted_and_keeps_the_row(client, ana):
     # A soft delete: the row and the profile are still there, only the status changed.
     assert sql("SELECT email, status FROM users") == [("ana@example.com", "deleted")]
     assert profile_in_db("ana@example.com") == ANA
+    # The 30 days before the account is anonymised start now (BE-34); no hold by default.
+    assert sql(
+        "SELECT deleted_at > now() - interval '1 minute', retention_hold, anonymised_at FROM users"
+    ) == [(True, False, None)]
 
 
 def test_a_deleted_account_cannot_log_in(client, ana):

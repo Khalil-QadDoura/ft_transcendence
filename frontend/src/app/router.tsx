@@ -1,6 +1,7 @@
 import { EmployerJobs } from "../features/employer/EmployerJobs";
 import { PublicProfile } from "../features/people/PublicProfile";
 import { ProfilePage } from "../features/profile/ProfilePage";
+import { CompanyPage } from "../features/companies/CompanyPage";
 import { useText } from "../i18n/useText";
 import {
   ForgotPassword,
@@ -9,7 +10,11 @@ import {
 } from "../features/account/AccountPages";
 import { LegalPage } from "../features/legal/LegalPage";
 import { Link, type RouteObject } from "react-router-dom";
-import { AuthForm, VerifyEmail } from "../features/auth/AuthScreens";
+import {
+  AuthForm,
+  OAuthCallback,
+  VerifyEmail,
+} from "../features/auth/AuthScreens";
 import { Layout } from "./Layout";
 import { RequireSession, GuestOnly } from "./session";
 import { Welcome } from "../features/home/Welcome";
@@ -17,6 +22,7 @@ import { ComponentPreview } from "../features/dev/ComponentPreview";
 import { MyApplicationsPage } from "../features/applications/MyApplicationsPage";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { ConversationsPage } from "../features/conversations/ConversationsPage";
+import { GameLobbyPage } from "../features/game/GameLobbyPage";
 import { VideoResumePage } from "../features/media/VideoResumePage";
 import { StatusPage } from "../features/status/StatusPage";
 import { GameRulesPage } from "../features/game/rules/GameRulesPage";
@@ -86,6 +92,7 @@ export const routes: RouteObject[] = [
         ],
       },
       { path: "verify-email", element: <VerifyEmail /> },
+      { path: "oauth/callback", element: <OAuthCallback /> },
       { path: "forgot-password", element: <ForgotPassword /> },
       { path: "reset-password", element: <ResetPassword /> },
       {
@@ -93,16 +100,17 @@ export const routes: RouteObject[] = [
         children: [
           { path: "settings", element: <AccountSettings /> },
           { path: "profile", element: <ProfilePage /> },
+          { path: "company", element: <CompanyPage /> },
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
           { path: "applications", element: <MyApplicationsPage /> },
           { path: "employer/jobs", element: <EmployerJobs /> },
           { path: "employer/jobs/new", element: <EmployerJobs /> },
           { path: "employer/jobs/:id/edit", element: <EmployerJobs /> },
+          { path: "game", element: <GameLobbyPage /> },
           ...pages([
             ["friends", "routes.friends"],
             ["employer/*", "routes.employer"],
-            ["game", "routes.game"],
             ["game/rooms/:id", "routes.room"],
           ]),
           { path: "chat", element: <ConversationsPage /> },
