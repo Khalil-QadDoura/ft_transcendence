@@ -15,6 +15,20 @@ const plan = JSON.parse(
   readFileSync(join(root, "src/i18n/translation-plan.json"), "utf8"),
 );
 let failed = false;
+// Inspect every resource, including locales currently using fallback namespaces.
+for (const language of ["en", "ar", "az", "tr", "ru"]) {
+  const directory = join(root, "src/i18n", language);
+  for (const file of readdirSync(directory).filter((name) =>
+    name.endsWith(".json"),
+  )) {
+    if (readFileSync(join(directory, file), "utf8").includes("\uFFFD")) {
+      console.error(
+        `${language}/${file}: invalid Unicode replacement character`,
+      );
+      failed = true;
+    }
+  }
+}
 for (const namespace of readdirSync(join(root, "src/i18n/en")).filter((name) =>
   name.endsWith(".json"),
 )) {
