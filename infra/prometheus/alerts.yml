@@ -39,15 +39,20 @@ groups:
           summary: "Scrape target {{ $labels.job }} is down"
           description: "Prometheus has not been able to scrape {{ $labels.instance }} (job {{ $labels.job }}) for more than 1 minute."
 
-      # The expression of the "Error rate (share of requests)" panel of the WOZU API
-      # dashboard: the share of API responses with a 5xx status over 5 minutes. The status
-      # label holds the code itself ("500", "503"). No traffic does not fire: with no
+      # The share of API responses with a 5xx status over 5 minutes. The status label
+      # holds the code itself ("500", "503"). It is the expression of the "Error rate
+      # (share of requests)" panel of the WOZU API dashboard without the health check:
+      # both selectors leave out handler="/api/health", the panel still counts every
+      # request. On an idle stack the Docker health check is the only API traffic, and it
+      # answers 503 while Redis is stopped, so two `make alert-demo` runs in a row made
+      # this alert fire about 5 minutes later (Khalil, INF-10 review). A broken
+      # dependency is RedisDown's or TargetDown's job. No traffic does not fire: with no
       # request series the division has no result, and with counters that do not move it
       # is 0 / 0 (NaN), which is not above 0.05.
       - alert: ApiHighErrorRate
         expr: |
-          (sum(rate(http_requests_total{job="api", status=~"5.."}[5m])) or vector(0))
-            / sum(rate(http_requests_total{job="api"}[5m]))
+          (sum(rate(http_requests_total{job="api", handler!="/api/health", status=~"5.."}[5m])) or vector(0))
+            / sum(rate(http_requests_total{job="api", handler!="/api/health"}[5m]))
           > 0.05
         for: 5m
         labels:

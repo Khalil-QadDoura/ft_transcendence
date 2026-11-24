@@ -122,6 +122,24 @@ tests:
         alertname: ApiHighErrorRate
         exp_alerts: []
 
+  # Only health-check traffic, as on an idle stack after two `make alert-demo` runs: 13
+  # calls per 5 minutes, 4 of them 503 (about 31 %). The rule leaves out /api/health, so
+  # the division has no result and nothing fires.
+  - name: ApiHighErrorRate ignores 503 answers of the health check
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="api", handler="/api/health", method="GET", status="200"}'
+        values: '0+1.8x20'
+      - series: 'http_requests_total{job="api", handler="/api/health", method="GET", status="503"}'
+        values: '0+0.8x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ApiHighErrorRate
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ApiHighErrorRate
+        exp_alerts: []
+
   # ApiHighLatencyP95 (> 0.5 s for 5m), on the highr histogram (le without a route
   # label). 100 requests a minute: 10 under 100 ms, 10 more under 500 ms, the other 80
   # between 0.5 and 1 s. The 95th request is in the 0.5-1 s bucket: p95 =
