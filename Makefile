@@ -3,8 +3,9 @@
 # start_interval, which Engine 24 refuses) with compose v2, make, bash, openssl and python3
 # 3.9+ (scripts/vault-init.sh reads Vault's JSON answers with it; macOS command line tools,
 # the ubuntu runner). The checks against the running stack (https-check, files-check,
-# mail-check, metrics-check, grafana-check) also use curl; metrics-check, grafana-check and
-# vault-check use python3 too.
+# mail-check, metrics-check, grafana-check, vault-check, backup-check): all but vault-check
+# also use curl; metrics-check, grafana-check and vault-check use python3 too. images-check
+# and secrets-check need no running stack (secrets-check only Docker and git).
 
 COMPOSE := docker compose
 # Every profile, so down and fclean also reach services with profiles (api-test, redis-test).
