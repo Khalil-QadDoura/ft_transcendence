@@ -4,7 +4,8 @@
     "profile": ["ar", "az", "tr", "ru"],
     "people": ["ar", "az", "tr", "ru"],
     "company": ["ar", "az", "tr", "ru"],
-    "game": ["ar", "az", "tr", "ru"]
+    "game": ["ar", "az", "tr", "ru"],
+    "employer": ["ar", "az", "tr", "ru"]
   },
   "reason": "FE-06 extracts all production interface copy; FE-07 supplies the complete reviewed translations. Common navigation is translated now."
 }

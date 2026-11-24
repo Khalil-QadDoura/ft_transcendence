@@ -1,3 +1,4 @@
+import employer from "./en/employer.json";
 import company from "./en/company.json";
 import game from "./en/game.json";
 import people from "./en/people.json";
@@ -64,6 +65,7 @@ void i18next.init({
   resources: {
     en: {
       common: en,
+      employer,
       screens,
       profile,
       people,
@@ -79,6 +81,7 @@ void i18next.init({
   },
   defaultNS: "common",
   ns: [
+    "employer",
     "common",
     "screens",
     "profile",
