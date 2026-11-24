@@ -108,8 +108,8 @@ Before an application is created: profile must have first name, last name and po
 
 **Application states**
 
-- Employer moves: `submitted → viewed | shortlisted | rejected`, `viewed → shortlisted | rejected`, `shortlisted → contacted | rejected`, `contacted → hired`.
-- Applicant moves: `submitted | shortlisted → withdrawn`.
+- Employer moves: `submitted → viewed | shortlisted | rejected`, `viewed → shortlisted | rejected`, `shortlisted → contacted | hired | rejected`, `contacted → hired | rejected`.
+- Applicant moves: `submitted | viewed | shortlisted | contacted → withdrawn`.
 - Any other move → 409. Every move writes an `application_events` row. Moving to `contacted` creates (or reuses) a direct conversation linked to the job and the application.
 
 **Chat**

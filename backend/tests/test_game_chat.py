@@ -569,6 +569,40 @@ def test_bad_chat_text_is_refused_and_the_socket_stays_usable(server):
     assert [text for text, _ in saved_messages(room_id)] == ["y" * MESSAGE_MAX_LENGTH]
 
 
+def test_chat_lines_are_limited_per_user_and_the_socket_stays_open(server, monkeypatch):
+    """BE-12: past GAME_CHAT_RATE_LIMIT a line gets a game_error, the socket stays usable, and
+    other players keep their own count."""
+    monkeypatch.setattr(chat, "GAME_CHAT_RATE_LIMIT", "3/minute")  # the server runs in this process
+    room_id, (_, alice_token), (_, bob_token) = discussion_room(server)
+    with (
+        room_socket(server, alice_token, room_id) as alice_ws,
+        room_socket(server, bob_token, room_id) as bob_ws,
+    ):
+        snapshot(alice_ws)
+        snapshot(bob_ws)
+        for n in range(3):
+            say(alice_ws, f"line {n}")
+            assert wait_for(alice_ws, "game_message")["text"] == f"line {n}"
+        say(alice_ws, "one too many")
+        assert next_frame(alice_ws) == {
+            "type": "game_error",
+            "payload": {"detail": "Rate limit exceeded: 3 per 1 minute"},
+        }
+        alice_ws.send(json.dumps({"type": "ping"}))
+        assert next_frame(alice_ws) == {"type": "pong", "payload": None}
+        # Bob got Alice's three lines, not the refused one, and has a count of his own.
+        for n in range(3):
+            assert wait_for(bob_ws, "game_message")["text"] == f"line {n}"
+        say(bob_ws, "bob is fine")
+        assert wait_for(bob_ws, "game_message")["text"] == "bob is fine"
+    assert [text for text, _ in saved_messages(room_id)] == [
+        "line 0",
+        "line 1",
+        "line 2",
+        "bob is fine",
+    ]
+
+
 # The history: GET /api/game/rooms/{id}/messages -----------------------------------------------
 
 

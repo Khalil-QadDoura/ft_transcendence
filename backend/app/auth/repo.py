@@ -129,3 +129,39 @@ async def close_password_reset_tokens(session: AsyncSession, user_id: int) -> No
         .where(PasswordResetToken.user_id == user_id, PasswordResetToken.used_at.is_(None))
         .values(used_at=func.now())
     )
+
+
+async def get_or_create_42_user(
+    session: AsyncSession, email: str, first_name: str | None, last_name: str | None
+) -> User:
+    """The account with this email, for a login with 42 (BE-11), locked until the commit. If
+    there is none, it is created first: already verified (42 checked the email) and with no
+    password. Two logins with 42 for the same new email at the same moment: one creates the
+    account, the other waits for it and then finds it, so there is never a second account."""
+    user = await _lock_user_by_email(session, email)
+    if user is None:
+        await session.execute(
+            insert(User)
+            .values(email=email, is_email_verified=True, first_name=first_name, last_name=last_name)
+            .on_conflict_do_nothing(index_elements=[User.email])
+        )
+        user = await _lock_user_by_email(session, email)
+    return user
+
+
+async def _lock_user_by_email(session: AsyncSession, email: str) -> User | None:
+    """SELECT ... FOR UPDATE: the row stays locked until the commit or rollback, so a sign-up,
+    a verification link or a deletion at the same moment waits for us."""
+    return await session.scalar(select(User).where(User.email == email).with_for_update())
+
+
+async def verify_and_remove_password(session: AsyncSession, user_id: int) -> User:
+    """A login with 42 into an account that was never verified (BE-11): mark the email
+    verified, remove the password and raise token_version, as one database step. The
+    password was chosen by whoever signed up with this email, and that may not be its owner."""
+    return await session.scalar(
+        update(User)
+        .where(User.id == user_id)
+        .values(is_email_verified=True, password_hash=None, token_version=User.token_version + 1)
+        .returning(User)
+    )

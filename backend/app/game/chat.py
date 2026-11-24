@@ -14,10 +14,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, status
+from limits import parse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.core.limiter import used_up
+from app.core.limits import GAME_CHAT_RATE_LIMIT
 from app.core.metrics import track_ws_connection
 from app.game import repo, service
 from app.game.constants import MAX_ID, MESSAGE_MAX_LENGTH, SNAPSHOT_MESSAGES, label_number
@@ -190,6 +193,10 @@ async def post_message(app: FastAPI, user: User, room_id: int, text: Any) -> str
     Bots post their lines from the game's server loop (service._tick_discussion_room) in the
     same table and with the same event, so players cannot tell them apart.
     """
+    # Every line counts, refused or not, per user: in all rooms and tabs together (BE-12).
+    limit = parse(GAME_CHAT_RATE_LIMIT)
+    if used_up(limit, "game-chat", f"user:{user.id}"):
+        return f"Rate limit exceeded: {limit}"
     refusal = text_refusal(text)
     if refusal is not None:
         return refusal

@@ -67,3 +67,24 @@ ROW_LOCK = {"key_share": True}
 # A small file can still be a huge picture that takes gigabytes of memory to decode (a
 # "decompression bomb"). 25 million pixels is a 24-megapixel camera photo (6000 x 4000).
 MAX_PICTURE_PIXELS = 25_000_000
+
+# --- Video moderation worker (BE-29 / M9) --------------------------------------------------
+
+# Sample three frames across a 30-second video; short videos (< 5 s) fall back to midpoint.
+MODERATION_FRAME_TIMESTAMPS = (5, 15, 25)
+# Small container/AAC padding tolerance so a 30.0 s recording is not rejected as 30.1 s.
+DURATION_TOLERANCE_SEC = 0.5
+# Extracted MP3 smaller than this has no meaningful speech to transcribe.
+MIN_AUDIO_BYTES = 1024
+# Hard timeout for each ffmpeg/ffprobe invocation so a corrupt file cannot hang a worker.
+FFMPEG_TIMEOUT_SEC = 120
+# OpenAI REST endpoints and models (called over urllib3 + certifi with no extra SDK).
+OPENAI_TIMEOUT_SEC = 60
+OPENAI_WHISPER_URL = "https://api.openai.com/v1/audio/transcriptions"
+OPENAI_MODERATION_URL = "https://api.openai.com/v1/moderations"
+OPENAI_WHISPER_MODEL = "whisper-1"
+OPENAI_MODERATION_MODEL = "omni-moderation-latest"
+# Live WebSocket event pushed to the video owner when moderation completes or fails.
+EVENT_VIDEO_MODERATED = "video_moderated"
+# Redis key refreshed by the worker and read by GET /api/health (BE-31).
+WORKER_HEARTBEAT_KEY = "worker:heartbeat"
