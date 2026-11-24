@@ -121,7 +121,7 @@ The runtime image is 70 % smaller than the reference; the slimming came with BE-
 
 - **Container logs:** rotation `10m` × 3 per container (above) bounds the size, and `make logs-reset` bounds the age. The operator who runs the stack (on the defense machine, whoever started it) runs `make logs-reset` at least once a week; a line written right after a reset is then at most 7 days old at the next one, and three missed weeks still stay inside 30 days.
 - **Metrics:** Prometheus keeps 30 days, at most 1 GB (`--storage.tsdb.retention.time=30d`, `--storage.tsdb.retention.size=1GB`, INF-08); `make metrics-check` reads both flags back.
-- **No log in a volume.** Every log of the stack is the `json-file` log of a container; the six named volumes hold data, not logs (table below). That is why recreating the containers is enough and no volume is ever removed for it.
+- **No log in a volume.** Every log of the stack is the `json-file` log of a container; the seven named volumes hold data, not logs (table below). That is why recreating the containers is enough and no volume is ever removed for it.
 
 **`make logs-reset`** removes the stopped containers of the project (such as the exited one-shot `minio-init`; `docker compose rm --force`, without `-v`) and recreates every running service (`docker compose --profile '*' up -d --force-recreate --wait` with the running services by name). Docker deletes each old container with its log files; the new containers start with empty logs. A stopped dependency is started, as `make` would (`minio-init` runs again as the api's dependency, idempotent). The new `vault` container starts sealed, so `scripts/vault-init.sh` unseals it right after (INF-12). It prints the service names only, plus the two lines of `scripts/vault-init.sh`, for example (2026-11-19):
 
@@ -323,7 +323,7 @@ Mailpit catches every email the API sends over plain SMTP; the evaluator opens `
 | `make fclean` | removes containers, volumes (the `backups` volume too: every backup is gone), the images built here and the certificate; moves `scripts/vault-keys.local` aside to `scripts/vault-keys.local.stale-<UTC time>` (its Vault went with the `vault-data` volume); **keeps `.env`**, which holds the hand-added `OPENAI_API_KEY` and the database password that matches the next volume |
 | `make re` | `fclean` + `all` |
 
-`down`, `logs` and `fclean` use `--profile '*'`, so they also reach services that are off by default (`worker`).
+`down`, `logs` and `fclean` use `--profile '*'`, so they also reach services that are off by default (`redis-test`, profile `test`).
 
 **Test database.** The backend tests delete what they find, so they run only on `POSTGRES_TEST_DB` (`wozu_test`), never on the app database `POSTGRES_DB`. `infra/db/create-test-db.sh` creates it, owned by `POSTGRES_USER`, with PostGIS (the schema has a `geography` column). It runs in the `db` container from two places: the image runs it once when the `db-data` volume is new (mounted as the single file `/docker-entrypoint-initdb.d/20-create-test-db.sh`, after the image's own `10_postgis.sh`), and `make test` runs it on every call (`docker compose exec`), so a volume created before the script gets the database too. It is idempotent, reads the names from the container environment, connects over the local socket (no password) and refuses a name that equals `POSTGRES_DB` or lacks `test` (the fixtures skip such a database). The tables come from the fixtures, which run `alembic` on `TEST_DATABASE_URL`.
 
