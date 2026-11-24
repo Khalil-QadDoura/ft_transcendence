@@ -79,6 +79,7 @@ export function Layout({
           <Link to="/privacy">{t("privacy")}</Link>
           <Link to="/terms">{t("terms")}</Link>
           <Link to={GAME_RULES_PATH}>{t("gameRules")}</Link>
+          <Link to="/employer/jobs">{t("employer:eyebrow")}</Link>
           <Link to="/status">{t("status")}</Link>
         </nav>
         <small>

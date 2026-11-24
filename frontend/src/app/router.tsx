@@ -1,3 +1,5 @@
+import { EmployerJobs } from "../features/employer/EmployerJobs";
+import { FriendsPage } from "../features/people/FriendsPage";
 import { PublicProfile } from "../features/people/PublicProfile";
 import { ProfilePage } from "../features/profile/ProfilePage";
 import { CompanyPage } from "../features/companies/CompanyPage";
@@ -103,13 +105,16 @@ export const routes: RouteObject[] = [
         children: [
           { path: "settings", element: <AccountSettings /> },
           { path: "profile", element: <ProfilePage /> },
+          { path: "friends", element: <FriendsPage /> },
           { path: "company", element: <CompanyPage /> },
           { path: "users/:id", element: <PublicProfile /> },
           { path: "videos", element: <VideoResumePage /> },
           { path: "applications", element: <MyApplicationsPage /> },
+          { path: "employer/jobs", element: <EmployerJobs /> },
+          { path: "employer/jobs/new", element: <EmployerJobs /> },
+          { path: "employer/jobs/:id/edit", element: <EmployerJobs /> },
           { path: "game", element: <GameLobbyPage /> },
           ...pages([
-            ["friends", "routes.friends"],
             ["employer/*", "routes.employer"],
             ["game/rooms/:id", "routes.room"],
           ]),
