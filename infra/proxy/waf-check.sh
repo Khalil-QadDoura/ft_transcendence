@@ -4,7 +4,8 @@
 #    anomaly thresholds 5 inbound and 4 outbound, audit log parts AHZ, and the two exclusion
 #    files of infra/proxy/modsecurity mounted; read from the container (env, the generated
 #    config and the mounted files) and shown by behaviour (a probe only a PL2 rule catches
-#    is blocked; audit lines carry no request headers or bodies);
+#    is blocked; audit lines carry no request headers or bodies), and the pages send
+#    Referrer-Policy: strict-origin;
 # 2. attack probes (SQL injection and XSS in a query string and in a JSON body, path
 #    traversal, a scanner User-Agent, a PL2-only probe) each get the WAF's 403 and leave an
 #    audit line in `docker compose logs proxy`, found by its unique URI;
@@ -15,7 +16,7 @@
 #    and intro video uploads (presigned PUT) with their confirm, a game round (queue, start,
 #    room, chat history, both WebSocket handshakes, a vote refused with the app's 409, leave),
 #    the Grafana dashboards as the browser loads them and its snapshot refusal, then both
-#    accounts deleted.
+#    accounts deleted; a job search with the jobs page's full URL as Referer passes too.
 # 4. no audit line of the run holds a secret the run sent or got: passwords, access and
 #    refresh tokens, email link tokens, WebSocket tickets, presigned URL signatures, the
 #    Grafana admin password (searched for, never printed).
@@ -23,6 +24,10 @@
 # ({"error": ...}), Grafana's too. Every request is told apart that way.
 # Prints "waf-check: N probes blocked, M normal requests passed"; exits 1 on any miss, with
 # the request and the rule ids from its audit line.
+# Then runs `infra/proxy/waf-sweep.sh ci`: the "* " sentences of waf-corpus.txt in every
+# free-text field, a value per token kind in its place, and 3 attack probes in every
+# free-text field. WAF_SWEEP=1 adds the full sweep (`waf-sweep.sh all`, about 3 minutes,
+# not in CI). Exits 1 if any part failed.
 # Needs the stack up (`make`). Run it with `make waf-check`. Signs up 2 users: the API allows
 # 5 sign-ups a minute per address, so wait a minute between two runs (mail-check signs up one).
 # Needs Python 3.9+ (standard library only) and docker. Works with bash 3.2 (macOS).
@@ -42,7 +47,8 @@ https_port="$(docker compose port proxy 8443)"
 https_port="${https_port##*:}"
 if [ "$https_port" = 443 ]; then base=https://localhost; else base="https://localhost:$https_port"; fi
 
-exec python3 -I - "$ROOT" "$base" <<'PY'
+rc=0
+python3 -I - "$ROOT" "$base" <<'PY' || rc=1
 import base64
 import glob
 import hashlib
@@ -215,6 +221,19 @@ for repo_file, mounted in sorted(MOUNTS.items()):
         ok("%s is mounted as %s" % (repo_file, os.path.basename(mounted)))
     else:
         fail("%s is not what the proxy loads at %s" % (repo_file, mounted))
+
+# The pages send Referrer-Policy: strict-origin (default.conf.template, location /), so the
+# browser sends only the origin as Referer, never a page's query (a search, a reset token).
+try:
+    with urllib.request.urlopen(urllib.request.Request(BASE + "/", method="GET", headers={
+            "User-Agent": BROWSER_UA}), context=CTX, timeout=30) as res:
+        policy = res.headers.get("Referrer-Policy")
+except Exception as err:  # noqa: BLE001 - reported as a failure below
+    policy = "no answer (%r)" % err
+if policy == "strict-origin":
+    ok("GET / sends Referrer-Policy: strict-origin")
+else:
+    fail("GET / sends Referrer-Policy: %s, expected strict-origin" % policy)
 
 # ---------------------------------------------------------------------------- 2. probes
 print("2. Attack probes (each must get the WAF's 403):")
@@ -401,6 +420,9 @@ else:
         "update your profile; we'll call you back. Website: https://example.com/about مرحبا",
         "country": "United Arab Emirates",
         "city": "Abu Dhabi", "district": "Al Reem Island"}, auth=a["auth"])
+    normal("company edit", "PATCH", mark("/api/companies/me"), (200,), {
+        "name": "O'Brien & Sons -- Abu Dhabi", "country": "United Arab Emirates",
+        "city": "Abu Dhabi", "district": "Al Reem Island, 2 or 3 min from the metro"}, auth=a["auth"])
     job = normal("job create", "POST", mark("/api/jobs"), (201,), {
         "title": "Backend developer (Python, SQL)", "description":
         "Experience with SQL and PostgreSQL; select a job, then update your profile -- we reply "
@@ -411,13 +433,20 @@ else:
     normal("my jobs", "GET", mark("/api/jobs/mine"), (200,), auth=a["auth"])
     if job.get("id"):
         normal("job", "GET", mark("/api/jobs/%d" % job["id"]), (200,), auth=b["auth"])
-        normal("job edit", "PATCH", mark("/api/jobs/%d" % job["id"]), (200,), {"urgency": "urgent"},
-               auth=a["auth"])
-    # The search page's request (frontend/src/features/jobs/api.ts). The API has no
-    # /jobs/open yet, so it answers a JSON 4xx; what matters here is that the WAF lets it by.
+        normal("job edit", "PATCH", mark("/api/jobs/%d" % job["id"]), (200,), {
+            "urgency": "urgent", "title": "Senior engineer -- backend (2 or 3 hires)",
+            "description": "We hire 2 or 3 people each year -- O'Brien's team. Yes, I'm in!"},
+            auth=a["auth"])
+    # The search page's request (frontend/src/features/jobs/api.ts).
     normal("job search", "GET", mark("/api/jobs/open?" + urllib.parse.urlencode({
         "keyword": "backend developer -- O'Brien", "salary_min": 1000, "lat": 24.45, "lng": 54.38})),
-        (200,), json_error=True, auth=b["auth"])
+        (200,), auth=b["auth"])
+    # The same search with the Referer a browser without our Referrer-Policy sends: the jobs
+    # page's own URL with its query. 932206 blocked it until INF-11 (#94 review); 10040 lifts
+    # that rule for the API, whose code never reads the Referer.
+    normal("job search with a full-URL Referer", "GET",
+           mark("/api/jobs/open?keyword=backend+developer"), (200,), auth=b["auth"],
+           headers={"Referer": BASE + "/jobs?keyword=backend+developer"})
 
     conv = normal("conversation", "POST", mark("/api/conversations"), (201,),
                   {"type": "direct", "peer_user_id": b["id"], "job_id": job.get("id")}, auth=a["auth"]) or {}
@@ -650,3 +679,11 @@ if failed:
     sys.exit(1)
 print("waf-check: all checks passed")
 PY
+
+echo
+./infra/proxy/waf-sweep.sh ci || rc=1
+if [ "${WAF_SWEEP:-}" = 1 ]; then
+    echo
+    ./infra/proxy/waf-sweep.sh all || rc=1
+fi
+exit "$rc"
