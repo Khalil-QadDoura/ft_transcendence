@@ -125,13 +125,13 @@ To wipe all app rows/media and re-seed from scratch at any time, run `make reset
 
 | Member | 42 login | GitHub | Role(s) | Responsibilities |
 | --- | --- | --- | --- | --- |
-| Burhan | bhajili | byul-byul | Product Owner + Developer (DevOps) | Product vision, backlog priorities, acceptance of finished cards, README and legal pages content; Docker, nginx + ModSecurity / TLS, monitoring, security modules |
-| Khalil | kqaddour | Khalil-QadDoura | Technical Lead + Developer (Backend A) | Backend architecture and API contract, stack decisions, review of critical PRs, code quality rules |
-| Nader | nakhalil | NaderZico | Developer (Backend B) | Ports and owns backend modules |
-| Zayid | zsid-ele | zayidelkhair | Project Manager / Scrum Master + Developer (Frontend A) | Runs the Trello board and the weekly sync, tracks deadlines and blockers, keeps the risk list; frontend modules |
-| Ahmad | aradwan | a7mdwr | Developer (Frontend B) | Owns frontend modules |
+| Burhan | bhajili | byul-byul | Product Owner + Developer (DevOps) | Product vision, backlog priorities, acceptance of finished cards, README and legal pages content; Docker, nginx + ModSecurity / TLS, monitoring, security modules. Modules: M12, M14; pending: M13 (#94, #103) |
+| Khalil | kqaddour | Khalil-QadDoura | Technical Lead + Developer (Backend A) | Backend architecture and API contract, stack decisions, review of critical PRs, code quality rules. Modules: M1, M2, M4, M5, M9, M15; pending: M7, M8, M18 (game server side; the room screen is #86, #88, #98) |
+| Nader | nakhalil | NaderZico | Developer (Backend B) | Ports and owns backend modules. Modules: M2, M3, M4, M5, M6, M9, M12, M14; pending: M7, M8, M18 (game server side) |
+| Zayid | zsid-ele | zayidelkhair | Project Manager / Scrum Master + Developer (Frontend A) | Runs the Trello board and the weekly sync, tracks deadlines and blockers, keeps the risk list; frontend modules. Modules: M1, M3, M4; pending: M10, M11 (#93), M16 (FE-16, not done) |
+| Ahmad | aradwan | a7mdwr | Developer (Frontend B) | Owns frontend modules. Modules: M1, M2, M3, M6, M9; pending: M7, M8, M18 (game room screen: #86, #88, #98) |
 
-<!-- TODO DOC-06 (byul-byul): each member checks their own row before submission; add the module names once the work split is final. -->
+Module numbers are those of the [Modules](#modules) table; "pending" modules are not counted yet. Each member checks their own row and confirms or corrects it as a comment on the pull request that last changed this table.
 
 ## Project Management
 
@@ -141,7 +141,7 @@ We plan in one-week sprints: November 4–10, 11–17 and 18–24, followed by a
 
 Each card gets a focused branch and pull request. Branches follow `feat/FE-06-i18n-setup` (or `fix/…`, `docs/…`); commits follow `<type>(<scope>): <summary> (<CARD-ID>)`. PRs link the Trello card, describe behavior and validation, and request review from the other pair. The team rule is review within 24 hours. Applicable frontend/backend CI must pass, feedback must be addressed and approval obtained before squash-merging into `main`. A dependent PR names its parent and is retargeted and checked after the parent lands. `main` already requires one approving review and disallows force pushes. Making CI a required check and applying protection to administrators remain INF-06 work.
 
-The [PM-00 board guide](docs/plan/board.md) defines the workflow and Definition of Done. An open PR is **Review**, not **Done**: merge and the card's complete acceptance evidence are required. After a merge, the owner makes a small live change and explains/tests it as defense practice. Study notes support that preparation; they do not replace the owner's demonstration.
+The [PM-00 board guide](docs/plan/board.md) defines the workflow and Definition of Done. An open PR is **Review**, not **Done**: merge and the card's complete acceptance evidence are required. The live change for merged cards is rehearsed in QA-04 before the defense (Product Owner decision, 2026-11-25); a merged card goes to Done without waiting for it. Study notes support that preparation; they do not replace the owner's demonstration.
 
 Communication uses the team’s WhatsApp group for daily coordination and the daily Done / Next / Blocked update, Trello card comments for implementation questions and blockers, and GitHub for code feedback and review requests. The [PM-01 sprint routine](docs/plan/sprint-routine.md) contains the 30-minute weekly agenda and the daily **Done / Next / Blocked** template. As of November 11, the proposed Tuesday 18:30 weekly slot, weekday 22:00 update cutoff and call details still need team agreement. WhatsApp is the confirmed coordination channel; calendar invitations and pinning the daily-update format are still pending. The GitHub Power-Up is enabled, but repository authorization/linking remains an open PM-01 action; an ordinary PR attachment is not proof of that connection.
 
@@ -336,7 +336,18 @@ Points follow the subject: Major = 2, Minor = 1; 14 points are needed. A module 
 
 ## Known limitations
 
-<!-- TODO DOC-06 (byul-byul), filled before submission: honest list of what does not work or is missing. -->
+What does not work or is missing on `main` today (commit `d94b59f`, 2026-11-25), each with the card or pull request that changes it:
+
+- **Game room:** the Turing Duel room screen (discussion chat, voting, results) is not on `main`, so a match cannot be played in the browser; only the lobby and the game server are there (#86). Restoring the room after a reload (#88) and showing the connection state in the room (#98) are not on `main` either.
+- **Applying to a job:** the job detail page with the apply form is not on `main` (#47), and the employer's applications page with video review is not on `main` (#99). The backend for both is there.
+- **Languages:** only the navigation is translated in Arabic, Azerbaijani, Turkish and Russian; the rest of the interface shows English. The Arabic layout is not mirrored (#93).
+- **WAF:** ModSecurity runs in `DetectionOnly` mode: it logs matches and blocks nothing (#94).
+- **Vault:** Vault runs, but no service reads its secrets from it; they come from `.env` (#103).
+- **Browsers:** compatibility with additional browsers (Firefox, Safari or Edge) has not been tested or documented (FE-16, not done).
+- **Moderation:** video moderation needs `OPENAI_API_KEY`, typed into `.env` by hand. Without it, and with `MODERATION_FAIL_OPEN=false`, a video ends as `moderation_error` and cannot be posted.
+- **Login with 42:** needs `FT_CLIENT_ID` and `FT_CLIENT_SECRET`, typed into `.env` by hand. Without them the button leads to an error (the start route answers 503).
+- **Backups:** the backups are stored on the same machine as the data, so they do not survive the loss of that machine ([docs/disaster-recovery.md](docs/disaster-recovery.md)).
+- **Vault keys:** the Vault unseal keys and the root token are in `scripts/vault-keys.local` on the machine that runs Vault ([docs/infra/vault.md](docs/infra/vault.md)).
 
 ## Credits
 
