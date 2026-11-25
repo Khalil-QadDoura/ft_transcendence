@@ -13,5 +13,6 @@
   "terms": "Hizmet Şartları",
   "status": "Hizmet durumu",
   "gameRules": "Oyun kuralları",
-  "legalNavigation": "Yasal ve hizmet bilgileri"
+  "legalNavigation": "Yasal ve hizmet bilgileri",
+  "wafBlocked": "Bu metin güvenlik filtresi tarafından engellendi. Lütfen farklı bir şekilde yazıp tekrar deneyin."
 }

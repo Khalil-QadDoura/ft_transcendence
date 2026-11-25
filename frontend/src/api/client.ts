@@ -1,4 +1,4 @@
-import { activeLanguage } from "../i18n";
+import i18next, { activeLanguage } from "../i18n";
 /**
  * API Client for WOZU Web (ft_transcendence)
  * FE-20: Build the API client with token refresh and error handling
@@ -314,6 +314,18 @@ export interface RequestOptions extends Omit<RequestInit, "body"> {
   basePath?: string;
 }
 
+// INF-11: the proxy's WAF (ModSecurity) refuses a request with nginx's HTML 403 page, not
+// the API's JSON error, so its text would only be "Forbidden". The user gets a translated
+// sentence that says what to do instead. The API's own 403s are JSON and keep their detail.
+export const WAF_BLOCKED_CODE = "waf_blocked";
+
+function isWafBlock(response: Response): boolean {
+  if (response.status !== 403) return false;
+  // Some test doubles have no headers object.
+  const contentType = response.headers?.get("Content-Type") ?? "";
+  return contentType.toLowerCase().startsWith("text/html");
+}
+
 /**
  * Parses response errors adhering to ft_transcendence API contract:
  * {"error": {"code": "<status string>", "detail": <string or object>}}
@@ -323,6 +335,13 @@ export async function parseErrorResponse(
   response: Response,
 ): Promise<ApiError> {
   const status = response.status;
+  if (isWafBlock(response)) {
+    return new ApiError(
+      status,
+      WAF_BLOCKED_CODE,
+      i18next.t("common:wafBlocked"),
+    );
+  }
   let code = String(status);
   let detail: ApiErrorDetail = response.statusText || "Request failed";
 
