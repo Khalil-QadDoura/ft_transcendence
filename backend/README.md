@@ -44,6 +44,8 @@ app/
                  scoring.py (the points, win / draw / loss and deception rate rules, no database)
                  chat.py: the room socket /ws/game, room chat and its history, the snapshot
                  sent on every (re)connect (BE-09)
+  seed/          idempotent demo seed & reset runner (`python -m app.seed`, BE-32) with checked-in
+                 demo video pitches and PNG avatar/logo generator
   applications/  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
