@@ -93,6 +93,8 @@ Two traps when testing with stubs:
 
 One line per request on the container's stdout, the image's format `main` with one field changed (QA-01, PO decision, byul-byul, 2026-11-25): for `/verify-email`, `/reset-password`, `/api/auth/`, `/files/` and `/ws` (path prefixes) the request line is method, path and protocol, without the query string, which carries the email link tokens, the 42 callback's `code` and `state`, presigned URL signatures and the WebSocket ticket. Every other request is logged with its request line as sent, query included (a jobs search stays visible). The `map` in `templates/conf.d/logging.conf.template` matches `$request_uri`, the URI as the client sent it, not `$uri`: when an upstream fails, `error_page` sends the request to `/50x.html`, `$uri` changes with it, and a map on `$uri` would log the token of exactly that request.
 
+It is the only access log on the stack (QA-01, byul-byul, 2026-11-25): the `frontend` nginx (`infra/frontend/default.conf`) has `access_log off`, and uvicorn in `api` runs with `--no-access-log`. Both logged requests the proxy already logs, query and token included; the API writes its own JSON line per request, path without query (`app.request`).
+
 ```
 curl -sk -o /dev/null 'https://localhost/verify-email?token=PROBE'
 docker compose logs --no-log-prefix proxy 2>&1 | grep 'verify-email'   # GET /verify-email HTTP/2.0, no token
