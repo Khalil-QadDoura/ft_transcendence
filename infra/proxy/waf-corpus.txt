@@ -1,0 +1,197 @@
+# Everyday text for the WAF (INF-11): what people really type into WOZU's free-text fields.
+# One sentence per line; blank lines and lines starting with "#" are ignored.
+# A line starting with "* " is also in the subset `make waf-check` sends in CI; every line
+# is sent by `infra/proxy/waf-sweep.sh corpus` (manual, docs/infra/waf.md "Sweeps").
+# Each sentence goes through every free-text field the API has (the list is in
+# waf-sweep.sh) and must never get the WAF's 403, except the accepted false positives
+# listed in docs/infra/waf.md (each a paranoia level 1 rule).
+
+# --------------------------------------------------------------- the #94 review's examples
+* I'm free at 10 or 11
+* Yes, I'm in
+* We hire 2 or 3 people each year
+* O'Brien's team lead
+* Инженер-программист
+* senior engineer -- backend
+
+# --------------------------------------------------------------- English, chat style
+* I can start on Monday or Tuesday
+* Can you do 8 or 9 tomorrow?
+* Sorry, I can't make it today -- maybe next week?
+* Is the salary 3000 or 4000 AED per month?
+* My portfolio: https://example.com/portfolio?lang=en&tab=work
+* Check out https://example.org/a?b=c&d=e
+* Don't worry, it's fine
+* What's the address?
+* Could you send me the job details?
+* Select the job you like, then update your profile
+* We'll get back to you within 2 days
+* Please delete my old message
+Hi! Are you still looking for a backend developer?
+Can we talk tomorrow at 3pm?
+Sure, what time works for you?
+I'll be there in 5 or 10 minutes
+Thanks, that sounds great!
+Let's meet at 9:30 or 10:00
+OK, see you then 👍
+I've attached my CV, let me know what you think
+Here is the link: https://github.com/example/project
+We're open from 8 to 5, Sunday to Thursday
+It's a full-time role, not part-time
+I'm in Abu Dhabi, near Al Reem Island
+Call me at +971 50 123 4567
+I work with Python, SQL and PostgreSQL
+I'd like to apply -- is the job still open?
+Great, I'm interested!
+Do you need a driver's license?
+I have 5 years of experience in sales
+Where do I sign?
+How many hours a week?
+Yes or no?
+Either is fine for me
+I'm in, count me in!
+That's 50% off, right?
+Price: $20 or $25 per hour
+I'm available 24/7 :)
+Use the "Apply" button on the right
+It's O'Brien's team that handles hiring
+Room 2 or 3, second floor
+Order #1234 was delivered
+Meet me at the café at 10am
+Is 1 or 2 weeks' notice OK?
+He said: "we'll see"
+Me too!!! 😂😂
+Hmm... not sure
+Monday-Friday, 9am-6pm
+Can we reschedule? Something came up.
+ok
+Thanks a lot 🙏
+Drop by the office any time before 5
+You can reach us at hr@example.com
+Shift starts at 6 or 7 a.m.
+1, 2 or 3 days a week
+I'm not sure if I'm free on the 12th or the 13th
+It's 10 or 11 km from the city centre
+Who's in? We need 4 or 5 people
+I'll take the 2nd or 3rd slot
+# Accepted false positive: "!" right before "10 or 11" matches 942100 (PL1).
+Hi Мария! مرحبا 👋 See you at 10 or 11
+I'm done for today, talk tomorrow
+Got it, I'll update my CV and send it again
+Can I bring a friend? She's looking for work too
+Good morning! Is the interview still at 10:30?
+If it's OK with you, let's say 4 or 4:30
+We're a small team -- 6 people -- in Dubai Marina
+See the photos here: https://example.com/gallery/2026/office.jpg
+My LinkedIn is linkedin.com/in/example-name
+I'm 25, I've been a cashier for 3 years
+
+# --------------------------------------------------------------- English, profile and job texts
+* Senior engineer -- backend
+* backend developer
+O'Brien
+Jean-Luc D'Angelo
+Мария-Анна Петрова
+عبد الله
+Backend developer (Python, SQL)
+Part-time cashier, weekends
+We're hiring a front-end developer (React, TypeScript)
+Delivery driver & warehouse helper
+C++ and C# developer
+Data analyst / BI
+The office is at 12 Main St., Suite 4
+Abu Dhabi, Al Reem Island
+Dubai -- Business Bay
+I'm looking for part-time work -- weekends only, near Al Reem
+Hi! I'm a nurse with 7 years of experience. Portfolio: https://example.org/me
+Experience with SQL and PostgreSQL is a plus; English or Arabic required
+We build things -- fast. Website: https://example.com/about
+Please bring your ID and a copy of your diploma
+
+# --------------------------------------------------------------- English, application notes
+* Your application was moved to "interview" -- see you on Sunday
+* Hi, I'm in Dubai and can start next week -- my CV: https://example.com/cv.pdf
+Not a good fit right now, sorry -- good luck!
+Rejected: the position was filled
+Hired! Welcome to the team 🎉
+Interview on Sunday at 10 -- bring your ID
+Can you come at 8 or 9?
+I'm in -- thanks for the chance!
+Shortlisted, call on Tuesday or Wednesday
+I've been a waiter for 4 years and I'd love to join your team
+
+# --------------------------------------------------------------- Russian
+* Привет! Я свободен в 10 или 11
+* Да, я в деле
+* Мой сайт: https://example.org/maria и телефон +971 50 123 4567
+Мы нанимаем 2 или 3 человека в год
+Инженер-программист с опытом 3-5 лет
+Где-то в 15:00 или 16:00?
+Спасибо, договорились 👍
+Могу начать в понедельник или во вторник
+Работа по сменам -- выходные свободны
+Ищу работу водителя-экспедитора
+Пришлите, пожалуйста, подробности
+Зарплата 3000 или 4000 дирхамов?
+Что-то пошло не так, напишите ещё раз
+Ок, до встречи!
+Кто-нибудь говорит по-русски?
+Северо-восточный район, рядом с метро
+Senior-разработчик (Python, SQL)
+Удобно ли созвониться завтра в 10 или 11?
+Да или нет?
+Отлично, жду ответа
+
+# --------------------------------------------------------------- Arabic
+* مرحبا! أنا متفرغ الساعة 10 أو 11
+* نعم، أنا موافق
+* مطور برمجيات -- خبرة 3 سنوات
+نوظف 2 أو 3 أشخاص كل سنة
+هل الوظيفة ما زالت متاحة؟
+شكراً جزيلاً 🙏
+موقعي: https://example.com/ahmad
+يمكنني البدء يوم الأحد أو الإثنين
+العنوان: أبوظبي، جزيرة الريم
+اتصل بي على +971 50 123 4567
+الراتب 5000 درهم شهرياً
+حسناً، أراك غداً
+مهندس برمجيات أول
+أبحث عن عمل بدوام جزئي -- عطلة نهاية الأسبوع فقط
+ممتاز! متى نبدأ؟
+
+# --------------------------------------------------------------- Azerbaijani
+* Salam! Saat 10 və ya 11-də boşam
+* Bəli, varam
+Hər il 2 və ya 3 nəfər işə götürürük
+Proqram mühəndisi
+Bakı, Nəsimi rayonu
+Təşəkkür edirəm, sabah görüşərik
+Maaş 1500 və ya 2000 manat?
+Bazar ertəsi başlaya bilərəm
+Ətraflı məlumat: https://example.az/is?id=42
+# Accepted false positive: "Part-time iş --" matches 942100 (PL1).
+Part-time iş -- yalnız həftəsonu
+Zəng edin: +994 50 123 45 67
+Oldu, gözləyirəm 😊
+Yeni vakansiya: ofis meneceri
+
+# --------------------------------------------------------------- Turkish
+* Merhaba! Saat 10 ya da 11'de müsaitim
+* Evet, ben varım
+Her yıl 2 veya 3 kişi işe alıyoruz
+Yazılım mühendisi
+İstanbul'da, Kadıköy'deyim
+Teşekkürler, yarın görüşürüz
+Maaş 30.000 mi 40.000 mi?
+Pazartesi başlayabilirim
+Detaylar: https://example.com.tr/ilan?id=42&ref=site
+Yarı zamanlı iş -- sadece hafta sonu
+Ahmet'in ekibi işe alımla ilgileniyor
+Bana +90 532 123 45 67'den ulaşabilirsiniz
+Tamam, haberleşelim 👋
+Kıdemli backend geliştirici
+
+# --------------------------------------------------------------- emoji only
+👍👍
+🎉🎉🎉
+❤️
