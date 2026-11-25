@@ -19,16 +19,20 @@ moderate ?=
 BACKUP ?=
 RESTORE_YES ?=
 
-.PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
+.PHONY: all env ports certs up down logs logs-reset test https-check images-check secrets-check files-check \
 	mail-check metrics-check grafana-check schema-diagram anonymise-deleted seed reset-demo \
 	alert-demo vault-init vault-check backup backup-list backup-check restore fclean re
 
-all: env up
+all: env ports up
 
 # Creates .env with random secrets when it is missing. An existing one keeps every line and
 # gets only the keys .env.example has and it lacks (INF-09); the names are printed, not values.
 env:
 	@./scripts/init-env.sh
+
+# HTTPS_PORT / HTTP_PORT given in the shell go into .env, the port into the public URLs (QA-01).
+ports: env
+	@./scripts/ports.sh
 
 # Self-signed certificate for the proxy; keeps an existing pair.
 certs:
