@@ -6,7 +6,7 @@ Owner: Zayid (@zayidelkhair / Trello @noobthinker). Updated November 11, 2026. T
 
 S1: Nov 4–10; S2: Nov 11–17; S3: Nov 18–24; S4: Nov 25–28. Due dates: 18:00 Abu Dhabi at sprint end. Freeze Nov 26, then QA and rehearsal; first defense target Nov 29. The team timezone is Asia/Dubai (UTC+4); the earlier Baku label used the same offset, so no deadline moves.
 
-Follow card → owned branch → PR → cross-pair review → green applicable CI → squash merge → Done. Review and live-change rule, set by the PO on 2026-11-08: every PR gets a review within 24 hours from someone in the other pair. After every merge, the owner makes one small live change as defense practice and records what changed and how it was checked. Keep dependency and blocking comments on the relevant card.
+Follow card → owned branch → PR → cross-pair review → green applicable CI → squash merge → Done. Review and live-change rule, set by the PO on 2026-11-08: every PR gets a review within 24 hours from someone in the other pair. The live-change exercise for merged cards (one small live change, recorded with what changed and how it was checked) is rehearsed in QA-04 before the defense (PO decision byul-byul, 2026-11-25); a merged card goes to Done without waiting for it. Keep dependency and blocking comments on the relevant card.
 
 ## Proposed weekly sync and daily update
 
