@@ -492,14 +492,14 @@ def token_sweep(per_kind, prescreen, title):
 # fields"). Each must now pass in every field of its kind.
 TOKEN_SAMPLES = {
     "ws_ticket": "2-Cmqkh1f4bv9KiSZi41U2ImHag00twjV6z5C--n2-8",
-    "reset_token": "8--XD2p58HUlt3BHLyp310djS2BkuZTm4cOVvkz7Cho3B03U5lO-YnDTRCA8s_2j",
+    "reset_token": "8--XD2p58HUlt3BHLyp310djS2BkuZTm4cOVvkz7Cho3B03U5lO-YnDTRCA8s_2j",  # gitleaks:allow sample from a local sweep, not a secret
     "verify_jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzNjkwIiwic2NvcGUiOiJlbWFpbF92ZXJp"
                   "ZnkiLCJqdGkiOiJiMWZhNWM0YjhlYjU0M2UwYjg3MTFiZGRiZjFmY2FhMyIsImlhdCI6MTc5NTU0NjU3NSwi"
                   "ZXhwIjoxNzk1NjMyOTc1LCJ2ZXIiOjR9.13_0bGNck3y7SdniY96T-dzoRqTXqg-0XAB640q804g",
     "refresh_jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMzQ2Iiwic2NvcGUiOiJyZWZyZXNoIiwi"
                    "anRpIjoiZWMyNmZhYTgwZjY0NGRmNWIzYzg0MTI2Y2QyM2ZiOWMiLCJpYXQiOjE3OTU1MTE1NjMsImV4cCI6"
                    "MTc5ODEwMzU2M30.0xCa8crkg6fiRkGDBleGM1r6EhZmHONc0gc7_KMoVFM",
-    "oauth": "1--Isx2uWSRO-4KOE7cFlMy_gfg4TpDym03a7JZdlps",  # the state
+    "oauth": "1--Isx2uWSRO-4KOE7cFlMy_gfg4TpDym03a7JZdlps",  # the state; gitleaks:allow sample from a local sweep, not a secret
 }
 
 # The ten token fields of before-crs.conf, 10050-10059: (label, kind, method, path, where, name).
