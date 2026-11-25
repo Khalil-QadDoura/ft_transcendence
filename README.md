@@ -26,7 +26,7 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
 ### Prerequisites
 
 - **Docker Engine 25 or newer** (the health checks use `start_interval`, which Engine 24 refuses) with **Docker Compose v2** (`docker compose`). Docker Desktop for Mac or Windows includes both.
-- **make**, **bash**, **openssl** (`make` uses openssl to generate the secrets and the certificate) and **python3 3.9 or newer** (`make` reads Vault's answers with it while it initializes and unseals Vault).
+- **make**, **bash**, **openssl** (`make` uses openssl to generate the secrets in Vault and the certificate) and **python3 3.9 or newer** (`make` reads Vault's answers with it while it initializes and unseals Vault).
 - Free host ports **443** (HTTPS) and **80** (redirect to HTTPS). Only the proxy publishes ports. If one is taken, start with `HTTPS_PORT=8443 make` (or set `HTTPS_PORT` / `HTTP_PORT` in `.env` and run `make`): `make` writes the port into the public URLs in `.env` (`FRONTEND_BASE_URL`, `MINIO_EXTERNAL_ENDPOINT`), and every URL below then needs `:8443`, the redirect URI registered for login with 42 too (`https://localhost:8443/api/auth/oauth/42/callback`).
 - Resources: about 2.5 GB of memory for the running stack (15 containers after `make`, measured with `docker stats --no-stream` at about 2.2 GB idle on 2026-11-24; the largest are `worker`, `vault` and `grafana`); give Docker at least 4 GB, because building the images needs more than running them. Allow several GB of disk for images and volumes. The first `make` downloads the images and builds the frontend and backend, so it needs internet access and takes a few minutes.
 
@@ -40,10 +40,10 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
    ```
 
 2. Run `make`. It is the same as `make env ports up` and does this, in order:
-   - `make env` creates `.env` from `.env.example` and fills every empty secret (`JWT_SECRET`, `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) with a random value from `openssl rand`. `.env` is readable by its owner only and is never committed. If `.env` already exists, no line of it changes; only keys that `.env.example` gained since are appended. Copying `.env.example` by hand is not needed and would leave the secrets empty.
+   - `make env` creates `.env` from `.env.example`: settings only, no secret (`make vault-init` below generates the secrets in Vault). `.env` is readable by its owner only and is never committed. If `.env` already exists, no line of it changes; only keys that `.env.example` gained since are appended.
    - `make ports` writes the HTTPS port into the public URLs in `.env` (`FRONTEND_BASE_URL`, `MINIO_EXTERNAL_ENDPOINT`) when `HTTPS_PORT` is not 443, and removes it again when it is 443 (`scripts/ports.sh`).
    - `make certs` creates a self-signed certificate for `localhost` in `infra/proxy/certs/` (kept if it already exists).
-   - `make vault-init` starts Vault alone and runs `scripts/vault-init.sh`. The first time, it initializes Vault (3 key shares, 2 of them unseal it) and writes the key shares and the root token to `scripts/vault-keys.local`, readable by its owner only and never committed. Every time, it unseals Vault, which starts sealed after each container start, and applies its configuration (secrets store, AppRole roles and policies, audit log). Keep that file: without it a sealed Vault cannot be unsealed. The services do not read their secrets from Vault yet (INF-13); they still come from `.env`.
+   - `make vault-init` starts Vault alone and runs `scripts/vault-init.sh`. The first time, it initializes Vault (3 key shares, 2 of them unseal it) and writes the key shares and the root token to `scripts/vault-keys.local`, readable by its owner only and never committed. Every time, it unseals Vault, which starts sealed after each container start, and applies its configuration (secrets store, AppRole roles and policies, audit log). It also generates every missing secret in Vault with `openssl rand` (JWT key, internal API key, database password, MinIO user and password, Grafana admin password); a secret still found in an older `.env` (`OPENAI_API_KEY` and `FT_CLIENT_SECRET` included) is moved into Vault and its line removed. Three Vault Agent sidecars render each service's own secrets into an in-memory volume (see [docs/infra/vault.md](docs/infra/vault.md)). Keep that file: without it a sealed Vault cannot be unsealed.
    - `docker compose up -d --build --wait` builds the images, starts the stack and returns once every service is running and healthy. It fails if a service exits. The `backup` service takes a first backup at start when it finds none from the last 24 hours.
    - At the end it prints the address of the site and of the mail inbox.
 
@@ -54,7 +54,9 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
 3. Open <https://localhost/>. The browser warns about the certificate because it is self-signed; accept it once. (With another `HTTPS_PORT`, use `https://localhost:<port>/`.)
 4. Sign up at `/register`. The verification email does not go to a real mailbox: it lands in Mailpit at <https://localhost/mail/>. Open the message, follow its link, then log in at `/login`.
 
-`OPENAI_API_KEY` in `.env` is the only value added by hand, and only for video moderation. The site starts without it.
+`OPENAI_API_KEY` is the only value added by hand, and only for video moderation. The site starts without it. Put it in its empty line in `.env` and run `make`: it moves the key into Vault and empties the line again.
+
+After a restart of Docker or of the machine, Vault is sealed and the services wait for their secrets; run `make` once and everything comes back.
 
 ### Addresses
 
@@ -66,7 +68,7 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
 | Privacy Policy | <https://localhost/privacy> | |
 | Terms of Service | <https://localhost/terms> | |
 | Mail inbox (Mailpit) | <https://localhost/mail/> | Every email the app sends, including the verification link |
-| Grafana | <https://localhost/grafana/> | User `admin`; the password is `GRAFANA_ADMIN_PASSWORD` in `.env` (generated by `make`) |
+| Grafana | <https://localhost/grafana/> | User `admin`; the password is generated in Vault by `make`: `docker compose exec grafana cat /run/vault/admin-password` |
 
 ### Demo accounts
 
@@ -110,10 +112,10 @@ To wipe all app rows/media and re-seed from scratch at any time, run `make reset
 | `make logs-reset` | Empties the logs by removing stopped containers and recreating the running ones. The new Vault container starts sealed, so it unseals Vault again with `scripts/vault-init.sh`. | Logs and the Mailpit inbox. **Keeps** the data volumes. Meant to be run at least weekly, so logs stay at most 30 days. |
 | `make seed` | Loads demo users, companies, 20 open jobs, applications, friendships, chats and approved pitch videos (idempotent). | Nothing (keeps existing data). |
 | `make reset-demo` | Truncates app tables, deletes uploaded/seeded objects and re-runs `make seed`. | All database rows and bucket files in MinIO. **Keeps** `.env`, secrets and metrics. |
-| `make fclean` | Full clean-up. | **All data**: containers, the volumes (database, Redis, files and videos in MinIO, Prometheus metrics, Grafana, Vault, and every backup), the images built here (and the frontend test image) and the certificate in `infra/proxy/certs/`. It moves `scripts/vault-keys.local` aside to `scripts/vault-keys.local.stale-<UTC time>`, because its Vault is gone. **Keeps** `.env`, because the next database volume is created with the secrets in it, and downloaded base images. |
+| `make fclean` | Full clean-up. | **All data**: containers, the volumes (database, Redis, files and videos in MinIO, Prometheus metrics, Grafana, Vault, and every backup), the images built here (and the frontend test image) and the certificate in `infra/proxy/certs/`. It moves `scripts/vault-keys.local` aside to `scripts/vault-keys.local.stale-<UTC time>`, because its Vault is gone. **Keeps** `.env` (settings only) and downloaded base images. The secrets go with the Vault volume; type `OPENAI_API_KEY` into `.env` again before the next `make`. |
 | `make re` | `make fclean`, then `make`. | The same as `make fclean`, then a fresh start from scratch. |
 
-`make fclean` and `make re` cannot be undone: every account, video and message is lost, and so is every backup. To also start with new secrets, delete `.env` by hand before `make`.
+`make fclean` and `make re` cannot be undone: every account, video and message is lost, and so is every backup. The next `make` generates new secrets in the new Vault.
 
 ### Backups and restore
 
@@ -178,7 +180,7 @@ Versions are the ones pinned in `docker-compose.yml`, the Dockerfiles and the lo
 | Worker | Celery 5.7 with beat, on Redis, same image as the API (with `ffmpeg`) | Video moderation (OpenAI) must not block a request. The `worker` service runs by default (BE-29): it moderates uploaded videos, picks up stuck ones, anonymises deleted accounts every night (BE-34) and writes a heartbeat to Redis that its health check and `/api/health` read. |
 | Front proxy and WAF | nginx with ModSecurity v3 and OWASP CRS 4 (image `owasp/modsecurity-crs` 4.30) | One HTTPS origin for everything: no CORS and no mixed content, and one place for TLS, the WAF and blocking internal routes. **Today the WAF runs in `DetectionOnly` mode:** it logs rule matches and blocks nothing, until INF-11 tunes the rules and switches blocking on. |
 | Monitoring | Prometheus 3.16, postgres-exporter, redis_exporter, cAdvisor, Grafana 13.3 | Prometheus pulls metrics every 15 s from the API and the exporters and keeps them 30 days (at most 1 GB); Grafana shows two provisioned dashboards, "WOZU API" and "WOZU Infrastructure". Five alert rules (Redis down, a target down, API 5xx share, API p95 latency, monitoring disk), unit-tested with `promtool test rules`, show in a "Firing alerts" panel; `make alert-demo` stops Redis to show one fire and resolve. No host port; Grafana is reached through the proxy. |
-| Secrets | HashiCorp Vault 2.2.2 (server mode, file storage) | Keeps secrets out of `.env` and Git. `make` initializes and unseals it; it has a KV v2 store, AppRole roles for `api` and `worker`, each with its own policy, and an audit log (`make vault-check`). **Today** the services do not read it yet: moving their secrets in is INF-13, so the secrets are still in `.env`, generated by `make`. |
+| Secrets | HashiCorp Vault 2.2.2 (server mode, file storage) and three Vault Agents | Keeps secrets out of `.env` and Git. `make` initializes and unseals Vault and generates the secrets in it; it has a KV v2 store, AppRole roles for `api`, `worker` and `infra`, each with its own policy, and an audit log (`make vault-check`). Each Vault Agent renders only its services' secrets into in-memory volumes; `.env` keeps settings only. |
 | Backups | `backup` service: `pg_dump` / `pg_restore` 15 and MinIO's `mc`, built from the `db` and `minio` images | Recovery from a broken volume, a bad migration or a mistaken delete: a verified daily copy of the database and the files, 7 days kept, and `make restore` (`make backup-check`). Same machine only; see [Backups and restore](#backups-and-restore). |
 | CI | GitHub Actions, one workflow (`ci.yml`) with a `ci-ok` gate | One required check on `main`; jobs run only for the parts a pull request changed, and the `stack` job runs `make` on a clean runner. |
 
