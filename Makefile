@@ -9,6 +9,8 @@
 COMPOSE := docker compose
 # Every profile, so down and fclean also reach services with profiles (api-test, redis-test).
 COMPOSE_ALL := $(COMPOSE) --profile '*'
+# Named after the compose project (wozu, or COMPOSE_PROJECT_NAME), so projects never share it (QA-01).
+FRONTEND_TEST_IMAGE = $(or $(shell $(COMPOSE) config --no-interpolate 2>/dev/null | sed -n '1s/^name: //p'),wozu)-frontend-test
 # Optional: `make logs s=api` follows one service.
 s ?=
 # Optional: `make anonymise-deleted days=0` anonymises every deleted account at once.
@@ -119,8 +121,8 @@ test: env
 		skipped = sum(int(suite.get(\"skipped\", \"0\")) for suite in suites); \
 		sys.exit(f\"{skipped} tests skipped; make test must run every backend test, as CI\" \
 		if skipped else 0)"'
-	docker build -q --target build -t wozu-frontend-test ./frontend
-	docker run --rm wozu-frontend-test \
+	docker build -q --target build -t $(FRONTEND_TEST_IMAGE) ./frontend
+	docker run --rm $(FRONTEND_TEST_IMAGE) \
 		sh -c 'npm run lint && npm run format:check && npm run typecheck && npm test'
 
 # Routes of the one HTTPS origin against the running stack: frontend with SPA fallback,
@@ -255,7 +257,7 @@ restore:
 fclean:
 	$(COMPOSE_ALL) down -v --rmi local --remove-orphans
 	@./scripts/vault-init.sh --retire-keys
-	@docker image rm wozu-frontend-test >/dev/null 2>&1 || true
+	@docker image rm $(FRONTEND_TEST_IMAGE) >/dev/null 2>&1 || true
 	rm -rf infra/proxy/certs
 
 re: fclean
