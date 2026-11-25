@@ -263,7 +263,9 @@ jobs:
         run: make
       # Vault: initialized and unsealed by make (fresh keys file, never printed), server mode
       # with file storage, KV v2, AppRole, policies, audit device, each role's token limited
-      # to its own path, no host port (INF-12).
+      # to its own path, no host port (INF-12); the service secrets in Vault, the three Vault
+      # Agents healthy with their files rendered on tmpfs, no secret in .env or in any
+      # container's environment (INF-13).
       - run: make vault-check
       - name: docker compose config (every variable reference resolves)
         run: docker compose config -q
