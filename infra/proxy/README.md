@@ -17,6 +17,7 @@ The image renders every `/etc/nginx/templates/**/*.template` with envsubst into 
 | File in the container | Owner | What it does |
 | --- | --- | --- |
 | `templates/conf.d/default.conf.template` | **Ours**, mounted from this folder | Listeners, TLS, routing table |
+| `templates/conf.d/logging.conf.template` | **Ours**, mounted over the image's | Access log without the query string on token routes (QA-01, see Access log) |
 | `/etc/nginx/conf/server.{crt,key}` | **Ours**, generated into `certs/`, image default path | Certificate and key |
 | Environment | **Ours**, `proxy.env` | Rule engine mode, OCSP stapling off, default HTTPS port for the redirect |
 | `templates/nginx.conf.template` | Image | Loads the ModSecurity module, sets `resolver` from `/etc/resolv.conf` (`127.0.0.11` in Docker) |
@@ -87,6 +88,15 @@ Two traps when testing with stubs:
 
 - WebSocket checks need `curl --http1.1`. Over HTTP/2 curl drops the `Connection` and `Upgrade` headers, and browsers open WebSockets over HTTP/1.1 anyway.
 - `traefik/whoami` stalls on uploads through this proxy: a PUT of 1 MB or 50 MB stops at about 500 KB of response until a timeout, while the same PUT straight to whoami takes about a second, and real MinIO takes 50 MB through the proxy in under a second. whoami echoes the request body back; the cause is not pinned down. Upload tests need real MinIO.
+
+## Access log
+
+One line per request on the container's stdout, the image's format `main` with one field changed (QA-01, PO decision, byul-byul, 2026-11-25): for `/verify-email`, `/reset-password`, `/api/auth/`, `/files/` and `/ws` (path prefixes) the request line is method, path and protocol, without the query string, which carries the email link tokens, the 42 callback's `code` and `state`, presigned URL signatures and the WebSocket ticket. Every other request is logged with its request line as sent, query included (a jobs search stays visible). The `map` in `templates/conf.d/logging.conf.template` matches `$request_uri`, the URI as the client sent it, not `$uri`: when an upstream fails, `error_page` sends the request to `/50x.html`, `$uri` changes with it, and a map on `$uri` would log the token of exactly that request.
+
+```
+curl -sk -o /dev/null 'https://localhost/verify-email?token=PROBE'
+docker compose logs --no-log-prefix proxy 2>&1 | grep 'verify-email'   # GET /verify-email HTTP/2.0, no token
+```
 
 ## WAF logs
 

@@ -87,6 +87,8 @@ services:
       - "${HTTPS_PORT:-443}:8443"
     volumes:
       - ./infra/proxy/templates/conf.d/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
+      # The access log without tokens (QA-01): replaces the image's own logging template.
+      - ./infra/proxy/templates/conf.d/logging.conf.template:/etc/nginx/templates/conf.d/logging.conf.template:ro
       # Created by infra/proxy/scripts/gen-cert.sh (`make up` runs it first).
       - ./infra/proxy/certs:/etc/nginx/conf:ro
     depends_on:

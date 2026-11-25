@@ -184,6 +184,8 @@ Load it with `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.ft-t
 
 The json-file logs themselves live in Docker's data directory (`/var/lib/docker/containers/<id>/<id>-json.log`; on Docker Desktop inside its Linux VM), never in the clone.
 
+**Proxy access log without tokens** (QA-01, PO decision, byul-byul, 2026-11-25; this updates the `proxy` row above for the access log). Requests to `/verify-email`, `/reset-password`, `/api/auth/`, `/files/` and `/ws` (path prefixes) are logged as method, path and protocol, without the query string, so the email link tokens, the 42 callback's `code` and `state`, presigned URL signatures and the WebSocket ticket stay out of it. Every other request keeps its full request line, so a jobs search (`/api/jobs?q=…`) stays visible. It is the format `main` with one field changed, in `infra/proxy/templates/conf.d/logging.conf.template` (a `map` on `$request_uri`, mounted over the image's template; see `infra/proxy/README.md`). Unchanged: the ModSecurity audit line (part A) still holds the URI with its query string, for audited requests only, and the `frontend` container log still has the query of the pages it serves (`/verify-email?token=…`).
+
 ## One origin over HTTPS
 
 Everything the browser touches goes through one host and one certificate. Locally that is `https://localhost` with a self-signed certificate from `infra/proxy/scripts/gen-cert.sh`, so the evaluator accepts one warning once.
