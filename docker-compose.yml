@@ -160,7 +160,8 @@ services:
     build:
       context: ./backend
       target: worker
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "-B", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO"]
+    # Celery starts one process per CPU by default (10 on a 10-core Mac, about 580 MiB); two are enough for video moderation here and save memory (177 MiB).
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--concurrency=2", "-B", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO"]
     environment:
       <<: *backend-env
       OPENAI_API_KEY: ${OPENAI_API_KEY}
