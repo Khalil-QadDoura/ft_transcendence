@@ -24,10 +24,29 @@
 #   status                                 the last run: time, result, sizes
 # Every copy is written under a .partial name first and renamed only once verified.
 #
-# Credentials come from the container environment that compose sets (PGPASSWORD,
-# MINIO_ROOT_*), as for the other services until INF-13 moves them to Vault. They never
-# appear on a command line or in the output.
+# Credentials (INF-13): PGPASSWORD and MINIO_ROOT_* come from Vault, as NAME='value' lines in
+# the file VAULT_ENV_FILE (/run/vault/env), which vault-agent-infra renders into the tmpfs
+# volume secrets-backup. This script exports it itself at every start, so the loop,
+# `make backup` (docker compose exec) and `make restore` (docker compose run) all get it.
+# They never appear on a command line or in the output.
 set -euo pipefail
+
+if [ -n "${VAULT_ENV_FILE:-}" ]; then
+    waited=0
+    until [ -s "$VAULT_ENV_FILE" ]; do
+        [ "$waited" -gt 0 ] || echo "backup: waiting for $VAULT_ENV_FILE from vault-agent-infra (sealed Vault? run make)" >&2
+        if [ "$waited" -ge "${VAULT_WAIT_SEC:-300}" ]; then
+            echo "backup: $VAULT_ENV_FILE still missing; is Vault unsealed? Run make" >&2
+            exit 1
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    set -a
+    # shellcheck disable=SC1090 # rendered at run time by the Vault Agent
+    . "$VAULT_ENV_FILE"
+    set +a
+fi
 
 BACKUP_DIR=/backups
 BACKUP_TIME="${BACKUP_TIME:-03:00}"
@@ -54,7 +73,8 @@ TS_RE='^[0-9]{8}T[0-9]{6}Z$'
 : "${MINIO_ROOT_USER:?}" "${MINIO_ROOT_PASSWORD:?}" "${MINIO_BUCKET:?}"
 
 # mc reads the alias from the environment, as in infra/minio/init-bucket.sh: the
-# credentials stay out of argv, config files and output (init-env.sh generates URL-safe hex).
+# credentials stay out of argv, config files and output (scripts/vault-init.sh generates
+# URL-safe hex).
 export MC_HOST_store="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000"
 export MC_CONFIG_DIR=/tmp/.mc
 BUCKET="store/$MINIO_BUCKET"

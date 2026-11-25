@@ -1,21 +1,24 @@
 # WOZU Web: the whole stack, started by `make` (see Makefile and docs/infra/infrastructure.md).
-# Values come from .env (scripts/init-env.sh creates it from .env.example); no secret is
-# written here. Only the proxy publishes host ports; every other service is reachable only
+# Settings come from .env (scripts/init-env.sh creates it from .env.example), secrets from
+# Vault (INF-13): no secret is written here or in .env. Each service that needs one gets it
+# from a Vault Agent sidecar (vault-agent-api, vault-agent-worker, vault-agent-infra), which
+# renders it into a tmpfs volume that only that service mounts, read-only, at /run/vault;
+# see docs/infra/vault.md. Only the proxy publishes host ports; every other service is reachable only
 # on the internal network, through the proxy routes in infra/proxy/.
 name: wozu
 
 # Settings shared by the API and the worker (same image, same code).
 x-backend-env: &backend-env
+# Secrets are not here (INF-13): DATABASE_URL (with the password inside), JWT_SECRET, the MinIO
+# keys and the service's other secrets are in the env file its Vault Agent renders at
+# /run/vault/env (infra/vault/agent/templates/), which with-secrets exports before the real
+# command starts.
   ENV: ${ENV}
   LOG_LEVEL: ${LOG_LEVEL}
-  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-  TEST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_TEST_DB}
   # Database 0 of the redis service: settings.redis_url, the app's Redis client and the
   # Celery broker. `make test` points it and TEST_REDIS_URL at the redis-test service
   # instead, as the CI backend job points both at its Redis service.
   REDIS_URL: redis://redis:6379/0
-  JWT_SECRET: ${JWT_SECRET}
-  INTERNAL_API_KEY: ${INTERNAL_API_KEY}
   FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
   SMTP_HOST: ${SMTP_HOST}
   SMTP_PORT: ${SMTP_PORT}
@@ -24,13 +27,11 @@ x-backend-env: &backend-env
   # plain HTTP; presigned URLs are signed for the external one, so the browser reaches
   # them through the proxy at /files. The region is given so the SDK never asks the
   # endpoint for it (https://localhost inside a container is the container itself).
-  # Root credentials until INF-13 moves a dedicated service account to Vault.
+  # MINIO_ACCESS_KEY / MINIO_SECRET_KEY (still MinIO's root credentials) come from Vault.
   MINIO_ENDPOINT: minio:9000
   MINIO_EXTERNAL_ENDPOINT: ${MINIO_EXTERNAL_ENDPOINT}
   MINIO_BUCKET: ${MINIO_BUCKET}
   MINIO_REGION: ${MINIO_REGION:-us-east-1}
-  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
-  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
 
 # Every image is pinned by tag and by the digest of its multi-arch index (amd64 + arm64), so
 # Apple Silicon laptops and the amd64 CI runner pull the same build; `make images-check`
@@ -67,6 +68,24 @@ x-logging: &logging
   options:
     max-size: "10m"
     max-file: "3"
+
+# Vault 2.2.2 (INF-12): the server and its three agents (INF-13) run the same image.
+x-vault-image: &vault-image hashicorp/vault:2.2.2@sha256:dfa48c2fa2b0099ccb47681ec5c4804bf5aec9d6879ecfee07ad4b92a5427ad6
+
+# The wrapper in front of every service that reads secrets from Vault (INF-13): waits for
+# its rendered files, exports its env file, then runs the real command; see the script.
+x-with-secrets: &with-secrets ./infra/vault/with-secrets.sh:/usr/local/bin/with-secrets:ro
+
+# A tmpfs volume per service that reads secrets (INF-13): in memory only, never on disk,
+# empty again once no container uses it (after `make down`, a Docker or host restart). Its
+# Vault Agent (uid 100, the vault image's user) writes it; the service mounts it read-only
+# at /run/vault. 64 KB is plenty for a few short files.
+x-secrets-volume: &secrets-volume
+  driver: local
+  driver_opts:
+    type: tmpfs
+    device: tmpfs
+    o: "size=64k,uid=100,gid=1000,mode=0755"
 
 services:
   # nginx + ModSecurity CRS (INF-01). Listens on 8080/8443 inside the container (uid 101
@@ -135,17 +154,28 @@ services:
   # It also waits for minio-init: upload URLs need the bucket, and a one-shot that a
   # service depends on this way is the only kind `up --wait` accepts as exited.
   # Built from the runtime stage of backend/Dockerfile: no tests, no test tools, non-root.
+  # Secrets (INF-13): with-secrets waits for /run/vault/env (vault-agent-api, tmpfs volume
+  # secrets-api) and exports it; then the image's own command. An entrypoint set here drops
+  # the image's CMD, so the command is repeated.
   api:
     build:
       context: ./backend
       target: runtime
+    entrypoint: ["/usr/local/bin/with-secrets"]
+    command: ["./docker-entrypoint.sh"]
     environment:
       <<: *backend-env
-      # Login with 42 (BE-11): the keys of our 42 intra app, added to .env by hand. Only the
-      # api uses them, so they are not in x-backend-env. Empty turns login with 42 off.
+      VAULT_ENV_FILE: /run/vault/env
+      # Login with 42 (BE-11): the client id of our 42 intra app, added to .env by hand; the
+      # client secret (FT_CLIENT_SECRET) is in Vault (INF-13). Only the api uses them, so
+      # they are not in x-backend-env. Empty turns login with 42 off.
       FT_CLIENT_ID: ${FT_CLIENT_ID:-}
-      FT_CLIENT_SECRET: ${FT_CLIENT_SECRET:-}
+    volumes:
+      - *with-secrets
+      - secrets-api:/run/vault:ro
     depends_on:
+      vault-agent-api:
+        condition: service_healthy
       db:
         condition: service_healthy
       redis:
@@ -166,13 +196,21 @@ services:
     build:
       context: ./backend
       target: worker
+    # Secrets (INF-13): as for the api, from vault-agent-worker (tmpfs volume secrets-worker);
+    # OPENAI_API_KEY is among them.
+    entrypoint: ["/usr/local/bin/with-secrets"]
     # Celery starts one process per CPU by default (10 on a 10-core Mac, about 580 MiB); two are enough for video moderation here and save memory (177 MiB).
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--concurrency=2", "-B", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO"]
     environment:
       <<: *backend-env
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      VAULT_ENV_FILE: /run/vault/env
       MODERATION_FAIL_OPEN: ${MODERATION_FAIL_OPEN}
+    volumes:
+      - *with-secrets
+      - secrets-worker:/run/vault:ro
     depends_on:
+      vault-agent-worker:
+        condition: service_healthy
       db:
         condition: service_healthy
       redis:
@@ -188,13 +226,23 @@ services:
   # Backend ruff + pytest for `make test` only (profile test): the test stage of
   # backend/Dockerfile, i.e. the runtime image plus requirements-dev.txt. The Makefile mounts
   # the code with the tests read-only and passes the test-only variables with -e. One-shot
-  # (`compose run --rm`), so no health check and no restart.
+  # (`compose run --rm`), so no health check and no restart. Secrets (INF-13): its own env
+  # file from vault-agent-api (tmpfs volume secrets-api-test), with TEST_DATABASE_URL.
   api-test:
     profiles: ["test"]
     build:
       context: ./backend
       target: test
-    environment: *backend-env
+    entrypoint: ["/usr/local/bin/with-secrets"]
+    environment:
+      <<: *backend-env
+      VAULT_ENV_FILE: /run/vault/env
+    volumes:
+      - *with-secrets
+      - secrets-api-test:/run/vault:ro
+    depends_on:
+      vault-agent-api:
+        condition: service_healthy
     logging: *logging
 
   # PostgreSQL 15 + PostGIS 3.4 from the docker-postgis sources, built for amd64 and arm64 by
@@ -207,16 +255,27 @@ services:
   # is mounted: a mounted directory would hide 10_postgis.sh.
   # Health: pg_isready over TCP. While the image initialises a new volume it runs a temporary
   # server on the Unix socket only; asking over TCP keeps that phase from counting as healthy.
+  # Password (INF-13): POSTGRES_PASSWORD_FILE, rendered by vault-agent-infra (tmpfs volume
+  # secrets-db); with-secrets waits for it, then the image's own entrypoint and command. The
+  # image uses it only when it creates a new volume; an existing volume keeps its password.
   db:
     image: imresamu/postgis:15-3.4@sha256:44d4443d107a7750ea29a441dec0050cd7543178f011ae0620e4b572578e9300
+    entrypoint: ["/usr/local/bin/with-secrets", "docker-entrypoint.sh"]
+    command: ["postgres"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/vault/postgres-password
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_TEST_DB: ${POSTGRES_TEST_DB}
+      VAULT_SECRET_FILES: /run/vault/postgres-password
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./infra/db/create-test-db.sh:/docker-entrypoint-initdb.d/20-create-test-db.sh:ro
+      - *with-secrets
+      - secrets-db:/run/vault:ro
+    depends_on:
+      vault-agent-infra:
+        condition: service_healthy
     healthcheck:
       <<: *healthcheck
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
@@ -254,14 +313,24 @@ services:
   # S3 API on minio:9000, reached from the browser only through the proxy at /files (the
   # bucket name is the route prefix). No host ports, console included.
   # Health: MinIO's liveness endpoint, with the curl the image ships.
+  # Root credentials (INF-13): MINIO_ROOT_USER_FILE / MINIO_ROOT_PASSWORD_FILE, rendered by
+  # vault-agent-infra (tmpfs volume secrets-minio). with-secrets waits for both files first:
+  # MinIO with a missing file starts with its default credentials minioadmin:minioadmin.
   minio:
     image: *minio-image
+    entrypoint: ["/usr/local/bin/with-secrets", "/usr/bin/docker-entrypoint.sh"]
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER_FILE: /run/vault/root-user
+      MINIO_ROOT_PASSWORD_FILE: /run/vault/root-password
+      VAULT_SECRET_FILES: /run/vault/root-user /run/vault/root-password
     volumes:
       - minio-data:/data
+      - *with-secrets
+      - secrets-minio:/run/vault:ro
+    depends_on:
+      vault-agent-infra:
+        condition: service_healthy
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "curl", "-fs", "-o", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
@@ -271,17 +340,22 @@ services:
   # One-shot: waits for MinIO, creates the private bucket and its anonymous policy, exits 0
   # (infra/minio/init-bucket.sh). Idempotent, so it runs on every `make`. No health check
   # (INF-07 exemption): it exits; api waits for its exit code 0 instead.
+  # Root credentials (INF-13): an env file from vault-agent-infra (tmpfs volume
+  # secrets-minio-init), exported by with-secrets.
   minio-init:
     image: *minio-image
-    entrypoint: ["bash", "/init-bucket.sh"]
+    entrypoint: ["/usr/local/bin/with-secrets", "bash", "/init-bucket.sh"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      VAULT_ENV_FILE: /run/vault/env
       MINIO_BUCKET: ${MINIO_BUCKET}
     volumes:
       - ./infra/minio/init-bucket.sh:/init-bucket.sh:ro
+      - *with-secrets
+      - secrets-minio-init:/run/vault:ro
     depends_on:
       minio:
+        condition: service_healthy
+      vault-agent-infra:
         condition: service_healthy
     restart: "no"
     logging: *logging
@@ -293,7 +367,9 @@ services:
   # BACKUP_KEEP of each kind stay on the `backups` volume. Starts once the api is healthy,
   # so the migrations have run before a dump. `make backup` runs one now, `make restore BACKUP=<timestamp|latest>` puts one back (INF-15); see
   # infra/backup/backup.sh and docs/disaster-recovery.md. A loop, not cron: no daemon,
-  # non-root (uid 10002). Credentials from .env as for the other services until INF-13.
+  # non-root (uid 10002). Credentials (INF-13): an env file from vault-agent-infra (tmpfs
+  # volume secrets-backup) that backup.sh sources itself, so `make backup` (exec) and
+  # `make restore` (run) get it too.
   # The image derives from the db image, which declares VOLUME /var/lib/postgresql/data; a
   # tmpfs takes that place, so no anonymous volume is left behind (as for redis-test).
   # No port and no proxy route: the copies are reachable only from inside this container.
@@ -309,16 +385,17 @@ services:
       BACKUP_MAX_AGE_DAYS: ${BACKUP_MAX_AGE_DAYS:-7}
       PGHOST: db
       PGUSER: ${POSTGRES_USER}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET}
+      VAULT_ENV_FILE: /run/vault/env
     volumes:
       - backups:/backups
+      - secrets-backup:/run/vault:ro
     tmpfs:
       - /var/lib/postgresql/data
     depends_on:
+      vault-agent-infra:
+        condition: service_healthy
       db:
         condition: service_healthy
       minio-init:
@@ -374,20 +451,28 @@ services:
     logging: *logging
 
   # PostgreSQL metrics on postgres-exporter:9187 (pg_up, connections, sizes, locks), for
-  # Prometheus only. It logs in with the app's POSTGRES_* values from .env, passed by compose
-  # interpolation: no new secret and nothing in Git; INF-13 moves them to Vault. Separate
-  # URI, user and password variables, so a password needs no URL encoding.
+  # Prometheus only. It logs in as the app's POSTGRES_USER; the password (INF-13) is
+  # DATA_SOURCE_PASS_FILE, rendered by vault-agent-infra (tmpfs volume
+  # secrets-postgres-exporter). Separate URI, user and password variables, so a password
+  # needs no URL encoding.
   # Health: the exporter's landing page, with the busybox wget the image ships. It shows that
   # the exporter serves; whether the database answers is pg_up, which `make metrics-check`
   # requires to be 1.
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e
+    entrypoint: ["/usr/local/bin/with-secrets", "/bin/postgres_exporter"]
     environment:
       DATA_SOURCE_URI: db:5432/${POSTGRES_DB}?sslmode=disable
       DATA_SOURCE_USER: ${POSTGRES_USER}
-      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+      DATA_SOURCE_PASS_FILE: /run/vault/password
+      VAULT_SECRET_FILES: /run/vault/password
+    volumes:
+      - *with-secrets
+      - secrets-postgres-exporter:/run/vault:ro
     depends_on:
       db:
+        condition: service_healthy
+      vault-agent-infra:
         condition: service_healthy
     healthcheck:
       <<: *healthcheck
@@ -453,8 +538,9 @@ services:
   # Sub-path: the root URL is the public origin from .env (FRONTEND_BASE_URL, with the port
   # when HTTPS_PORT is not 443) plus /grafana/, and Grafana serves under that path itself
   # (serve_from_sub_path), so the proxy passes the URI unchanged.
-  # Access: one user, admin, with GRAFANA_ADMIN_PASSWORD from .env (generated by `make env`;
-  # Grafana sets it when grafana-data is new). No anonymous access, no sign-up, no new
+  # Access: one user, admin, with the password from Vault (INF-13: secret/infra/grafana,
+  # rendered by vault-agent-infra into the tmpfs volume secrets-grafana and read through
+  # GF_SECURITY_ADMIN_PASSWORD__FILE; Grafana sets it when grafana-data is new). No anonymous access, no sign-up, no new
   # organisations; the session cookie is Secure (HTTPS only). Grafana's own brute-force
   # protection stays on (5 failed logins lock the user for 5 minutes).
   # No calls out from the defense machine: no usage reports, no update or plugin update
@@ -471,11 +557,13 @@ services:
   # ships (it has curl too).
   grafana:
     image: grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
+    entrypoint: ["/usr/local/bin/with-secrets", "/run.sh"]
     environment:
       GF_SERVER_ROOT_URL: ${FRONTEND_BASE_URL}/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD missing in .env, run make env}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/vault/admin-password
+      VAULT_SECRET_FILES: /run/vault/admin-password
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_USERS_ALLOW_ORG_CREATE: "false"
@@ -496,8 +584,12 @@ services:
       - ./infra/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./infra/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
+      - *with-secrets
+      - secrets-grafana:/run/vault:ro
     depends_on:
       prometheus:
+        condition: service_healthy
+      vault-agent-infra:
         condition: service_healthy
     healthcheck:
       <<: *healthcheck
@@ -507,11 +599,12 @@ services:
 
   # Secrets store (INF-12, module M13): HashiCorp Vault in server mode, never dev mode, with
   # file storage on the volume vault-data; configuration in infra/vault/vault.hcl. No host
-  # port, no proxy route: only the Docker network reaches it, and nothing reads it before
-  # INF-13. Vault starts sealed every time this container starts. `make` starts this service
+  # port, no proxy route: only the Docker network reaches it; the three Vault Agents below
+  # read it (INF-13). Vault starts sealed every time this container starts. `make` starts this service
   # first and runs scripts/vault-init.sh before the rest of the stack: it initializes Vault
   # once (key shares and root token in the Git-ignored scripts/vault-keys.local), unseals it
-  # and applies the audit device, KV v2, AppRole and the policies (docs/infra/vault.md).
+  # and applies the audit device, KV v2, AppRole and the policies, then the service secrets
+  # and each agent's AppRole credentials (docs/infra/vault.md).
   # The image runs Vault as its own user (uid 100), not root. mlock stays on, so keys and
   # secrets in memory never go to swap: Vault locks all its memory at start and stops if it
   # cannot. Since Vault 2.0.2 the binary carries no file capability, so IPC_LOCK (kept, as
@@ -524,7 +617,7 @@ services:
   # answer. Sealed counts as healthy (the server runs; vault-init.sh unseals it), so that
   # `make` can wait for it before unsealing.
   vault:
-    image: hashicorp/vault:2.2.2@sha256:dfa48c2fa2b0099ccb47681ec5c4804bf5aec9d6879ecfee07ad4b92a5427ad6
+    image: *vault-image
     command: ["vault", "server", "-config=/vault/config/vault.hcl"]
     environment:
       VAULT_ADDR: http://127.0.0.1:8200
@@ -535,9 +628,97 @@ services:
     volumes:
       - ./infra/vault/vault.hcl:/vault/config/vault.hcl:ro
       - vault-data:/vault/file
+      # Each agent's AppRole role-id and secret-id (INF-13): scripts/vault-init.sh writes them
+      # here from inside this container, so they never pass through the host; each agent
+      # mounts only its own volume, read-only. One volume per role: a volume subpath would
+      # need Docker Engine 26.
+      - vault-approle-api:/vault/approle/api
+      - vault-approle-worker:/vault/approle/worker
+      - vault-approle-infra:/vault/approle/infra
     healthcheck:
       <<: *healthcheck
       test: ["CMD-SHELL", "vault status >/dev/null 2>&1; s=$$?; [ $$s -eq 0 ] || [ $$s -eq 2 ]"]
+    restart: unless-stopped
+    logging: *logging
+
+  # Vault Agents (INF-13, module M13): one long-running sidecar per kind of consumer, from
+  # the vault image (no new image), as its non-root user (uid 100). Each logs in with its
+  # own AppRole (role-id and secret-id from its volume vault-approle-<role>, read-only),
+  # renders its templates (infra/vault/agent/) into the tmpfs volumes of its services and
+  # renews its token. While Vault is sealed it retries the login every 10 s at most, so
+  # after a Docker or host restart everything comes back once `make` unseals Vault.
+  # The start removes only the agent's private marker /tmp/rendered, never the rendered
+  # files: a consumer may be reading them (MinIO with a missing *_FILE falls back to its
+  # default credentials), and each file is replaced by an atomic rename.
+  # Health: this run of the agent has read every one of its paths (the marker) and every
+  # file it renders exists and is not empty; each consumer waits for that.
+  # No port; only the vault service on the Docker network is reached.
+  vault-agent-api:
+    image: *vault-image
+    user: "100:1000"
+    command: ["sh", "-c", "rm -f /tmp/rendered; exec vault agent -config=/vault/agent/api.hcl"]
+    environment:
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      # Not secret: the user and database names in DATABASE_URL and TEST_DATABASE_URL.
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB}
+    volumes:
+      - ./infra/vault/agent:/vault/agent:ro
+      - vault-approle-api:/vault/approle:ro
+      - secrets-api:/out/api
+      - secrets-api-test:/out/api-test
+    depends_on:
+      vault:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "test -s /tmp/rendered && test -s /out/api/env && test -s /out/api-test/env"]
+    restart: unless-stopped
+    logging: *logging
+
+  vault-agent-worker:
+    image: *vault-image
+    user: "100:1000"
+    command: ["sh", "-c", "rm -f /tmp/rendered; exec vault agent -config=/vault/agent/worker.hcl"]
+    environment:
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./infra/vault/agent:/vault/agent:ro
+      - vault-approle-worker:/vault/approle:ro
+      - secrets-worker:/out/worker
+    depends_on:
+      vault:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "test -s /tmp/rendered && test -s /out/worker/env"]
+    restart: unless-stopped
+    logging: *logging
+
+  vault-agent-infra:
+    image: *vault-image
+    user: "100:1000"
+    command: ["sh", "-c", "rm -f /tmp/rendered; exec vault agent -config=/vault/agent/infra.hcl"]
+    environment:
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+    volumes:
+      - ./infra/vault/agent:/vault/agent:ro
+      - vault-approle-infra:/vault/approle:ro
+      - secrets-db:/out/db
+      - secrets-minio:/out/minio
+      - secrets-minio-init:/out/minio-init
+      - secrets-grafana:/out/grafana
+      - secrets-postgres-exporter:/out/postgres-exporter
+      - secrets-backup:/out/backup
+    depends_on:
+      vault:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "test -s /tmp/rendered || exit 1; for f in db/postgres-password minio/root-user minio/root-password minio-init/env grafana/admin-password postgres-exporter/password backup/env; do test -s /out/$$f || exit 1; done"]
     restart: unless-stopped
     logging: *logging
 
@@ -550,3 +731,19 @@ volumes:
   vault-data:
   # Backup copies (INF-14); only the backup service mounts it. `make fclean` removes it too.
   backups:
+  # AppRole credentials of each Vault Agent (INF-13), written by scripts/vault-init.sh inside
+  # the vault container; mounted read-write by vault, read-only by the matching agent only.
+  vault-approle-api:
+  vault-approle-worker:
+  vault-approle-infra:
+  # Rendered secrets (INF-13): tmpfs, one per consumer, written by its agent only, mounted
+  # read-only by that service only.
+  secrets-api: *secrets-volume
+  secrets-api-test: *secrets-volume
+  secrets-worker: *secrets-volume
+  secrets-db: *secrets-volume
+  secrets-minio: *secrets-volume
+  secrets-minio-init: *secrets-volume
+  secrets-grafana: *secrets-volume
+  secrets-postgres-exporter: *secrets-volume
+  secrets-backup: *secrets-volume
