@@ -77,6 +77,11 @@ server {
     location / {
         set $upstream http://frontend:80;
         proxy_pass $upstream;
+        # The pages tell the browser to send only https://<host>/ as Referer, never the page's
+        # URL with its query (the jobs search, a reset link's token) to the API, MinIO or
+        # another site (INF-11, docs/infra/waf.md). No add_header is set at server level, so
+        # this one drops nothing; the frontend's own headers pass through unchanged.
+        add_header Referrer-Policy "strict-origin" always;
     }
 
     location /api/ {
