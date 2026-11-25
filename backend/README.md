@@ -170,7 +170,7 @@ again. A second run changes nothing. The log lines carry the account's id only.
 make anonymise-deleted days=0   # every deleted account, at once
 make anonymise-deleted          # only those deleted more than 30 days ago, as the nightly run
 # the same, by hand:
-docker compose exec worker python -m app.worker.tasks.anonymise --older-than-days 0
+docker compose exec worker with-secrets python -m app.worker.tasks.anonymise --older-than-days 0
 ```
 
 It always skips the accounts on hold, and exits with 1 if an account could not be done.
