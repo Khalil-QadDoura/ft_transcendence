@@ -8,7 +8,7 @@
 #                                       the token blocks and a fresh one (must pass), and 4 or
 #                                       5 probes (must get the WAF's 403); 3 attack probes in
 #                                       every free-text field (must get the WAF's 403). About
-#                                       1000 requests, under a minute.
+#                                       1400 requests, under a minute.
 #   infra/proxy/waf-sweep.sh corpus     every line of waf-corpus.txt in every free-text field
 #   infra/proxy/waf-sweep.sh tokens [N] [M]
 #                                       N values per token kind (default 2000), each made the

@@ -59,7 +59,7 @@ libmodsecurity 3.0.17 does not accept a regular expression as a `ctl:ruleRemoveT
 | 10011 | `/grafana/api/ds/query` | `POST` | 932271, 941340, 942100, 942120, 942150, 942200, 942300, 942330, 942410, 942430 | `json.queries.array_0.expr`, `json.queries.array_1.expr` | PromQL (`sum by (handler) (rate(…[5m]))`) looks like SQL and shell; Grafana passes it to Prometheus, a read-only query language with no SQL or shell; admin only; the rest of the body is inspected | every panel of both dashboards, `make waf-check` "Grafana panel …" |
 | 10011 | same | same | 941380 (template injection) | `json.queries.array_{0,1}.legendFormat` | `{{handler}}` is Grafana's legend template, rendered by Grafana as text | panels with a legend |
 | 10012 | `/grafana/api/snapshots` | `POST` | 932231, 932235, 932236, 932271, 941340, 941380, 942100, 942150, 942180, 942200, 942210, 942300, 942330, 942340, 942370, 942410, 942430, 942510 | the request (dozens of dashboard fields) | Snapshots are off in Grafana: it refuses every one with its own 403 "Dashboard Snapshots are disabled" and stores nothing; admin only. Without it the WAF's HTML 403 hid Grafana's answer | `make grafana-check`, `make waf-check` "Grafana snapshot" |
-| 10020–10029 | the free-text fields (next table) | each its own | 942390, 942440, 942120, 942300, 942520, 931130, 932200, 932236, 932240; also 932231 on `bio`, 942200 on `content` | each field by name | Prose (paranoia level 2 rules only); stored with SQL parameters, shown escaped by React; every level 1 rule still runs, so `' OR 1=1 --` and `<script>` are still blocked there | see Free text |
+| 10020–10029 | the free-text fields (next table) | each its own | 942390, 942440, 942120, 942300, 942520, 931130, 932200, 932236, 932240, 942131, 942150, 942200, 942210, 942260, 942380, 942410; also 932231 on `bio` | each field by name | Prose (paranoia level 2 rules only); stored with SQL parameters, shown escaped by React; every level 1 rule still runs, so `' OR 1=1 --` and `<script>` are still blocked there | see Free text |
 | 10040 | `^/(api/\|ws(/\|$))` | any | 932206 (Unix command injection in the Referer) | the `Referer` header | see Referer | see Referer |
 | 10030 | `/api/auth/register` | `POST` | every CRS rule (`ruleRemoveTargetByTag=OWASP_CRS`) | `json.password` | see Passwords | "sign up a/b" |
 | 10031 | `/api/auth/login` | `POST` | every CRS rule | `json.password` | see Passwords | "login …" |
@@ -94,8 +94,13 @@ What the free-text rules matched (all paranoia level 2, checked by their `parano
 | 932200 | RCE bypass technique | "/portfolio?" or "'m … https:/" in a sentence |
 | 932236 | Unix command injection | a command name as a word: "Yes, I'm in", "Yes or no?" |
 | 932240 | Unix command evasion | apostrophes inside words: "O'Brien's team lead" |
-| 942200 | MySQL comment / space obfuscation | a message with a link, `?`, `&` and `--` (`content` only) |
 | 932231 | Unix command injection | a bio with a link and `--` (`bio` only) |
+| 942131 | SQL boolean-based attack | "X is not Y": "The job is not available anymore", "My visa is not ready yet, but I can start in January.", "I do not like night shifts"; comparisons: "Salary > 4000 AED", "Experience >= 3 years"; "thanks <3" (second #94 review, 2026-11-26) |
+| 942200 | MySQL comment / space obfuscation | "Please select a time from the list"; a message with a link, `?`, `&` and `--` (until 2026-11-26 lifted on `content` only) |
+| 942260 | SQL authentication bypass | "Please select a time from the list" |
+| 942380 | SQL injection | "Sort the jobs, order by salary" |
+| 942150, 942410 | SQL function names | a word then a bracket: "Position (part-time)", "Max char (200)" |
+| 942210 | Chained SQL injection | "Hi! I can come at 10 or 11 -- شكراً جزيلاً" |
 
 **Free text: a deviation from the brief, approved.** The brief allowed only character-anomaly rules to be lifted from free text. The PO decided (byul-byul, 2026-11-23) to lift, per field and per path and method, exactly the PL2 rules the corpus proves, and no PL1 rule. Every PL1 rule, 942100 and 941100 among them, still runs on every free-text field: `' OR 1=1 --` or `<script>` there is still blocked.
 
@@ -110,6 +115,8 @@ Evidence (`infra/proxy/waf-sweep.sh corpus`, see Sweeps): the 170 sentences of `
 | **All 27 fields, 4,590 requests** | **1,355** | **54** |
 
 The 54 left are 942100 (level 1) on the two accepted sentences, in all 27 fields (see Known false positives). Sentences matched per rule before: 942440 20, 942390 16, 931130 11, 942120 8, 932200 7, 932236 3, 932240 2, 942300 and 942520 1 (plus 942100 on the 2 accepted ones).
+
+**Second #94 review (2026-11-26).** The review's 15 sentences joined the corpus (185 lines, 4,995 requests). At 96c1f29, 14 of them got the WAF's 403 in all 27 fields (378 requests), each from paranoia level 2 rules only: 942131 on 9 sentences, 942260 (with 942200 in the 25 fields where 942200 was not yet lifted), 942380, 942410, 942150 with 942410, and 942210 on one each; "^_^" alone already passed. After adding 942131, 942150, 942210, 942260, 942380 and 942410 to every field of 10020–10029, and 942200 to every field that lacked it: 54 of 4,995, the same 54 accepted requests as before. As a signed-in user, each sentence in the field the review used (bio, profile position, job description, message, search keyword) now gets the app's 200 JSON.
 
 The same sweep sends `' OR 1=1 --`, `<script>alert(1)</script>` and `1 UNION SELECT password FROM users--` in each of the 27 fields: 81 of 81 get the WAF's 403, before and after.
 
@@ -201,6 +208,12 @@ The ones in everyday text are level 1 rules, which are never lifted from free te
 - **"Hi Мария! مرحبا 👋 See you at 10 or 11"**: 942100 (libinjection) reads `! … 10 or 11` as SQL. "Hi! See you at 10 or 11" passes, and so does "I'm free at 10 or 11". Blocked in every free-text field.
 - **"Part-time iş -- yalnız həftəsonu"**: 942100 reads the hyphenated word, the short word and `--` as SQL with a comment. "iş -- yalnız" passes. Blocked in every free-text field.
 - **"part-time work -- weekends only" as a whole short field** (a position, a job title, a search): 942100, as above. In a longer sentence ("I'm looking for part-time work -- weekends only, near Al Reem") it passes.
+- **Short texts that level 1 rules read as commands or SQL** (second #94 review, 2026-11-26; blocked in the free-text fields, accepted):
+  - "Full-time; remote" and "Contract; remote": 932370 (Windows command injection, `;` then a command-like word);
+  - a command name after `;`, as in "Tools: python; bash, git" or "C, C++; bash scripts": 932235 (Unix command injection) with 932370 (the review's "bash, git;" alone passes);
+  - "PowerShell": 932120 (Windows PowerShell command);
+  - "Please delete it from my profile", "Year (2024)" and "5 or 6 -- either is fine": 942100 (libinjection);
+  - "sleep (5 hours)", as in "I need to sleep (5 hours)": 942160 (blind SQL injection, `sleep(…)`; without the closing bracket it passes).
 - **`{{` … `}}` in free text** (941380, level 2, template injection): not lifted, since no everyday sentence in the corpus has it. It is what makes the level 2 probe work.
 - **`~user/file.pdf` paths in a bio with a link**: 932230 and 932250 (level 1, Unix command injection).
 - **A page request with a full-URL Referer** (only from a browser that ignores `Referrer-Policy`): 932206 is lifted on the API and the WebSockets only.
@@ -230,7 +243,7 @@ docker compose logs --no-log-prefix proxy 2>&1 | grep '"transaction"' | tail -1 
 Fields (parts `A`, `H`, `Z`):
 
 - `transaction.client_ip`, `time_stamp`, `unique_id`; `request.method`, `request.uri` (with the query string), `request.hostname`; `response.http_code` (403 when the WAF blocked).
-- `transaction.messages[]`, one per matched rule: `details.ruleId`; `details.data`, "Matched Data: `<what>` found within `<variable>`: `<value>`", which names the field (`ARGS:json.bio`) an exclusion would target, and holds **a piece of the request** (see Privacy below); `details.severity` (2 critical, 3 error, 4 warning, 5 notice); `details.tags`, with `paranoia-level/N`.
+- `transaction.messages[]`, one per matched rule: `details.ruleId`; `details.data`, "Matched Data: `<what>` found within `<variable>`: `<value>`", which names the field (`ARGS:json.bio`) an exclusion would target, and holds **the value of the field that matched, which can be its whole text**, also on a request that passes when a rule below the blocking score matched (a 621-character bio with Arabic and Russian got 200 and its audit line held the whole bio, #94 review; see Secrets below and the Privacy Policy's "Technical logs"); `details.severity` (2 critical, 3 error, 4 warning, 5 notice); `details.tags`, with `paranoia-level/N`.
 - Rule 949110 "Inbound Anomaly Score Exceeded (Total Score: N)" is the block itself; 980170 sums up for responses.
 
 Example (the level 2 probe, shortened):
@@ -256,7 +269,7 @@ No line holds request or response headers or bodies (`AHZ`), but `details.data` 
 - the email link token of `/api/auth/verify?token=…` (and the 42 OAuth `code` and `state` of PR #80) when that request gets a 4xx (already used or expired).
 - refresh tokens (`refresh_token` in the body of refresh and logout), reset tokens and the other token fields, only if a rule matched them. A value in the server's exact format is no longer inspected (Token fields), so it never reaches `details.data`; before this, about 1 value in 8,000 to 17,000 per kind matched a rule. The Bearer token is in a header that no rule matched in the sweeps.
 
-Since QA-01 (2026-11-25) the proxy's access log no longer holds these query strings: `/verify-email`, `/reset-password`, `/api/auth/`, `/files/` and `/ws` are logged without their query string (`infra/proxy/templates/conf.d/logging.conf.template`, see the proxy README). The audit line still holds the URI with its query string when a rule matched. Proposal, for the PO (not done here): send the WebSocket ticket in the first frame or the `Sec-WebSocket-Protocol` header instead of the URL.
+Since QA-01 (2026-11-25) the proxy's access log no longer holds these query strings: `/verify-email`, `/reset-password`, `/api/auth/`, `/files/` and `/ws` are logged without their query string (`infra/proxy/templates/conf.d/logging.conf.template`, see the proxy README). The audit line still holds the URI with its query string when a rule matched, and so does nginx's error line for a request the WAF refuses: it ends with the full request line, query string included (`request: "GET /api/jobs/open?keyword=… HTTP/1.1"`), in the same `docker compose logs proxy` output. Proposal, for the PO (not done here): send the WebSocket ticket in the first frame or the `Sec-WebSocket-Protocol` header instead of the URL.
 
 ## Demo
 
@@ -306,7 +319,7 @@ Runs from the host, over HTTPS through the proxy, with the proxy certificate as 
    - a password change and a reset through the email link; logout; both accounts deleted;
    - Grafana as the browser loads it: the login page, both dashboards, the variable values, every panel's `ds/query`, and the snapshot refusal, with Grafana's own 403.
 4. No audit line of the run holds any secret the run used (passwords, tokens, tickets, URL signatures, the Grafana admin password); found by search, never printed.
-5. `infra/proxy/waf-sweep.sh ci` (see Sweeps), about 1,000 requests in a few seconds: the 32 starred sentences of the corpus in all 27 free-text fields (no WAF 403 allowed), one once-blocked value and one fresh value of each kind in each of the 10 token fields (must pass), 46 probes in the token fields and 81 in the free-text fields (each must get the WAF's 403).
+5. `infra/proxy/waf-sweep.sh ci` (see Sweeps), about 1,400 requests in a few seconds: the 47 starred sentences of the corpus in all 27 free-text fields (no WAF 403 allowed), one once-blocked value and one fresh value of each kind in each of the 10 token fields (must pass), 46 probes in the token fields and 81 in the free-text fields (each must get the WAF's 403).
 
 `WAF_SWEEP=1 make waf-check` also runs the full sweep (`waf-sweep.sh all`, about 3 minutes, manual only).
 
@@ -331,7 +344,7 @@ Part 1 to 4 ends with `waf-check: N probes blocked, M normal requests passed` (2
 | Mode | What it sends | Time |
 | --- | --- | --- |
 | `ci` (part of `make waf-check`) | the starred corpus subset, the token samples, the token probes, the free-text probes | a few seconds |
-| `corpus` | every line of `infra/proxy/waf-corpus.txt` through every free-text field (4,590 requests), then the 81 free-text probes | about 10 s |
+| `corpus` | every line of `infra/proxy/waf-corpus.txt` through every free-text field (4,995 requests), then the 81 free-text probes | about 10 s |
 | `tokens [N] [M]` | per kind, N values (default 2,000) sent in all their places, and M more (default 200,000) tested offline against the CRS regexes, every match sent; then the samples and the token probes | about 3 min at the defaults |
 | `all` | `corpus`, then `tokens` | about 3 min |
 
