@@ -211,12 +211,12 @@ anonymise-deleted:
 # 20 open jobs across Abu Dhabi and Baku, applications, friendships, chats and approved
 # intro videos (BE-32). Safe to run repeatedly; never runs automatically on startup.
 seed:
-	$(COMPOSE) exec -T api python -m app.seed $(if $(moderate),--moderate)
+	$(COMPOSE) exec -T api with-secrets python -m app.seed $(if $(moderate),--moderate)
 
 # Drops all app rows, clears seeded/uploaded media objects and transient Redis keys, then
 # re-runs `make seed` from scratch (BE-32).
 reset-demo:
-	$(COMPOSE) exec -T api python -m app.seed --reset $(if $(moderate),--moderate)
+	$(COMPOSE) exec -T api with-secrets python -m app.seed --reset $(if $(moderate),--moderate)
 
 # Live alert demo, manual only (not in CI): stops Redis, waits until the RedisDown alert
 # fires (prints the seconds; fails after 120 s), keeps Redis down 25 s more so the Firing

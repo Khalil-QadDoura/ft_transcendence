@@ -227,7 +227,7 @@ One named volume per consumer (`x-secrets-volume`: `driver: local`, `type: tmpfs
   3. it runs the image's own entrypoint or command with `exec`.
 
   The wait matters: MinIO with a missing `*_FILE` starts with its default credentials `minioadmin:minioadmin` (checked on 2026-11-25). After `VAULT_WAIT_SEC` (300 s) without the files it exits 1, and `restart: unless-stopped` tries again.
-- **`docker compose exec`** starts a process without the entrypoint, so it does not have the secrets. Run it through the wrapper: `docker compose exec worker with-secrets python -m …`, as `make anonymise-deleted`, `make mail-check` and `make https-check` do. `backup.sh` sources its env file itself, so `make backup` and `make restore` need no wrapper.
+- **`docker compose exec`** starts a process without the entrypoint, so it does not have the secrets. Run it through the wrapper: `docker compose exec worker with-secrets python -m …`, as `make anonymise-deleted`, `make seed`, `make reset-demo`, `make mail-check` and `make https-check` do. `backup.sh` sources its env file itself, so `make backup` and `make restore` need no wrapper.
 
 | Service | How it reads its secret | Variable (compose) |
 | --- | --- | --- |
