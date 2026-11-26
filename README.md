@@ -2,9 +2,6 @@
 
 # WOZU Web
 
-> Status: in development (sprint 1 of 4). Sections with a TODO comment are filled by the owner card named in the comment; nothing below describes a feature as finished unless it exists in the repository.
-<!-- TODO DOC-06 (byul-byul): remove the Status line before submission. -->
-
 ## Description
 
 **WOZU Web** is a job platform for the web. A candidate applies to a job with a short video instead of a CV, talks to employers in real-time chat, and can play a social-deduction mini-game called the Turing Duel. The project is a new backend and a new web frontend, built on top of the WOZU backend as a reference.
@@ -336,7 +333,7 @@ Points follow the subject: Major = 2, Minor = 1; 14 points are needed. A module 
 
 ## Known limitations
 
-What does not work or is missing on `main` today (commit `d94b59f`, 2026-11-25), each with the card or pull request that changes it:
+What does not work or is missing on `main` today (commit `d2cc020`, 2026-11-26), each with the card or pull request that changes it:
 
 - **Game room:** the Turing Duel room screen (discussion chat, voting, results) is not on `main`, so a match cannot be played in the browser; only the lobby and the game server are there (#86). Restoring the room after a reload (#88) and showing the connection state in the room (#98) are not on `main` either.
 - **Applying to a job:** the job detail page with the apply form is not on `main` (#47), and the employer's applications page with video review is not on `main` (#99). The backend for both is there.
@@ -348,6 +345,7 @@ What does not work or is missing on `main` today (commit `d94b59f`, 2026-11-25),
 - **Login with 42:** needs `FT_CLIENT_ID` and `FT_CLIENT_SECRET`, typed into `.env` by hand. Without them the button leads to an error (the start route answers 503).
 - **Backups:** the backups are stored on the same machine as the data, so they do not survive the loss of that machine ([docs/disaster-recovery.md](docs/disaster-recovery.md)).
 - **Vault keys:** the Vault unseal keys and the root token are in `scripts/vault-keys.local` on the machine that runs Vault ([docs/infra/vault.md](docs/infra/vault.md)).
+- **API documentation:** the interactive API documentation (Swagger UI at `/api/docs`) is public, because the stack runs with `ENV=dev` for the evaluation; a production deployment would turn it off.
 
 ## Credits
 
