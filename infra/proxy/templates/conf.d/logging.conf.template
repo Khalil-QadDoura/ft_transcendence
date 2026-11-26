@@ -1,0 +1,28 @@
+# WOZU front proxy: access log without tokens (QA-01, PO decision, byul-byul, 2026-11-25).
+#
+# Replaces the image's conf.d/logging.conf.template (mounted over it, docker-compose.yml);
+# the image renders ${VARS} with envsubst at start. The same lines as the image's, except
+# one field of the format: $log_request instead of $request, the request line.
+#
+# Requests whose query string can carry a token are logged without it, as method, path and
+# protocol:
+#   /verify-email, /reset-password   the token of the email links (frontend pages)
+#   /api/auth/                       the 42 login callback (code, state)
+#   /files/                          presigned URLs (X-Amz-Credential, X-Amz-Signature)
+#   /ws                              the WebSocket ticket
+# Every other request keeps its request line as sent, query included (the jobs search stays
+# visible). Prefixes of the path as the client sent it: $request_uri never changes, while $uri
+# becomes /50x.html when an upstream error goes to the error page, which would log the token.
+map $request_uri $log_request {
+    default $request;
+    "~^(?<log_path>/(verify-email|reset-password|api/auth/|files/|ws)[^?]*)" "$request_method $log_path $server_protocol";
+}
+
+log_format main '$realip_remote_addr - $remote_user [$time_local] "$log_request" '
+                '$status $body_bytes_sent "$http_referer" '
+                '"$http_user_agent" "$http_x_forwarded_for"';
+
+access_log ${ACCESSLOG} main;
+access_log ${METRICSLOG} combined;
+
+error_log ${ERRORLOG} ${LOGLEVEL};

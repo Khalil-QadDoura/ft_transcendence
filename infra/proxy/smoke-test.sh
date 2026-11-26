@@ -187,7 +187,10 @@ else
 fi
 
 echo "Host ports:"
-published="$(docker ps --filter label=com.docker.compose.project=wozu \
+# Every container of this compose project, whatever its profile: the name compose resolves
+# (COMPOSE_PROJECT_NAME, else `name:` in docker-compose.yml), not a fixed one (QA-01).
+project="$(docker compose config --no-interpolate 2>/dev/null | sed -n '1s/^name: //p')"
+published="$(docker ps --filter "label=com.docker.compose.project=${project:?}" \
     --format '{{.Label "com.docker.compose.service"}} {{.Ports}}' | grep -e '->' | cut -d' ' -f1 | sort -u | tr '\n' ' ')"
 if [ "$published" = "proxy " ]; then
     pass "only the proxy publishes host ports"

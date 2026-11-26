@@ -230,13 +230,15 @@ def build_app(**overrides: object) -> FastAPI:
     The game scheduler (BE-27) is off unless a test turns it on (game_scheduler_enabled=True):
     only the game tests need its ticks, and every other app starts and stops faster without it.
 
-    The email links always start with https://localhost here, whatever FRONTEND_BASE_URL the
-    environment has (`make test` passes the one from .env, e.g. https://localhost:18443).
+    The email links and the public file URLs always start with https://localhost here,
+    whatever FRONTEND_BASE_URL and MINIO_EXTERNAL_ENDPOINT the environment has (`make test`
+    passes the ones from .env, e.g. https://localhost:18443).
     """
     settings = {
         "env": "prod",
         "internal_api_key": INTERNAL_KEY,
         "frontend_base_url": "https://localhost",
+        "minio_external_endpoint": "https://localhost",
         "game_scheduler_enabled": False,
     }
     if "redis_url" not in overrides and TEST_REDIS_URL and REDIS_SKIP_REASON is None:

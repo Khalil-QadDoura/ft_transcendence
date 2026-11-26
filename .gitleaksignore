@@ -3,3 +3,8 @@
 
 # "object_key, MP4_SIGNATURE_END": a constant's name after the word "key", not a key.
 10d80d04b6af36da74db9fbceeb957567e70a460:backend/app/media/service.py:generic-api-key:107
+
+# The comment above in .gitleaksignore itself: it quotes that constant's name (#97 on main).
+1ca48d63ebe00db34e56ced4647b95e5a6e1b1fc:.gitleaksignore:generic-api-key:4
+# The same comment as first committed on branch chore/BE-13-security-review.
+022c90573ec4473a1ac5ec3b431d1212326b905c:.gitleaksignore:generic-api-key:4
