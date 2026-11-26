@@ -13,13 +13,15 @@ COMPOSE_ALL := $(COMPOSE) --profile '*'
 s ?=
 # Optional: `make anonymise-deleted days=0` anonymises every deleted account at once.
 days ?=
+# Optional: `make seed moderate=1` also uploads one pending sample video for live worker moderation.
+moderate ?=
 # `make restore BACKUP=<timestamp|latest>`; RESTORE_YES=1 skips the question (INF-15).
 BACKUP ?=
 RESTORE_YES ?=
 
 .PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
-	mail-check metrics-check grafana-check schema-diagram anonymise-deleted alert-demo vault-init vault-check \
-	backup backup-list backup-check restore fclean re
+	mail-check metrics-check grafana-check schema-diagram anonymise-deleted seed reset-demo \
+	alert-demo vault-init vault-check backup backup-list backup-check restore fclean re
 
 all: env up
 
@@ -182,6 +184,17 @@ grafana-check:
 # deleted account at once (the demo). Accounts on retention hold are always skipped.
 anonymise-deleted:
 	$(COMPOSE) exec -T worker python -m app.worker.tasks.anonymise $(if $(days),--older-than-days $(days))
+
+# Idempotently fills the running stack with demo accounts, companies, logos, avatars,
+# 20 open jobs across Abu Dhabi and Baku, applications, friendships, chats and approved
+# intro videos (BE-32). Safe to run repeatedly; never runs automatically on startup.
+seed:
+	$(COMPOSE) exec -T api python -m app.seed $(if $(moderate),--moderate)
+
+# Drops all app rows, clears seeded/uploaded media objects and transient Redis keys, then
+# re-runs `make seed` from scratch (BE-32).
+reset-demo:
+	$(COMPOSE) exec -T api python -m app.seed --reset $(if $(moderate),--moderate)
 
 # Live alert demo, manual only (not in CI): stops Redis, waits until the RedisDown alert
 # fires (prints the seconds; fails after 120 s), keeps Redis down 25 s more so the Firing
