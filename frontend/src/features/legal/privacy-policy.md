@@ -59,7 +59,7 @@ If you create a company, we store its name, description, logo, country, city and
 
 ### Technical data
 
-- Technical logs of the service: the time of a request, which page or API was called, the result, a request ID and your IP address. IP addresses appear in the access logs of the front proxy. The front proxy also runs a security filter (a web application firewall) that refuses requests that look like attacks; for those, and for requests that end in an error, it logs the time, your IP address, the address that was called, which security rules matched and the short piece of the request that matched them. Passwords are never inspected or logged. Logs are kept for at most 30 days.
+- Technical logs of the service: the time of a request, which page or API was called, the result, a request ID, your IP address, your browser's user agent and the referring site. IP addresses appear in the access logs of the front proxy. The front proxy also runs a security filter (a web application firewall) that refuses requests that look like attacks; for those, and for requests that end in an error, it logs the time, your IP address, the address that was called, which security rules matched and the short piece of the request that matched them. Passwords are never inspected or logged. Logs are kept for at most 30 days.
 - Metrics about how the service runs (for example number of requests and errors). They do not contain your content.
 - Your IP address is also used by the service to limit repeated requests (rate limiting), for example repeated sign-in attempts. These counters are kept only in the server's memory for a short time.
 
