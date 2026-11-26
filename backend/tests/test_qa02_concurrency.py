@@ -31,6 +31,12 @@ pytestmark = [needs_database, needs_redis]
 PASSWORD = "correct horse battery"
 PASSWORD_HASH = security.hash_password(PASSWORD)
 WAIT = 6
+IDEM_RACE_ROUNDS = 12
+FRIEND_RACE_ROUNDS = 12
+GAME_MATCH_ROUNDS = 8
+GAME_VOTE_RACE_ROUNDS = 10
+APP_RACE_ROUNDS = 15
+JOB_RACE_ROUNDS = 10
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -89,15 +95,16 @@ def _create_verified_user(
         ln=last_name,
         pos=position,
     )
+    ip = f"10.88.{(uid // 250) % 255}.{uid % 250 + 1}"
     res = httpx2.post(
         f"http://{srv}/api/auth/login",
         json={"email": email, "password": PASSWORD},
-        headers={"X-Real-IP": f"10.88.0.{uid % 250 + 1}"},
+        headers={"X-Real-IP": ip},
     )
     assert res.status_code == 200, res.text
     hdrs = {
         "Authorization": f"Bearer {res.json()['access_token']}",
-        "X-Real-IP": f"10.88.0.{uid % 250 + 1}",
+        "X-Real-IP": ip,
     }
     return uid, hdrs
 
@@ -123,11 +130,11 @@ def _recv_until(ws: ClientConnection, expected: set[str], count: int) -> list[di
 
 
 def test_chat_parallel_send_idempotency_and_edit_delete_across_two_workers(clean_env) -> None:
-    """Two users send messages at the exact same moment across two API workers; identical
-    idempotency keys produce one row; concurrent edit + delete + reader GET remain consistent.
+    """Two users send messages simultaneously across two API workers; identical idempotency keys
+    deduplicate across repeated races; racing edit and delete on the SAME message stay consistent.
     """
     with running_server(_app()) as srv1, running_server(_app()) as srv2:
-        alice_id, alice_h = _create_verified_user(srv1, "alice@example.com", first_name="Alice")
+        _, alice_h = _create_verified_user(srv1, "alice@example.com", first_name="Alice")
         bob_id, bob_h = _create_verified_user(srv2, "bob@example.com", first_name="Bob")
 
         conv_res = httpx2.post(
@@ -184,81 +191,104 @@ def test_chat_parallel_send_idempotency_and_edit_delete_across_two_workers(clean
                 "Hello from Bob",
             }
 
-            # 2. Same idempotency_key racing across srv1 and srv2 -> exactly 1 DB message.
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                idem_res = list(
-                    pool.map(
-                        _send,
-                        [
-                            (srv1, alice_h, "Deduped message", "qa02-dup-key"),
-                            (srv2, alice_h, "Deduped message", "qa02-dup-key"),
-                        ],
+            # 2. Same idempotency_key racing across srv1 and srv2 -> 1 DB row per round.
+            deduped_msgs: list[tuple[int, dict[str, str]]] = []
+            for r in range(IDEM_RACE_ROUNDS):
+                sender_h = alice_h if r % 2 == 0 else bob_h
+                idem_key = f"qa02-dup-key-{r}"
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    idem_res = list(
+                        pool.map(
+                            _send,
+                            [
+                                (srv1, sender_h, f"Deduped {r}", idem_key),
+                                (srv2, sender_h, f"Deduped {r}", idem_key),
+                            ],
+                        )
                     )
-                )
-            assert [c for c, _ in idem_res] == [200, 200]
-            assert idem_res[0][1] == idem_res[1][1]
-            dup_msg_id = idem_res[0][1]
+                assert [c for c, _ in idem_res] == [200, 200]
+                assert idem_res[0][1] == idem_res[1][1]
+                deduped_msgs.append((idem_res[0][1], sender_h))
+                assert len(_recv_until(bob_ws, {"message"}, 1)) == 1
+
             msg_count = sql(
                 "SELECT COUNT(*) FROM messages WHERE conversation_id = :cid",
                 cid=conv_id,
             )
-            assert msg_count == [(3,)]
+            assert msg_count == [(2 + IDEM_RACE_ROUNDS,)]
 
-            # 3. Edit + delete + reader GET racing across both workers -> zero errors, live events.
+            # 3. Race edit + delete on the SAME message alongside a reader GET across both workers.
             b3 = threading.Barrier(3, timeout=WAIT)
+            for idx, (target_id, author_h) in enumerate(deduped_msgs):
 
-            def _edit() -> int:
-                b3.wait()
-                return httpx2.patch(
-                    f"http://{srv1}/api/conversations/{conv_id}/messages/{alice_msg_id}",
-                    json={"content": "Hello from Alice (edited)"},
-                    headers=alice_h,
-                ).status_code
+                def _edit(
+                    mid: int = target_id,
+                    hdrs: dict[str, str] = author_h,
+                    n: int = idx,
+                ) -> int:
+                    b3.wait()
+                    return httpx2.patch(
+                        f"http://{srv1}/api/conversations/{conv_id}/messages/{mid}",
+                        json={"content": f"Edited during race {n}"},
+                        headers=hdrs,
+                    ).status_code
 
-            def _delete() -> int:
-                b3.wait()
-                return httpx2.delete(
-                    f"http://{srv2}/api/conversations/{conv_id}/messages/{dup_msg_id}",
-                    headers=alice_h,
-                ).status_code
+                def _delete(mid: int = target_id, hdrs: dict[str, str] = author_h) -> int:
+                    b3.wait()
+                    return httpx2.delete(
+                        f"http://{srv2}/api/conversations/{conv_id}/messages/{mid}",
+                        headers=hdrs,
+                    ).status_code
 
-            def _read() -> int:
-                b3.wait()
-                return httpx2.get(
-                    f"http://{srv2}/api/conversations/{conv_id}/messages",
-                    headers=bob_h,
-                ).status_code
+                def _read() -> int:
+                    b3.wait()
+                    return httpx2.get(
+                        f"http://{srv2}/api/conversations/{conv_id}/messages",
+                        headers=bob_h,
+                    ).status_code
 
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                f_e = pool.submit(_edit)
-                f_d = pool.submit(_delete)
-                f_r = pool.submit(_read)
-                assert f_e.result() == 200
-                assert f_d.result() == 204
-                assert f_r.result() == 200
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    f_e = pool.submit(_edit)
+                    f_d = pool.submit(_delete)
+                    f_r = pool.submit(_read)
+                    edit_code = f_e.result()
+                    delete_code = f_d.result()
+                    read_code = f_r.result()
 
-            updates = _recv_until(bob_ws, {"message_updated", "message_deleted"}, 2)
-            assert {f["type"] for f in updates} == {"message_updated", "message_deleted"}
+                assert edit_code in (200, 404)
+                assert delete_code == 204
+                assert read_code == 200
+                [(deleted_at,)] = sql(
+                    "SELECT deleted_at FROM messages WHERE id = :mid", mid=target_id
+                )
+                assert deleted_at is not None
+
+                expected_ws = (
+                    {"message_updated", "message_deleted"}
+                    if edit_code == 200
+                    else {"message_deleted"}
+                )
+                updates = _recv_until(
+                    bob_ws, {"message_updated", "message_deleted"}, len(expected_ws)
+                )
+                assert {f["type"] for f in updates} == expected_ws
 
             final_list = httpx2.get(
                 f"http://{srv1}/api/conversations/{conv_id}/messages",
                 headers=bob_h,
             ).json()["items"]
             contents_by_id = {m["id"]: m["content"] for m in final_list}
-            assert contents_by_id[alice_msg_id] == "Hello from Alice (edited)"
-            assert bob_msg_id in contents_by_id
-            assert alice_id != bob_id
+            assert contents_by_id == {
+                alice_msg_id: "Hello from Alice",
+                bob_msg_id: "Hello from Bob",
+            }
 
 
 def test_friends_concurrent_requests_across_two_workers(clean_env) -> None:
-    """Three users concurrently send opposing and parallel friend requests across 2 API workers
-    without violating the unordered pair unique constraint or duplicating friendships.
+    """Opposing and parallel friend requests across 2 API workers never violate the unordered
+    pair unique constraint or duplicate friendships over repeated concurrent rounds.
     """
     with running_server(_app()) as srv1, running_server(_app()) as srv2:
-        alice_id, alice_h = _create_verified_user(srv1, "alice@example.com")
-        bob_id, bob_h = _create_verified_user(srv2, "bob@example.com")
-        carol_id, carol_h = _create_verified_user(srv1, "carol@example.com")
-
         barrier = threading.Barrier(3, timeout=WAIT)
 
         def _req(args: tuple[str, dict[str, str], int]) -> int:
@@ -270,72 +300,91 @@ def test_friends_concurrent_requests_across_two_workers(clean_env) -> None:
                 headers=hdrs,
             ).status_code
 
-        # Alice->Bob on srv1, Bob->Alice on srv2, Carol->Alice on srv1 simultaneously.
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            statuses = list(
-                pool.map(
-                    _req,
-                    [
-                        (srv1, alice_h, bob_id),
-                        (srv2, bob_h, alice_id),
-                        (srv1, carol_h, alice_id),
-                    ],
+        for r in range(FRIEND_RACE_ROUNDS):
+            alice_id, alice_h = _create_verified_user(srv1, f"alice{r}@example.com")
+            bob_id, bob_h = _create_verified_user(srv2, f"bob{r}@example.com")
+            _, carol_h = _create_verified_user(srv1, f"carol{r}@example.com")
+
+            # Alice->Bob on srv1, Bob->Alice on srv2, Carol->Alice on srv1 simultaneously.
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                statuses = list(
+                    pool.map(
+                        _req,
+                        [
+                            (srv1, alice_h, bob_id),
+                            (srv2, bob_h, alice_id),
+                            (srv1, carol_h, alice_id),
+                        ],
+                    )
                 )
-            )
-        # Opposing Alice<->Bob race produces one 201 and one 409 (or 200); Carol->Alice is 201.
-        pair_statuses = sorted(statuses[:2])
-        assert pair_statuses == [201, 409] or all(s in (200, 201) for s in pair_statuses)
-        assert statuses[2] == 201
-        assert sql("SELECT COUNT(*) FROM friendships") == [(2,)]
-        assert carol_id > 0
+            pair_statuses = sorted(statuses[:2])
+            assert pair_statuses == [201, 409] or all(s in (200, 201) for s in pair_statuses)
+            assert statuses[2] == 201
+            assert sql("SELECT COUNT(*) FROM friendships") == [(2 * (r + 1),)]
 
 
 def test_game_4_players_two_workers_join_disconnect_and_simultaneous_votes(clean_env) -> None:
-    """Four humans join matchmaking at the same moment across 2 API workers: zero duplicate rooms,
-    all share one room_id, one player drops/reconnects during discussion while others chat, and
-    all 4 cast concurrent votes across both workers cleanly.
+    """Repeated 4-player concurrent joins across 2 API workers yield one room per wave with safe
+    Start-now locking, resilient WS reconnect during discussion, and concurrent upsert voting.
     """
     with (
         running_server(_app(game_scheduler_enabled=False)) as srv1,
         running_server(_app(game_scheduler_enabled=False)) as srv2,
     ):
-        players = [
-            _create_verified_user(srv1 if i % 2 == 0 else srv2, f"g{i}@example.com")
-            for i in range(4)
-        ]
-        barrier = threading.Barrier(4, timeout=WAIT)
+        seen_rooms: set[int] = set()
+        players: list[tuple[int, dict[str, str]]] = []
+        room_id = 0
+        join_barrier = threading.Barrier(4, timeout=WAIT)
+        start_barrier = threading.Barrier(2, timeout=WAIT)
 
-        def _join(idx: int) -> tuple[int, int]:
-            srv = srv1 if idx % 2 == 0 else srv2
-            barrier.wait()
-            res = httpx2.post(f"http://{srv}/api/game/queue/join", headers=players[idx][1])
-            return res.status_code, res.json()["room_id"]
+        for wave in range(GAME_MATCH_ROUNDS):
+            wave_players = [
+                _create_verified_user(srv1 if i % 2 == 0 else srv2, f"g{wave}_{i}@example.com")
+                for i in range(4)
+            ]
 
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            joined = list(pool.map(_join, range(4)))
+            def _join(
+                idx: int,
+                grp: list[tuple[int, dict[str, str]]] = wave_players,
+            ) -> tuple[int, int]:
+                srv = srv1 if idx % 2 == 0 else srv2
+                join_barrier.wait()
+                res = httpx2.post(f"http://{srv}/api/game/queue/join", headers=grp[idx][1])
+                return res.status_code, res.json()["room_id"]
 
-        assert all(code in (200, 202) for code, _ in joined)
-        room_ids = {rid for _, rid in joined}
-        assert len(room_ids) == 1
-        room_id = next(iter(room_ids))
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                joined = list(pool.map(_join, range(4)))
 
-        # Race two concurrent start clicks across srv1 and srv2 -> zero 500s.
-        b_start = threading.Barrier(2, timeout=WAIT)
+            assert all(code in (200, 202) for code, _ in joined)
+            wave_rooms = {rid for _, rid in joined}
+            assert len(wave_rooms) == 1
+            wave_room = next(iter(wave_rooms))
+            assert wave_room not in seen_rooms
+            seen_rooms.add(wave_room)
 
-        def _start(idx: int) -> int:
-            srv = srv1 if idx == 0 else srv2
-            b_start.wait()
-            return httpx2.post(
-                f"http://{srv}/api/game/rooms/{room_id}/start",
-                headers=players[idx][1],
-            ).status_code
+            # Race two concurrent Start-now presses across srv1 and srv2 -> zero 500s.
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            start_codes = list(pool.map(_start, [0, 1]))
-        assert 200 in start_codes
-        assert all(c in (200, 409) for c in start_codes)
+            def _start(
+                idx: int,
+                rid: int = wave_room,
+                grp: list[tuple[int, dict[str, str]]] = wave_players,
+            ) -> int:
+                srv = srv1 if idx == 0 else srv2
+                start_barrier.wait()
+                return httpx2.post(
+                    f"http://{srv}/api/game/rooms/{rid}/start",
+                    headers=grp[idx][1],
+                ).status_code
 
-        # Open 4 game sockets split across both workers.
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                start_codes = list(pool.map(_start, [0, 1]))
+            assert 200 in start_codes
+            assert all(c in (200, 409) for c in start_codes)
+
+            players = wave_players
+            room_id = wave_room
+
+        # Open 4 game sockets split across both workers for the final room.
         with ExitStack() as stack:
             sockets: list[ClientConnection] = []
             for idx in range(4):
@@ -364,7 +413,7 @@ def test_game_4_players_two_workers_join_disconnect_and_simultaneous_votes(clean
             p0_frames = _recv_until(sockets[0], {"game_message"}, 2)
             assert len(p0_frames) == 2
 
-            # Advance room to voting and have all 4 humans vote simultaneously across srv1 & srv2.
+            # Advance room to voting and test both multi-voter writes and same-target races.
             sql(
                 "UPDATE game_rooms SET state = CAST('voting' AS game_room_state),"
                 " voting_started_at = now() WHERE id = :rid",
@@ -376,20 +425,32 @@ def test_game_4_players_two_workers_join_disconnect_and_simultaneous_votes(clean
             all_nums = [p["id"] for p in snap_after["participants"]]
             assert len(all_nums) == 4
 
+            my_pids = [
+                httpx2.get(
+                    f"http://{srv1 if idx % 2 == 0 else srv2}/api/game/rooms/{room_id}",
+                    headers=players[idx][1],
+                ).json()["my_participant_id"]
+                for idx in range(4)
+            ]
+
             b_vote = threading.Barrier(4, timeout=WAIT)
+            expected_guesses: dict[tuple[int, int], str] = {}
+            for me in my_pids:
+                targets = [n for n in all_nums if n != me]
+                for t_idx, target in enumerate(targets):
+                    # Set first target to "bot" (away from default "human") to test real writes.
+                    expected_guesses[(me, target)] = "bot" if t_idx == 0 else "human"
 
             def _cast_votes(idx: int) -> list[int]:
                 srv = srv1 if idx % 2 == 0 else srv2
-                me = httpx2.get(
-                    f"http://{srv}/api/game/rooms/{room_id}", headers=players[idx][1]
-                ).json()["my_participant_id"]
+                me = my_pids[idx]
                 targets = [n for n in all_nums if n != me]
                 b_vote.wait()
                 codes = []
                 for t in targets:
                     r = httpx2.post(
                         f"http://{srv}/api/game/rooms/{room_id}/votes",
-                        json={"target_participant_id": t, "guess": "human"},
+                        json={"target_participant_id": t, "guess": expected_guesses[(me, t)]},
                         headers=players[idx][1],
                     )
                     codes.append(r.status_code)
@@ -398,16 +459,81 @@ def test_game_4_players_two_workers_join_disconnect_and_simultaneous_votes(clean
             with ThreadPoolExecutor(max_workers=4) as pool:
                 vote_results = list(pool.map(_cast_votes, range(4)))
             assert all(codes == [200, 200, 200] for codes in vote_results)
-            vote_count = sql("SELECT COUNT(*) FROM game_votes WHERE room_id = :rid", rid=room_id)
-            assert vote_count == [(12,)]
+
+            stored_rows = sql(
+                "SELECT vp.display_label, tp.display_label, v.guess::text"
+                " FROM game_votes v"
+                " JOIN game_participants vp ON vp.id = v.voter_participant_id"
+                " JOIN game_participants tp ON tp.id = v.target_participant_id"
+                " WHERE v.room_id = :rid",
+                rid=room_id,
+            )
+            assert {
+                (int(vl.split()[-1]), int(tl.split()[-1])): g for vl, tl, g in stored_rows
+            } == expected_guesses
+
+            # Race "bot" (srv1) vs "human" (srv2) for the same (voter, target) pair across rounds
+            # (alternating empty row -> concurrent upsert-insert vs existing row -> upsert-update).
+            pair_barrier = threading.Barrier(2, timeout=WAIT)
+            for r in range(GAME_VOTE_RACE_ROUNDS):
+                voter_idx = r % 4
+                voter_pid = my_pids[voter_idx]
+                target_pid = [n for n in all_nums if n != voter_pid][0]
+                if r % 2 == 0:
+                    sql(
+                        "DELETE FROM game_votes v"
+                        " USING game_participants vp, game_participants tp"
+                        " WHERE v.room_id = :rid AND vp.id = v.voter_participant_id"
+                        " AND tp.id = v.target_participant_id"
+                        " AND vp.display_label = :v AND tp.display_label = :t",
+                        rid=room_id,
+                        v=f"Player {voter_pid}",
+                        t=f"Player {target_pid}",
+                    )
+
+                def _race_vote(
+                    srv: str,
+                    guess: str,
+                    v_idx: int = voter_idx,
+                    tgt: int = target_pid,
+                ) -> int:
+                    pair_barrier.wait()
+                    return httpx2.post(
+                        f"http://{srv}/api/game/rooms/{room_id}/votes",
+                        json={"target_participant_id": tgt, "guess": guess},
+                        headers=players[v_idx][1],
+                    ).status_code
+
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    f_bot = pool.submit(_race_vote, srv1, "bot")
+                    f_hum = pool.submit(_race_vote, srv2, "human")
+                    assert f_bot.result() == 200
+                    assert f_hum.result() == 200
+
+                row = sql(
+                    "SELECT v.guess::text"
+                    " FROM game_votes v"
+                    " JOIN game_participants vp ON vp.id = v.voter_participant_id"
+                    " JOIN game_participants tp ON tp.id = v.target_participant_id"
+                    " WHERE v.room_id = :rid AND vp.display_label = :v AND tp.display_label = :t",
+                    rid=room_id,
+                    v=f"Player {voter_pid}",
+                    t=f"Player {target_pid}",
+                )
+                assert len(row) == 1
+                assert row[0][0] in ("bot", "human")
+
+            assert sql("SELECT COUNT(*) FROM game_votes WHERE room_id = :rid", rid=room_id) == [
+                (12,)
+            ]
 
 
 def test_application_employer_transition_vs_candidate_withdraw_race(clean_env) -> None:
     """Employer updates application status on srv1 at the exact moment candidate withdraws on
-    srv2: exactly one succeeds and the loser receives 409 Conflict with consistent DB state.
+    srv2: across repeated rounds, exactly one wins and the loser gets 409 Conflict cleanly.
     """
     with running_server(_app()) as srv1, running_server(_app()) as srv2:
-        emp_id, emp_h = _create_verified_user(srv1, "emp@example.com", position="Hiring Lead")
+        _, emp_h = _create_verified_user(srv1, "emp@example.com", position="Hiring Lead")
         cand_id, cand_h = _create_verified_user(srv2, "cand@example.com", position="Developer")
 
         sql(
@@ -425,62 +551,65 @@ def test_application_employer_transition_vs_candidate_withdraw_race(clean_env) -
             ).status_code
             == 201
         )
-        job_id = httpx2.post(
-            f"http://{srv1}/api/jobs",
-            json={
-                "title": "Race Engineer",
-                "description": "Concurrency verification",
-                "latitude": 24.4539,
-                "longitude": 54.3773,
-                "location": "Abu Dhabi",
-                "status": "open",
-            },
-            headers=emp_h,
-        ).json()["id"]
-        app_id = httpx2.post(
-            f"http://{srv2}/api/jobs/{job_id}/apply",
-            json={"cover_note": "Testing concurrency"},
-            headers=cand_h,
-        ).json()["id"]
-        assert emp_id != cand_id
 
         barrier = threading.Barrier(2, timeout=WAIT)
-
-        def _employer_reject() -> int:
-            barrier.wait()
-            return httpx2.patch(
-                f"http://{srv1}/api/applications/{app_id}/status",
-                json={"status": "rejected", "note": "Role closed"},
+        for r in range(APP_RACE_ROUNDS):
+            job_id = httpx2.post(
+                f"http://{srv1}/api/jobs",
+                json={
+                    "title": f"Race Engineer {r}",
+                    "description": "Concurrency verification",
+                    "latitude": 24.4539,
+                    "longitude": 54.3773,
+                    "location": "Abu Dhabi",
+                    "status": "open",
+                },
                 headers=emp_h,
-            ).status_code
-
-        def _candidate_withdraw() -> int:
-            barrier.wait()
-            return httpx2.delete(
-                f"http://{srv2}/api/applications/{app_id}",
+            ).json()["id"]
+            app_id = httpx2.post(
+                f"http://{srv2}/api/jobs/{job_id}/apply",
+                json={"cover_note": f"Testing concurrency round {r}"},
                 headers=cand_h,
-            ).status_code
+            ).json()["id"]
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            f_emp = pool.submit(_employer_reject)
-            f_cand = pool.submit(_candidate_withdraw)
-            emp_code = f_emp.result()
-            cand_code = f_cand.result()
+            def _employer_reject(aid: int = app_id) -> int:
+                barrier.wait()
+                return httpx2.patch(
+                    f"http://{srv1}/api/applications/{aid}/status",
+                    json={"status": "rejected", "note": "Role closed"},
+                    headers=emp_h,
+                ).status_code
 
-        assert sorted([emp_code, cand_code]) in ([200, 409], [204, 409])
-        [(final_status,)] = sql("SELECT status::text FROM applications WHERE id = :id", id=app_id)
-        events = sql(
-            "SELECT to_status::text FROM application_events WHERE application_id = :id ORDER BY id",
-            id=app_id,
-        )
-        expected_final = "rejected" if emp_code == 200 else "withdrawn"
-        assert final_status == expected_final
-        assert [e[0] for e in events] == ["submitted", expected_final]
+            def _candidate_withdraw(aid: int = app_id) -> int:
+                barrier.wait()
+                return httpx2.delete(
+                    f"http://{srv2}/api/applications/{aid}",
+                    headers=cand_h,
+                ).status_code
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                f_emp = pool.submit(_employer_reject)
+                f_cand = pool.submit(_candidate_withdraw)
+                emp_code = f_emp.result()
+                cand_code = f_cand.result()
+
+            assert sorted([emp_code, cand_code]) in ([200, 409], [204, 409])
+            [(final_status,)] = sql(
+                "SELECT status::text FROM applications WHERE id = :id", id=app_id
+            )
+            events = sql(
+                "SELECT to_status::text FROM application_events"
+                " WHERE application_id = :id ORDER BY id",
+                id=app_id,
+            )
+            expected_final = "rejected" if emp_code == 200 else "withdrawn"
+            assert final_status == expected_final
+            assert [e[0] for e in events] == ["submitted", expected_final]
 
 
 def test_jobs_parallel_edits_and_view_dedup_across_two_workers(clean_env) -> None:
-    """Two employers concurrently update their jobs while duplicate + distinct viewers hit
-    POST /jobs/{id}/view across 2 API workers; edits persist cleanly and view counts never inflate.
+    """Two employers concurrently update jobs while duplicate and distinct viewers hit
+    POST /jobs/{id}/view across 2 API workers over repeated rounds without inflating counts.
     """
     with running_server(_app()) as srv1, running_server(_app()) as srv2:
         _, emp1_h = _create_verified_user(srv1, "e1@example.com")
@@ -504,63 +633,65 @@ def test_jobs_parallel_edits_and_view_dedup_across_two_workers(clean_env) -> Non
             == 201
         )
 
-        job1 = httpx2.post(
-            f"http://{srv1}/api/jobs",
-            json={
-                "title": "Job One",
-                "description": "Desc 1",
-                "latitude": 24.45,
-                "longitude": 54.37,
-                "location": "Abu Dhabi",
-                "status": "open",
-            },
-            headers=emp1_h,
-        ).json()["id"]
-        job2 = httpx2.post(
-            f"http://{srv2}/api/jobs",
-            json={
-                "title": "Job Two",
-                "description": "Desc 2",
-                "latitude": 40.38,
-                "longitude": 49.86,
-                "location": "Baku",
-                "status": "open",
-            },
-            headers=emp2_h,
-        ).json()["id"]
+        call_barrier = threading.Barrier(10, timeout=WAIT)
 
-        # Viewer 0 hammers job1 5x simultaneously across srv1 & srv2 alongside viewers 1, 2, 3
-        # and both employers simultaneously patching their own jobs.
-        calls: list[tuple[str, str, dict[str, str], dict | None]] = [
-            ("PATCH", f"http://{srv1}/api/jobs/{job1}", emp1_h, {"title": "Job One Updated"}),
-            ("PATCH", f"http://{srv2}/api/jobs/{job2}", emp2_h, {"title": "Job Two Updated"}),
-            *[
-                (
-                    "POST",
-                    f"http://{srv1 if i % 2 == 0 else srv2}/api/jobs/{job1}/view",
-                    viewers[0],
-                    None,
-                )
-                for i in range(5)
-            ],
-            ("POST", f"http://{srv1}/api/jobs/{job1}/view", viewers[1], None),
-            ("POST", f"http://{srv2}/api/jobs/{job1}/view", viewers[2], None),
-            ("POST", f"http://{srv1}/api/jobs/{job1}/view", viewers[3], None),
-        ]
-        barrier = threading.Barrier(len(calls), timeout=WAIT)
+        for r in range(JOB_RACE_ROUNDS):
+            job1 = httpx2.post(
+                f"http://{srv1}/api/jobs",
+                json={
+                    "title": f"Job One {r}",
+                    "description": "Desc 1",
+                    "latitude": 24.45,
+                    "longitude": 54.37,
+                    "location": "Abu Dhabi",
+                    "status": "open",
+                },
+                headers=emp1_h,
+            ).json()["id"]
+            job2 = httpx2.post(
+                f"http://{srv2}/api/jobs",
+                json={
+                    "title": f"Job Two {r}",
+                    "description": "Desc 2",
+                    "latitude": 40.38,
+                    "longitude": 49.86,
+                    "location": "Baku",
+                    "status": "open",
+                },
+                headers=emp2_h,
+            ).json()["id"]
 
-        def _call(item: tuple[str, str, dict[str, str], dict | None]) -> int:
-            method, url, hdrs, payload = item
-            barrier.wait()
-            if method == "PATCH":
-                return httpx2.patch(url, json=payload, headers=hdrs).status_code
-            return httpx2.post(url, headers=hdrs).status_code
+            spam_idx = r % 4
+            distinct_viewers = [viewers[i] for i in range(4) if i != spam_idx]
+            calls: list[tuple[str, str, dict[str, str], dict | None]] = [
+                ("PATCH", f"http://{srv1}/api/jobs/{job1}", emp1_h, {"title": f"Job One Upd {r}"}),
+                ("PATCH", f"http://{srv2}/api/jobs/{job2}", emp2_h, {"title": f"Job Two Upd {r}"}),
+                *[
+                    (
+                        "POST",
+                        f"http://{srv1 if i % 2 == 0 else srv2}/api/jobs/{job1}/view",
+                        viewers[spam_idx],
+                        None,
+                    )
+                    for i in range(5)
+                ],
+                ("POST", f"http://{srv1}/api/jobs/{job1}/view", distinct_viewers[0], None),
+                ("POST", f"http://{srv2}/api/jobs/{job1}/view", distinct_viewers[1], None),
+                ("POST", f"http://{srv1}/api/jobs/{job1}/view", distinct_viewers[2], None),
+            ]
 
-        with ThreadPoolExecutor(max_workers=len(calls)) as pool:
-            codes = list(pool.map(_call, calls))
+            def _call(item: tuple[str, str, dict[str, str], dict | None]) -> int:
+                method, url, hdrs, payload = item
+                call_barrier.wait()
+                if method == "PATCH":
+                    return httpx2.patch(url, json=payload, headers=hdrs).status_code
+                return httpx2.post(url, headers=hdrs).status_code
 
-        assert codes[:2] == [200, 200]
-        assert all(c == 204 for c in codes[2:])
-        assert sql("SELECT title FROM jobs WHERE id = :id", id=job1) == [("Job One Updated",)]
-        assert sql("SELECT title FROM jobs WHERE id = :id", id=job2) == [("Job Two Updated",)]
-        assert sql("SELECT COUNT(*) FROM job_views WHERE job_id = :id", id=job1) == [(4,)]
+            with ThreadPoolExecutor(max_workers=len(calls)) as pool:
+                codes = list(pool.map(_call, calls))
+
+            assert codes[:2] == [200, 200]
+            assert all(c == 204 for c in codes[2:])
+            assert sql("SELECT title FROM jobs WHERE id = :id", id=job1) == [(f"Job One Upd {r}",)]
+            assert sql("SELECT title FROM jobs WHERE id = :id", id=job2) == [(f"Job Two Upd {r}",)]
+            assert sql("SELECT COUNT(*) FROM job_views WHERE job_id = :id", id=job1) == [(4,)]
