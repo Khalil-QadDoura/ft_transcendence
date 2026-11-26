@@ -39,8 +39,9 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
    cd ft_transcendence
    ```
 
-2. Run `make`. It is the same as `make env up` and does this, in order:
+2. Run `make`. It is the same as `make env ports up` and does this, in order:
    - `make env` creates `.env` from `.env.example` and fills every empty secret (`JWT_SECRET`, `INTERNAL_API_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) with a random value from `openssl rand`. `.env` is readable by its owner only and is never committed. If `.env` already exists, no line of it changes; only keys that `.env.example` gained since are appended. Copying `.env.example` by hand is not needed and would leave the secrets empty.
+   - `make ports` writes the HTTPS port into the public URLs in `.env` (`FRONTEND_BASE_URL`, `MINIO_EXTERNAL_ENDPOINT`) when `HTTPS_PORT` is not 443, and removes it again when it is 443 (`scripts/ports.sh`).
    - `make certs` creates a self-signed certificate for `localhost` in `infra/proxy/certs/` (kept if it already exists).
    - `make vault-init` starts Vault alone and runs `scripts/vault-init.sh`. The first time, it initializes Vault (3 key shares, 2 of them unseal it) and writes the key shares and the root token to `scripts/vault-keys.local`, readable by its owner only and never committed. Every time, it unseals Vault, which starts sealed after each container start, and applies its configuration (secrets store, AppRole roles and policies, audit log). Keep that file: without it a sealed Vault cannot be unsealed. The services do not read their secrets from Vault yet (INF-13); they still come from `.env`.
    - `docker compose up -d --build --wait` builds the images, starts the stack and returns once every service is running and healthy. It fails if a service exits. The `backup` service takes a first backup at start when it finds none from the last 24 hours.
