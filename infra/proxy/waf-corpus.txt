@@ -14,6 +14,25 @@
 * Инженер-программист
 * senior engineer -- backend
 
+# --------------------------------------------------------------- the #94 re-review's examples (2026-11-26)
+# At 96c1f29 each but "^_^" got the WAF's 403 in all 27 fields, from PL2 rules only (942131,
+# 942150, 942200, 942210, 942260, 942380, 942410); "^_^" alone passed there already.
+* The job is not available anymore
+* My visa is not ready yet, but I can start in January.
+* It is not a problem
+* I do not like night shifts
+* Accommodation is not provided
+* Sorry, the manager is not here today, can we move it to Monday?
+* Salary > 4000 AED
+* Experience >= 3 years
+* thanks <3
+* ^_^
+* Please select a time from the list
+* Sort the jobs, order by salary
+* Position (part-time)
+* Max char (200)
+* Hi! I can come at 10 or 11 -- شكراً جزيلاً
+
 # --------------------------------------------------------------- English, chat style
 * I can start on Monday or Tuesday
 * Can you do 8 or 9 tomorrow?
