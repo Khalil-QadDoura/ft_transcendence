@@ -17,6 +17,7 @@ from app.core.queue import MODERATION_TASK
 from app.media.constants import WORKER_HEARTBEAT_KEY
 from app.media.models import IntroVideo
 from app.media.moderation import run_moderation
+from app.users.models import User
 from app.worker.celery_app import celery_app
 
 log = structlog.get_logger(__name__)
@@ -55,10 +56,12 @@ async def requeue_stuck_videos(
     rows = (
         await session.execute(
             select(IntroVideo.id, IntroVideo.object_key)
+            .join(User, User.id == IntroVideo.user_id)
             .where(
                 IntroVideo.moderation_status == "pending",
                 IntroVideo.lifecycle_status != "deleted",
                 IntroVideo.updated_at < cutoff,
+                User.status == "active",
             )
             .order_by(IntroVideo.id)
         )

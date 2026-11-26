@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import subprocess
 import time
@@ -15,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import httpx2
 import pytest
 import redis
+import structlog
 from conftest import (
     TEST_DATABASE_URL,
     TEST_REDIS_URL,
@@ -38,12 +40,13 @@ from app.media.constants import EVENT_VIDEO_MODERATED, WORKER_HEARTBEAT_KEY
 from app.media.models import IntroVideo
 from app.media.moderation import (
     OpenAIModerator,
+    apply_moderation_result,
     extract_audio,
     extract_frames,
     probe_duration,
     run_moderation,
 )
-from app.worker.celery_app import celery_app
+from app.worker.celery_app import _on_setup_logging, celery_app
 from app.worker.tasks.moderation import requeue_stuck_videos, write_worker_heartbeat
 
 PASSWORD = "correct horse battery"
@@ -639,3 +642,92 @@ def test_worker_heartbeat_marks_health_worker_component_ok():
         res = test_client.get("/api/health")
         assert res.status_code == 200
         assert res.json()["components"]["worker"] == "ok"
+
+
+@needs_database
+@needs_redis
+def test_deleted_account_pending_videos_are_skipped_by_worker_and_beat():
+    """Waiting videos owned by deleted accounts are never moderated, approved or re-queued."""
+    alembic("upgrade", "head")
+    sql("TRUNCATE users, intro_videos RESTART IDENTITY CASCADE")
+    deleted_uid = _seed_user("gone@example.com")
+    vid_id = _seed_video(deleted_uid, object_key=f"users/{deleted_uid}/intro/gone.mp4")
+    sql("UPDATE users SET status = 'deleted', deleted_at = now() WHERE id = :id", id=deleted_uid)
+
+    storage = FakeStorage()
+    res = asyncio.run(
+        run_moderation(
+            vid_id,
+            f"users/{deleted_uid}/intro/gone.mp4",
+            settings=_test_settings(),
+            storage=storage,
+            moderator=FakeModerator(),
+            duration_fn=lambda _: 10.0,
+            frames_fn=_fake_frames,
+            audio_fn=_fake_audio,
+        )
+    )
+    assert res == "skipped"
+    assert storage.downloaded == []
+    assert _fetch_video_row(vid_id)[:2] == ("pending", "loaded")
+
+    # Even if account deletion happened mid-flight before apply_moderation_result, stay pending.
+    async def _direct_apply() -> IntroVideo | None:
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        rclient = redis.asyncio.Redis.from_url(TEST_REDIS_URL, decode_responses=True)
+        try:
+            async with maker() as session:
+                return await apply_moderation_result(
+                    session,
+                    rclient,
+                    video_id=vid_id,
+                    moderation_status="approved",
+                    real_duration_sec=10,
+                )
+        finally:
+            await rclient.aclose()
+            await engine.dispose()
+
+    assert asyncio.run(_direct_apply()) is None
+    assert _fetch_video_row(vid_id)[:2] == ("pending", "loaded")
+
+    # Beat recovery must skip stuck pending videos of deleted accounts.
+    async def _beat_deleted() -> list[int]:
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        stale = datetime.now(UTC) - timedelta(minutes=15)
+        try:
+            async with maker() as session:
+                await session.execute(
+                    update(IntroVideo)
+                    .where(IntroVideo.id == vid_id)
+                    .values(created_at=stale, updated_at=stale)
+                )
+                await session.commit()
+                return await requeue_stuck_videos(
+                    session,
+                    enqueue_fn=lambda _vid, _key: None,
+                    stuck_minutes=10,
+                )
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(_beat_deleted()) == []
+
+
+def test_celery_setup_logging_configures_json_handler():
+    """Celery worker configures our JSON log formatter without leaking root plain text."""
+    assert celery_app.conf.worker_hijack_root_logger is False
+    root = logging.getLogger()
+    saved_handlers = list(root.handlers)
+    saved_level = root.level
+    saved_config = structlog.get_config()
+    try:
+        _on_setup_logging()
+        assert len(root.handlers) == 1
+        assert isinstance(root.handlers[0].formatter, structlog.stdlib.ProcessorFormatter)
+    finally:
+        root.handlers = saved_handlers
+        root.setLevel(saved_level)
+        structlog.configure(**saved_config)
