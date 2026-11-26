@@ -393,13 +393,13 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
         {/* Uploading progress overlay */}
         {state === "uploading" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-6">
-            <Spinner size="lg" className="mb-4 text-primary-500" />
+            <Spinner size="lg" className="mb-4 text-lime" />
             <p className="mb-2 text-sm font-medium text-white">
               {t("media.uploadingVideo")}
             </p>
             <div className="h-2.5 w-64 rounded-full bg-gray-700">
               <div
-                className="h-2.5 rounded-full bg-primary-500 transition-all duration-300"
+                className="h-2.5 rounded-full bg-lime transition-all duration-300"
                 style={{ width: `${uploadPercent}%` }}
                 data-testid="upload-progress-bar"
               />
