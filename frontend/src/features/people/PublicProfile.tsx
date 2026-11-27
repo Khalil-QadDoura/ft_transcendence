@@ -7,6 +7,7 @@ import { Avatar } from "../../components/Avatar";
 import { Button } from "../../components/Button";
 import { Modal } from "../../components/Modal";
 import { ApiError, queryKeys } from "../../api/client";
+import { useUserPresence } from "../presence";
 import { profileApi } from "../profile/api";
 import { peopleApi, userId } from "./api";
 import "./people.css";
@@ -34,6 +35,7 @@ function PersonView({ id }: { id: number }) {
     enabled: id > 0 && !!me.data && me.data.id !== id,
     retry: false,
   });
+  const isOnline = useUserPresence(id, profile.data?.is_online);
   if (me.data?.id === id) return <Navigate to="/profile" replace />;
   if (
     !id ||
@@ -96,10 +98,13 @@ function PersonView({ id }: { id: number }) {
         <Avatar src={person.avatar_url} alt={name} size="xl" />
         <p className="people-presence">
           <span
-            className={person.is_online ? "online-dot" : "offline-dot"}
+            className={isOnline ? "online-dot" : "offline-dot"}
             aria-hidden="true"
+            data-testid="presence-dot"
           />
-          {t(person.is_online ? "online" : "offline")}
+          <span data-testid="presence-status">
+            {t(isOnline ? "online" : "offline")}
+          </span>
         </p>
         <h1>{name}</h1>
         <p className="people-position">{person.position || t("noPosition")}</p>

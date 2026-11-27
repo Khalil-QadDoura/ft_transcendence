@@ -228,3 +228,73 @@ test.each(["remove", "accept", "decline", "cancel"] as const)(
     }
   },
 );
+
+test("updates online status live from presence store without page reload (FE-12)", async () => {
+  const { presenceStore } = await import("../presence/presenceStore");
+  presenceStore.reset();
+
+  vi.spyOn(profileApi, "get").mockResolvedValue({ id: 1 } as Awaited<
+    ReturnType<typeof profileApi.get>
+  >);
+  vi.spyOn(peopleApi, "profile").mockResolvedValue({
+    id: 5,
+    first_name: "Grace",
+    last_name: "Hopper",
+    position: "Admiral",
+    bio: "Pioneer",
+    avatar_url: "/avatar.png",
+    is_online: false,
+    friendship_status: "accepted",
+    friendship_id: 99,
+  } as Person);
+
+  const div = document.createElement("div");
+  document.body.append(div);
+  const root = createRoot(div);
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter initialEntries={["/users/5"]}>
+            <Routes>
+              <Route path="/users/:id" element={<PublicProfile />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(div.textContent).toContain("Grace Hopper");
+    expect(div.textContent).toContain("Offline");
+
+    // Live presence event: user 5 goes online
+    await act(async () => {
+      presenceStore.setPresence(5, true);
+    });
+
+    expect(div.textContent).toContain("Online");
+
+    // Live presence event: user 5 goes offline (immediate)
+    await act(async () => {
+      presenceStore.setPresence(5, false, { immediate: true });
+    });
+
+    expect(div.textContent).toContain("Offline");
+  } finally {
+    presenceStore.reset();
+    await act(() => root.unmount());
+    cache.clear();
+    div.remove();
+  }
+});
