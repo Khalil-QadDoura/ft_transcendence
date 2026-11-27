@@ -214,6 +214,16 @@ The ones in everyday text are level 1 rules, which are never lifted from free te
   - "PowerShell": 932120 (Windows PowerShell command);
   - "Please delete it from my profile", "Year (2024)" and "5 or 6 -- either is fine": 942100 (libinjection);
   - "sleep (5 hours)", as in "I need to sleep (5 hours)": 942160 (blind SQL injection, `sleep(…)`; without the closing bracket it passes).
+- **More short texts that level 1 rules block** (third #94 review, 2026-11-27; blocked in the free-text fields, accepted for the defense):
+  - "Count (3) people for the night shift", "Print (2 copies) of your CV please" and "50% off -- today only!": 942100 (libinjection);
+  - "Python & SQL & Excel; Power BI is a plus": 932370 (Windows command injection);
+  - "Skills (required): Excel, Word; (nice to have): SQL": 932235 (Unix command injection);
+  - a numbered requirements list such as "(full time). Requirements: 1) English, 2) Arabic is a plus": 932230 and 932250 (Unix command injection).
+- **Two level 2 rules still block short everyday text in every free-text field** (third #94 review, 2026-11-27; accepted for the defense, not lifted):
+  - 932271 (Unix shell expression) on a tilde right before a number: "~10 minutes from Yas Mall", "Salary ~4000 AED";
+  - 942510 (SQL injection bypass with ticks or backticks) on any word in backticks: "Type `yes` to confirm".
+
+  Both are candidates for the same per-field lift as the other level 2 rules in 10020–10029, after the defense, with their sentences added to the corpus and the sweep rerun.
 - **`{{` … `}}` in free text** (941380, level 2, template injection): not lifted, since no everyday sentence in the corpus has it. It is what makes the level 2 probe work.
 - **`~user/file.pdf` paths in a bio with a link**: 932230 and 932250 (level 1, Unix command injection).
 - **A page request with a full-URL Referer** (only from a browser that ignores `Referrer-Policy`): 932206 is lifted on the API and the WebSockets only.
