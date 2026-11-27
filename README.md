@@ -299,7 +299,66 @@ The data lives in PostgreSQL 15 with PostGIS: 17 tables, created by the Alembic 
 
 ## Individual Contributions
 
-<!-- TODO DOC-07 (Zayid): per member, what they built (features, modules, components), plus challenges faced and how they were overcome. -->
+Contributions below describe repository work as of November 26, 2026. Pending
+pull requests are identified explicitly. Each owner must confirm their paragraph,
+add their own challenge/solution example, and confirm the Resources usage record
+before DOC-07 is accepted. See [the confirmation register](docs/contributions.md).
+
+### Zayid Elkahir — Project Manager / Frontend A
+
+My scope is the frontend scaffold and application layout, form validation,
+authentication and account screens, profile/avatar integration, public profiles
+and friends, employer job management, legal-page presentation, and localization.
+I integrated these screens with Ahmad's shared API client and Khalil's user/auth
+and upload contracts, preserving server validation and authorization. I also
+maintain the board guide, sprint routine, review handoffs and study material.
+These support M1, M3 and M4; full translations/Arabic layout (M10/M11) are in
+review in #93, and additional-browser verification (M16) remains FE-16.
+
+A concrete integration challenge was that a conflict-free merge could still break
+the build: a newer canonical privacy policy invalidated translation hashes.
+In #93 I integrated current main, updated the four translated policies and their
+manifest, and reran legal/catalog checks, 336 frontend tests and the production
+build. The language preference stays in the browser for defense, as agreed with
+Khalil; cross-device account persistence is deferred. My implementation and
+review work is not evidence that the team rehearsal has already happened.
+
+### Khalil — Technical Lead / Backend A
+
+Khalil owns backend setup, schema/migrations, authentication and account APIs,
+WebSocket authentication/presence infrastructure, video/avatar/logo contracts,
+game transport and scoring integration, OAuth, rate limits and security review.
+These support M1/M2/M4/M5/M9/M15 and the backend portions of pending game modules.
+His contract and integration reviews identified the stale-policy build problem
+and OAuth/RTL integration issues addressed in #93. His personal challenge and
+solution explanation and final confirmation are still requested.
+
+### Nader — Backend B
+
+Nader owns backend test infrastructure, companies, friends, conversations and
+messages, job search/CRUD, applications, matchmaking, moderation worker, metrics,
+health checks, demo seed data and game concurrency/disconnect work. These support
+M2/M3/M4/M5/M6/M9/M12/M14 and backend game functionality. Test isolation, message
+idempotency and concurrent game operations are concrete areas for his walkthrough;
+his own challenge/solution narrative and confirmation are still requested.
+
+### Ahmad — Frontend B
+
+Ahmad owns the shared API client, reusable UI components, WebSocket client, job
+search, chat, media and applications screens, and game-room frontend work. These
+support M1/M2/M3/M6/M9 and pending game modules. The job detail/apply and employer
+application screens (#47/#99) and room/reconnect screens (#86/#88/#98) are still
+open at this snapshot. His explanation of refresh/reconnect behavior and final
+contribution confirmation are requested; open work is not counted as merged.
+
+### Burhan — Product Owner / DevOps
+
+Burhan owns scope/acceptance, Docker startup, HTTPS proxy, storage/mail routing,
+CI, monitoring/alerts, Vault setup, backups/restore, legal content, game rules,
+status page and README/module inventory. Monitoring and recovery support M12/M14;
+WAF blocking and service secret consumption remain pending #94/#103 for M13.
+The runbooks document recovery and configuration trade-offs; his own challenge
+example, usage record and final confirmation are still requested.
 
 ## Known limitations
 
