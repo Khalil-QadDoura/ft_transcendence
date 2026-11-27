@@ -219,7 +219,7 @@ Depends on: <CARD-ID>
 - Small PRs (under \~400 changed lines), one card each. Squash merge keeps one clear commit per card on `main`.
 - Everyone commits their own work from their own account; pair work uses `Co-authored-by:` lines.
 - Weekly sync (30 min, PM leads) + async daily update in the team chat: done, next, blocked. Proposed slots and outstanding confirmations are tracked in [sprint-routine.md](sprint-routine.md).
-- Review and live-change rule, set by the PO on 2026-11-08: every PR receives a review within 24 hours from someone in the other pair. After each merge, the owner makes one small live change and records what changed and how it was checked.
+- Review and live-change rule, set by the PO on 2026-11-08: every PR receives a review within 24 hours from someone in the other pair. The live-change exercise for merged cards (one small live change, recorded with what changed and how it was checked) is rehearsed in QA-04 before the defense (PO decision byul-byul, 2026-11-25); a merged card goes to Done without waiting for it.
 
 ## Related documents and decisions
 
@@ -266,6 +266,7 @@ Depends on: <CARD-ID>
 | 2026-11-19 | Vault (INF-12): HashiCorp Vault 2.2.2 in server mode, file storage, Shamir 3/2; `make` initializes and unseals it (`scripts/vault-init.sh`; keys file `scripts/vault-keys.local`, Git-ignored, a dev/defense trade-off); KV v2 at `secret/`, AppRole roles `api` and `worker` (token 1h/4h, secret-ids without TTL or use limit), each policy reads only its own path; file audit device on stdout; mlock on with memlock unlimited; no host port, no proxy route; `make vault-check` runs in CI | byul-byul | Decided; review in the INF-12 PR |
 | 2026-11-19 | Backups (INF-14, INF-15): service `backup` (pinned `db` image plus `mc` from the pinned `minio` image, non-root); one `pg_dump -Fc` of `POSTGRES_DB` and one full `mc mirror` of the bucket a day at `BACKUP_TIME` 03:00 Asia/Dubai (a sleep loop; the card's `BACKUP_CRON` became `BACKUP_TIME`); each copy verified before it is renamed from `.partial`; the newest `BACKUP_KEEP` = 7 copies of each kept; Redis, Prometheus, Grafana and Mailpit not backed up; `make restore BACKUP=<timestamp|latest>` restores before the api starts; backups on the same host only, an off-machine copy is the production step; `make backup-check` runs in CI | byul-byul | Decided; review in the INF-14 + INF-15 PR; runbook and test log in docs/disaster-recovery.md |
 | 2026-11-19 | Backup follow-up (INF-14, DOC-01): after each run, copies older than `BACKUP_MAX_AGE_DAYS` = 7 days are deleted (by the UTC timestamp in the name), then at most `BACKUP_KEEP` = 7 of each kind kept; on start, one backup at once when the newest database copy is 24 h old or more, or missing; the `backup` service starts once the api is healthy; Privacy Policy section 6 now says backups are kept for at most 7 days and then deleted | byul-byul | Decided; PR #83 follow-up; docs/disaster-recovery.md |
+| 2026-11-25 | Live-change rule changed (replaces the 2026-11-08 rule "after every merge, the owner makes one small live change"): the live-change exercise for merged cards is rehearsed in QA-04 before the defense; merged cards go to Done without waiting for it (DOC-06) | byul-byul | Decided |
 
 "Final card plan" = the plan used to set up the Trello board on 2026-11-04; its card list is in [backlog.md](backlog.md).
 

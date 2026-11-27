@@ -2,9 +2,6 @@
 
 # WOZU Web
 
-> Status: in development (sprint 4 of 4). Sections with a TODO comment are filled by the owner card named in the comment; nothing below describes a feature as finished unless it exists in the repository.
-<!-- TODO DOC-06 (byul-byul): remove the Status line before submission. -->
-
 ## Description
 
 **WOZU Web** is a job platform for the web. A candidate applies to a job with a short video instead of a CV, talks to employers in real-time chat, and can play a social-deduction mini-game called the Turing Duel. The project is a new backend and a new web frontend, built on top of the WOZU backend as a reference.
@@ -136,13 +133,13 @@ The `backup` service copies the app database (`pg_dump`) and the file bucket int
 
 | Member | 42 login | GitHub | Role(s) | Responsibilities |
 | --- | --- | --- | --- | --- |
-| Burhan | bhajili | byul-byul | Product Owner + Developer (DevOps) | Product vision, backlog priorities, acceptance of finished cards, README and legal pages content; Docker, nginx + ModSecurity / TLS, monitoring, security modules |
-| Khalil | kqaddour | Khalil-QadDoura | Technical Lead + Developer (Backend A) | Backend architecture and API contract, stack decisions, review of critical PRs, code quality rules |
-| Nader | nakhalil | NaderZico | Developer (Backend B) | Ports and owns backend modules |
-| Zayid | zsid-ele | zayidelkhair | Project Manager / Scrum Master + Developer (Frontend A) | Runs the Trello board and the weekly sync, tracks deadlines and blockers, keeps the risk list; frontend modules |
-| Ahmad | aradwan | a7mdwr | Developer (Frontend B) | Owns frontend modules |
+| Burhan | bhajili | byul-byul | Product Owner + Developer (DevOps) | Product vision, backlog priorities, acceptance of finished cards, README and legal pages content; Docker, nginx + ModSecurity / TLS, monitoring, security modules. Modules: M12, M14; pending: M13 (#94, #103) |
+| Khalil | kqaddour | Khalil-QadDoura | Technical Lead + Developer (Backend A) | Backend architecture and API contract, stack decisions, review of critical PRs, code quality rules. Modules: M1, M2, M4, M5, M9, M15; pending: M7, M8, M18 (game server side; the room screen is #86, #88, #98) |
+| Nader | nakhalil | NaderZico | Developer (Backend B) | Ports and owns backend modules. Modules: M2, M3, M4, M5, M6, M9, M12, M14; pending: M7, M8, M18 (game server side) |
+| Zayid | zsid-ele | zayidelkhair | Project Manager / Scrum Master + Developer (Frontend A) | Runs the Trello board and the weekly sync, tracks deadlines and blockers, keeps the risk list; frontend modules. Modules: M1, M3, M4; pending: M10, M11 (#93), M16 (FE-16, not done) |
+| Ahmad | aradwan | a7mdwr | Developer (Frontend B) | Owns frontend modules. Modules: M1, M2, M3, M6, M9; pending: M7, M8, M18 (game room screen: #86, #88, #98) |
 
-<!-- TODO DOC-06 (byul-byul): each member checks their own row before submission; add the module names once the work split is final. -->
+Module numbers are those of the [Modules](#modules) table; "pending" modules are not counted yet. Each member checks their own row and confirms or corrects it as a comment on the pull request that last changed this table.
 
 ## Project Management
 
@@ -152,7 +149,7 @@ We plan in one-week sprints: November 4–10, 11–17 and 18–24, followed by a
 
 Each card gets a focused branch and pull request. Branches follow `feat/FE-06-i18n-setup` (or `fix/…`, `docs/…`); commits follow `<type>(<scope>): <summary> (<CARD-ID>)`. PRs link the Trello card, describe behavior and validation, and request review from the other pair. The team rule is review within 24 hours. Applicable frontend/backend CI must pass, feedback must be addressed and approval obtained before squash-merging into `main`. A dependent PR names its parent and is retargeted and checked after the parent lands. `main` already requires one approving review and disallows force pushes. Making CI a required check and applying protection to administrators remain INF-06 work.
 
-The [PM-00 board guide](docs/plan/board.md) defines the workflow and Definition of Done. An open PR is **Review**, not **Done**: merge and the card's complete acceptance evidence are required. After a merge, the owner makes a small live change and explains/tests it as defense practice. Study notes support that preparation; they do not replace the owner's demonstration.
+The [PM-00 board guide](docs/plan/board.md) defines the workflow and Definition of Done. An open PR is **Review**, not **Done**: merge and the card's complete acceptance evidence are required. The live change for merged cards is rehearsed in QA-04 before the defense (Product Owner decision, 2026-11-25); a merged card goes to Done without waiting for it. Study notes support that preparation; they do not replace the owner's demonstration.
 
 Communication uses the team’s WhatsApp group for daily coordination and the daily Done / Next / Blocked update, Trello card comments for implementation questions and blockers, and GitHub for code feedback and review requests. The [PM-01 sprint routine](docs/plan/sprint-routine.md) contains the 30-minute weekly agenda and the daily **Done / Next / Blocked** template. As of November 11, the proposed Tuesday 18:30 weekly slot, weekday 22:00 update cutoff and call details still need team agreement. WhatsApp is the confirmed coordination channel; calendar invitations and pinning the daily-update format are still pending. The GitHub Power-Up is enabled, but repository authorization/linking remains an open PM-01 action; an ordinary PR attachment is not proof of that connection.
 
@@ -286,16 +283,66 @@ The data lives in PostgreSQL 15 with PostGIS: 17 tables, created by the Alembic 
 
 ## Features List
 
-<!-- TODO DOC-06 (byul-byul): complete list of implemented features, owner(s) of each, short description of each. Implemented features only. -->
+This list describes `main` at commit `d94b59f` (2026-11-25) and nothing else. A feature whose code is only in an open pull request is not listed as done; the gap is named in the description or under [Pending at the time of writing](#pending-at-the-time-of-writing-not-counted). Names are those of the [Team Information](#team-information) table. Card IDs (BE backend, FE frontend, INF infrastructure, DOC documents) are the Trello cards; the Git history of each folder shows who wrote what.
+
+| Feature | What it does | Built by | Code and docs |
+| --- | --- | --- | --- |
+| Accounts and login | Sign up with email and password (Argon2id), email verification through Mailpit, login, token refresh and logout, change and reset password, account settings. | Khalil (BE-03, BE-04), Zayid (FE-03, FE-04, FE-05) | [backend/app/auth](backend/app/auth/), [frontend/src/features/auth](frontend/src/features/auth/), [frontend/src/features/account](frontend/src/features/account/) |
+| Login with 42 | OAuth 2.0 login with 42 intra (`/api/auth/oauth/42/start`, callback page `/oauth/callback`). Off until `FT_CLIENT_ID` and `FT_CLIENT_SECRET` are set in `.env`; without them the start route answers 503. | Khalil (BE-11) | [backend/app/auth/oauth42.py](backend/app/auth/oauth42.py), [infrastructure.md](docs/infra/infrastructure.md) |
+| Profiles and avatars | Read, edit and delete the own profile; avatar upload with checks and a default avatar; public profile of another user. | Khalil (BE-05, BE-08), Nader (BE-22), Zayid (FE-09, FE-10) | [backend/app/users](backend/app/users/), [frontend/src/features/profile](frontend/src/features/profile/), [frontend/src/features/people](frontend/src/features/people/) |
+| Friends and online status | Send, accept, decline and remove friend requests; friends list with an online or offline mark; presence kept in Redis. The mark is read when a page loads; live updates of it are pending (#75). | Nader (BE-22), Khalil (BE-06), Zayid (FE-11) | [backend/app/friends](backend/app/friends/), [backend/app/realtime](backend/app/realtime/), [frontend/src/features/people](frontend/src/features/people/) |
+| Chat | Direct conversations, unread counters, message edit and delete, read receipts, idempotent send, live delivery over the WebSocket; conversation list and thread screens; a chat can be started from a public profile. | Nader (BE-23, BE-24), Ahmad (FE-22, FE-29, FE-30), Khalil (BE-06) | [backend/app/conversations](backend/app/conversations/), [frontend/src/features/conversations](frontend/src/features/conversations/), [frontend/src/api/ws.ts](frontend/src/api/ws.ts) |
+| Companies | An employer creates one company profile with a logo. | Nader (BE-21, FE-14) | [backend/app/companies](backend/app/companies/), [frontend/src/features/companies](frontend/src/features/companies/) |
+| Jobs and search | Employers create, edit, publish and delete job listings; open-job search with keyword (PostgreSQL full-text), distance (PostGIS radius), salary, schedule and urgency filters, sort by newest or nearest, and cursor paging. | Nader (BE-25, BE-26), Ahmad (FE-23), Zayid (FE-27) | [backend/app/jobs](backend/app/jobs/), [frontend/src/features/jobs](frontend/src/features/jobs/), [frontend/src/features/employer](frontend/src/features/employer/) |
+| Applications | Backend: apply to a job once, status machine with an event log, job view counters, live events. Frontend on `main`: the candidate's "My Applications" page with status tabs and withdraw. The job detail page with the apply form is pending (#47) and the employer's applications page is pending (#99). | Nader (BE-28), Ahmad (FE-15) | [backend/app/applications](backend/app/applications/), [frontend/src/features/applications](frontend/src/features/applications/) |
+| Intro videos and AI moderation | A candidate records a video in the browser and uploads it by presigned URL with a progress bar; a Celery worker checks it (ffmpeg, Whisper transcript, OpenAI moderation) and sets approved, rejected or `moderation_error`; post, unpost and delete. Needs `OPENAI_API_KEY` in `.env`. | Khalil (BE-07), Nader (BE-29), Ahmad (FE-25) | [backend/app/media](backend/app/media/), [backend/app/worker](backend/app/worker/), [frontend/src/features/media](frontend/src/features/media/) |
+| Turing Duel: lobby and game server | Matchmaking, rooms of up to 5 with hidden bots, the room socket `/ws/game`, chat, votes, scoring and results, seat grace period on disconnect, bot privacy before results; the lobby page with participant count, "Start now" and countdown. The game room screen is pending (#86, #88, #98): a match cannot be played in the browser yet. | Nader (BE-27, BE-33, BE-35, FE-31), Khalil (BE-09, BE-10) | [backend/app/game](backend/app/game/), [frontend/src/features/game](frontend/src/features/game/), [rules](docs/game/turing-duel-rules.md) |
+| Game rules page | The Turing Duel rules at `/game/rules`, with examples checked against the scoring code. | Burhan (DOC-08, FE-34) | [docs/game/turing-duel-rules.md](docs/game/turing-duel-rules.md), [frontend/src/features/game/rules](frontend/src/features/game/rules/) |
+| Legal pages | Privacy Policy and Terms of Service at `/privacy` and `/terms`, linked from the footer. | Burhan (DOC-01, DOC-02), Zayid (FE-13) | [docs/legal](docs/legal/), [frontend/src/features/legal](frontend/src/features/legal/) |
+| Status page and health check | `/status` shows each component as up or down, from `GET /api/health`, which probes the database, Redis, storage and the worker. | Burhan (INF-16), Nader (BE-31) | [frontend/src/features/status](frontend/src/features/status/), [backend/app/health](backend/app/health/) |
+| Languages | Five-language shell: language switcher, locale preference, all interface text in translation files. Only the navigation is translated in AR, AZ, TR and RU; the rest falls back to English. Full translations and the Arabic right-to-left layout are pending (#93). | Zayid (FE-06) | [frontend/src/i18n](frontend/src/i18n/), [frontend/docs/i18n.md](frontend/docs/i18n.md) |
+| Monitoring and alerts | Prometheus scrapes the API, PostgreSQL, Redis and the containers every 15 s; two Grafana dashboards; five alert rules (Redis down, target down, API error rate, API p95 latency, monitoring disk) with a firing-alerts panel. | Burhan (INF-08, INF-09, INF-10), Nader (BE-30) | [infra/prometheus](infra/prometheus/), [infra/grafana](infra/grafana/), [docs/infra/infrastructure.md](docs/infra/infrastructure.md) |
+| WAF | nginx with ModSecurity and the OWASP Core Rule Set in front of every route. It runs in `DetectionOnly` mode: it logs matches and blocks nothing. Blocking mode is pending (#94). | Burhan (INF-01) | [infra/proxy](infra/proxy/README.md) |
+| Vault | HashiCorp Vault in server mode, initialized and unsealed by `make`, with AppRole and per-service policies. No service reads its secrets from Vault yet; they still come from `.env`. Reading them from Vault is pending (#103). | Burhan (INF-12) | [docs/infra/vault.md](docs/infra/vault.md), [infra/vault](infra/vault/) |
+| Backups and restore | Daily PostgreSQL dump and bucket copy, 7-day retention, `make backup`, `make restore` and a tested runbook. | Burhan (INF-14, INF-15) | [docs/disaster-recovery.md](docs/disaster-recovery.md), [infra/backup](infra/backup/) |
+| Rate limits | Every write route is limited per user or per IP. | Khalil (BE-12) | [backend/app/core/limits.py](backend/app/core/limits.py) |
+| Account deletion | Deleting an account soft-deletes the user and the user's company; after 30 days the account is anonymised and shown as "Deleted user". | Khalil (BE-05, BE-34) | [backend/app/users/anonymise.py](backend/app/users/anonymise.py), [Privacy Policy](docs/legal/privacy-policy.md) |
+| Backend security review | Route inventory, cross-user and hostile-input tests, six fixes. | Khalil (BE-13) | [backend/tests](backend/tests/) (`test_security_*.py`) |
+| One-command start, one HTTPS origin | `make` builds and starts the stack behind one HTTPS origin, with file storage at `/files` and a mail inbox at `/mail/`; images pinned by digest. | Burhan (INF-02 to INF-05, INF-07) | [Makefile](Makefile), [docker-compose.yml](docker-compose.yml), [docs/infra/infrastructure.md](docs/infra/infrastructure.md) |
+| CI | One GitHub Actions workflow with a `ci-ok` gate; backend, frontend and clean-stack jobs run for the parts a pull request changes. | Burhan (INF-06), Nader (BE-20), Zayid | [.github/workflows/ci.yml](.github/workflows/ci.yml) |
 
 ## Modules
 
-<!-- TODO DOC-06 (byul-byul): one row per chosen module, with justification and implementation notes. Add rows only for modules that work. -->
+Points follow the subject: Major = 2, Minor = 1; 14 points are needed. A module is counted only if its code is on `main` and every bullet of its text in Chapter IV of [the subject](docs/ft_transcendence.subject.txt) is met by `main` (checked on 2026-11-25 at commit `d94b59f`). The numbers M1 to M18 are the labels of the [module plan](docs/plan/overview.md#module-plan). Modules whose code is in open pull requests are not counted; they are listed under the table.
 
-| Module | Type | Points | Owner(s) | How it was implemented |
-| --- | --- | --- | --- | --- |
+| Module (subject wording) | Type | Points | Why the team chose it | How it is implemented | Owners |
+| --- | --- | --- | --- | --- | --- |
+| M1: "Use a framework for both the frontend and backend" | Major | 2 | The WOZU reference backend was already FastAPI; the web frontend had to be built, in a framework the team knows. | FastAPI backend ([backend/app](backend/app/main.py)); React 19 + TypeScript + Vite frontend ([frontend/src](frontend/src/main.tsx)) with a typed API client and reusable components. See [Technical Stack](#technical-stack). | Khalil, Zayid, Ahmad |
+| M2: "Implement real-time features using WebSockets or similar technology" | Major | 2 | Chat, presence and application events need live updates; the reference already had a WebSocket layer on Redis pub/sub. | `/ws` with one-time tickets and Redis pub/sub fan-out between API workers ([backend/app/realtime](backend/app/realtime/)); browser client with reconnect and backoff, a fresh ticket per reconnect and a refetch after reconnect ([frontend/src/api/ws.ts](frontend/src/api/ws.ts)). | Khalil, Ahmad, Nader |
+| M3: "Allow users to interact with other users" | Major | 2 | The product is built on candidates talking to employers; chat, profiles and friends already existed in the reference. | Chat: [backend/app/conversations](backend/app/conversations/) and [frontend/src/features/conversations](frontend/src/features/conversations/). Profile: [public profile](frontend/src/features/people/PublicProfile.tsx). Friends: [backend/app/friends](backend/app/friends/) and [friends page](frontend/src/features/people/FriendsPage.tsx). | Nader, Ahmad, Zayid |
+| M4: "Standard user management and authentication" | Major | 2 | Needed anyway for the mandatory secure sign-up and login; the reference covered most of it. | Profile edit, avatar upload with a default avatar, friends with online status, profile page: [backend/app/users](backend/app/users/), [backend/app/auth](backend/app/auth/), [frontend/src/features/profile](frontend/src/features/profile/). | Khalil, Nader, Zayid |
+| M5: "Use an ORM for the database" | Minor | 1 | The reference already used it. | SQLAlchemy 2.0 (async) models and Alembic migrations: [backend/app/db](backend/app/db/), `backend/app/<domain>/models.py`, [backend/alembic/versions](backend/alembic/versions/); the schema is in [Database Schema](#database-schema). | Khalil, Nader |
+| M6: "Implement advanced search functionality with filters, sorting, and pagination" | Minor | 1 | The reference already searched jobs; the search page was the missing part. | Job search with filters, sort and cursor paging: backend [backend/app/jobs](backend/app/jobs/), page [frontend/src/features/jobs](frontend/src/features/jobs/JobsPage.tsx). | Nader, Ahmad |
+| M9: "Content moderation AI (auto moderation, auto deletion, auto warning, etc.)" | Minor | 1 | The reference already moderated video resumes with Whisper and OpenAI; the module fits video applications. | Worker task [backend/app/worker/tasks/moderation.py](backend/app/worker/tasks/moderation.py) and [backend/app/media/moderation.py](backend/app/media/moderation.py); the result (approved, rejected, `moderation_error`) is shown in [frontend/src/features/media](frontend/src/features/media/VideoResumePage.tsx). A video that is not approved cannot be posted. Needs `OPENAI_API_KEY`. | Khalil, Nader, Ahmad |
+| M12: "Monitoring system with Prometheus and Grafana" | Major | 2 | Pure infrastructure: it needs no change in the application, and the DevOps owner could deliver it. | Prometheus with PostgreSQL, Redis and cAdvisor exporters and the API's `/metrics`; two provisioned dashboards; five alert rules; Grafana behind the proxy with login, no anonymous access and no sign-up: [infra/prometheus](infra/prometheus/), [infra/grafana](infra/grafana/), `make metrics-check`, `make grafana-check`. | Burhan, Nader |
+| M14: "Health check and status page system with automated backups and disaster recovery procedures" | Minor | 1 | The reference had a health endpoint; backups and a status page are infrastructure only. | `GET /api/health` ([backend/app/health](backend/app/health/)), page `/status` ([frontend/src/features/status](frontend/src/features/status/)), daily backups and `make restore` with a runbook ([docs/disaster-recovery.md](docs/disaster-recovery.md)). The backups are on the same Docker host as the data (documented limitation). | Nader, Burhan |
+| M15: "Implement remote authentication with OAuth 2.0 (Google, GitHub, 42, etc.)" | Minor | 1 | One login flow on top of the existing token issuing; 42 is the school's own provider. | [backend/app/auth/oauth42.py](backend/app/auth/oauth42.py), "Log in with 42" button and `/oauth/callback` page in [frontend/src/features/auth](frontend/src/features/auth/AuthScreens.tsx). Needs the 42 keys in `.env`. | Khalil |
 
-**Total points:** TODO DOC-06 (Major = 2, Minor = 1).
+**Total points counted: 15** (Major: M1, M2, M3, M4, M12 = 10; Minor: M5, M6, M9, M14, M15 = 5). That is one point above the 14-point threshold: if one Minor module fails at the defense the total is 14, if one Major fails it is 13.
+
+**Planned after the pending pull requests merge: 26** = 15 counted + 11 pending (M7 2 + M8 2 + M18 2 + M13 2 + M10 1 + M11 1 + M16 1).
+
+### Pending at the time of writing (not counted)
+
+| Module | Pull requests | What is missing on `main` |
+| --- | --- | --- |
+| M7: "Implement a complete web-based game where users can play against each other" (Major, 2) | #86 (game room, FE-32) | The game server and the lobby are on `main`; the room screen with discussion chat, voting and results is not, so no live match can be played in the browser. |
+| M8: "Multiplayer game (more than two players)" (Major, 2) | #86, #88 (FE-33) | Same as M7; also the state restore after reload for all clients. |
+| M18: "Remote players" (Major, 2) | #88, #98 (FE-36) | Seat persistence and disconnect handling are tested on `main` (BE-33, #87); the room restore after reload (#88) and the connection state in the room (#98) are not merged, and both need the room screen (#86). |
+| M10: "Support for multiple languages (at least 3 languages)" (Minor, 1) | #93 (FE-07) | The switcher and five locale files are on `main`, but only the navigation is translated; the other text falls back to English. |
+| M11: "Right-to-left (RTL) language support" (Minor, 1) | #93 (FE-08) | `main` sets `dir="rtl"` for Arabic but does not mirror the layouts. |
+| M13: "Implement WAF/ModSecurity (hardened) + HashiCorp Vault for secrets" (Major, 2) | #94 (INF-11), #103 (INF-13) | The WAF runs in `DetectionOnly` and blocks nothing; Vault runs, but no service reads its secrets from it. |
+| M16: "Support for additional browsers" (Minor, 1) | none | FE-16 (browser testing and fixes, documented limits) is not done. |
 
 ## Individual Contributions
 
@@ -303,7 +350,19 @@ The data lives in PostgreSQL 15 with PostGIS: 17 tables, created by the Alembic 
 
 ## Known limitations
 
-<!-- TODO DOC-06 (byul-byul), filled before submission: honest list of what does not work or is missing. -->
+What does not work or is missing on `main` today (commit `d2cc020`, 2026-11-26), each with the card or pull request that changes it:
+
+- **Game room:** the Turing Duel room screen (discussion chat, voting, results) is not on `main`, so a match cannot be played in the browser; only the lobby and the game server are there (#86). Restoring the room after a reload (#88) and showing the connection state in the room (#98) are not on `main` either.
+- **Applying to a job:** the job detail page with the apply form is not on `main` (#47), and the employer's applications page with video review is not on `main` (#99). The backend for both is there.
+- **Languages:** only the navigation is translated in Arabic, Azerbaijani, Turkish and Russian; the rest of the interface shows English. The Arabic layout is not mirrored (#93).
+- **WAF:** ModSecurity runs in `DetectionOnly` mode: it logs matches and blocks nothing (#94).
+- **Vault:** Vault runs, but no service reads its secrets from it; they come from `.env` (#103).
+- **Browsers:** compatibility with additional browsers (Firefox, Safari or Edge) has not been tested or documented (FE-16, not done).
+- **Moderation:** video moderation needs `OPENAI_API_KEY`, typed into `.env` by hand. Without it, and with `MODERATION_FAIL_OPEN=false`, a video ends as `moderation_error` and cannot be posted.
+- **Login with 42:** needs `FT_CLIENT_ID` and `FT_CLIENT_SECRET`, typed into `.env` by hand. Without them the button leads to an error (the start route answers 503).
+- **Backups:** the backups are stored on the same machine as the data, so they do not survive the loss of that machine ([docs/disaster-recovery.md](docs/disaster-recovery.md)).
+- **Vault keys:** the Vault unseal keys and the root token are in `scripts/vault-keys.local` on the machine that runs Vault ([docs/infra/vault.md](docs/infra/vault.md)).
+- **API documentation:** the interactive API documentation (Swagger UI at `/api/docs`) is public, because the stack runs with `ENV=dev` for the evaluation; a production deployment would turn it off.
 
 ## Credits
 
