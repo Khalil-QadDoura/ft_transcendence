@@ -1,6 +1,6 @@
 # Məxfilik siyasəti
 
-Last updated: 2026-11-19
+Last updated: 2026-11-27
 
 Bu siyasət WOZU Web-in hansı şəxsi məlumatları topladığını, nə üçün topladığını, onları kimin görə bildiyini, nə qədər saxladığımızı və bununla bağlı nə edə biləcəyinizi izah edir. Onu bu xidmət üçün sadə dillə yazmışıq. Aydın olmayan məqam varsa, yazın: burhan.hajili@gmail.com.
 
@@ -59,7 +59,7 @@ Bu siyasətə Birləşmiş Ərəb Əmirliklərinin qanunları, o cümlədən Ş�
 
 ### Texniki məlumatlar
 
-- Xidmətin texniki jurnalları: sorğunun vaxtı, çağırılan səhifə və ya API, nəticə, sorğu identifikatoru və IP ünvanınız. IP ünvanları ön proksinin giriş jurnallarında olur. Jurnallar ən çox 30 gün saxlanılır.
+- Xidmətin texniki jurnalları: sorğunun vaxtı, çağırılan səhifə və ya API, nəticə, sorğu identifikatoru, IP ünvanınız, brauzerinizin identifikatoru (user agent) və keçid etdiyiniz sayt. IP ünvanları ön proksinin giriş jurnallarında olur. Ön proksi həmçinin hücuma bənzəyən sorğuları rədd edən təhlükəsizlik filtri (veb tətbiqlər üçün təhlükəsizlik divarı, WAF) işlədir; rədd etdiyi sorğular, qaydalarından birinin uyğun gəldiyi sorğular və xəta ilə bitən sorğular üçün vaxtı, IP ünvanınızı, çağırılan ünvanı, uyğun gələn təhlükəsizlik qaydalarını və onlara uyğun gələn sorğu sahəsinin məzmununu qeyd edir; bu, sahənin bütün mətni ola bilər. Parollar heç vaxt yoxlanılmır və qeyd olunmur. Jurnallar ən çox 30 gün saxlanılır.
 - Xidmətin işləməsi haqqında göstəricilər, məsələn sorğu və xəta sayı. Bunlara məzmununuz daxil deyil.
 - IP ünvanınız təkrar giriş cəhdləri kimi təkrarlanan sorğuları məhdudlaşdırmaq üçün də istifadə olunur. Bu sayğaclar yalnız qısa müddətə serverin yaddaşında saxlanılır.
 

@@ -1,6 +1,6 @@
 # Gizlilik Politikası
 
-Last updated: 2026-11-19
+Last updated: 2026-11-27
 
 Bu politika WOZU Web'in hangi kişisel verileri topladığını, neden topladığını, kimlerin görebildiğini, ne kadar sakladığımızı ve bunlarla ilgili neler yapabileceğinizi açıklar. Bu hizmet için sade bir dille yazılmıştır. Anlaşılmayan bir konu varsa yazın: burhan.hajili@gmail.com.
 
@@ -59,7 +59,7 @@ Bu politikaya Kişisel Verilerin Korunması Kanunu (2021 tarihli 45 sayılı Fed
 
 ### Teknik veriler
 
-- Hizmetin teknik kayıtları: isteğin zamanı, çağrılan sayfa veya API, sonuç, istek kimliği ve IP adresiniz. IP adresleri ön proxy sunucusuin erişim kayıtlarında görünür. Kayıtlar en fazla 30 gün tutulur.
+- Hizmetin teknik kayıtları: isteğin zamanı, çağrılan sayfa veya API, sonuç, istek kimliği, IP adresiniz, tarayıcınızın kimliği (user agent) ve geldiğiniz site. IP adresleri ön proxy sunucusunun erişim kayıtlarında görünür. Ön proxy sunucusu ayrıca saldırıya benzeyen istekleri reddeden bir güvenlik filtresi (web uygulaması güvenlik duvarı, WAF) çalıştırır; reddettiği istekler, kurallarından birinin eşleştiği istekler ve hatayla biten istekler için zamanı, IP adresinizi, çağrılan adresi, eşleşen güvenlik kurallarını ve bunlarla eşleşen istek alanının içeriğini kaydeder; bu, alanın tüm metni olabilir. Parolalar hiçbir zaman incelenmez ve kaydedilmez. Kayıtlar en fazla 30 gün tutulur.
 - Hizmetin çalışmasına ilişkin ölçümler (örneğin istek ve hata sayıları). Bunlar içeriğinizi içermez.
 - IP adresiniz, tekrarlanan giriş denemeleri gibi yinelenen istekleri sınırlamak için de kullanılır. Bu sayaçlar yalnızca kısa süreliğine sunucu belleğinde tutulur.
 
