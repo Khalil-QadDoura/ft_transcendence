@@ -13,5 +13,6 @@
   "terms": "Terms of Service",
   "status": "Status",
   "gameRules": "Game rules",
-  "legalNavigation": "Legal and service information"
+  "legalNavigation": "Legal and service information",
+  "wafBlocked": "This text was blocked by the security filter. Please rephrase it and try again."
 }

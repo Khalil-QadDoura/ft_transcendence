@@ -2,7 +2,7 @@
 
 nginx + ModSecurity v3 + OWASP Core Rule Set: the only door from the browser to the stack, on one HTTPS origin. The decision and its reasons are in the decisions log of [overview.md](../../docs/plan/overview.md); the routing rationale is in [infrastructure.md](../../docs/infra/infrastructure.md).
 
-INF-01 delivers this configuration only. INF-02 adds the service to `docker-compose.yml`; INF-11 turns on blocking and tunes the rules.
+INF-01 delivered this configuration, INF-02 added the service to `docker-compose.yml`, INF-11 turned on blocking at paranoia level 2 with tuned exclusions: [waf.md](../../docs/infra/waf.md).
 
 ## Image
 
@@ -19,7 +19,9 @@ The image renders every `/etc/nginx/templates/**/*.template` with envsubst into 
 | `templates/conf.d/default.conf.template` | **Ours**, mounted from this folder | Listeners, TLS, routing table |
 | `templates/conf.d/logging.conf.template` | **Ours**, mounted over the image's | Access log without the query string on token routes (QA-01, see Access log) |
 | `/etc/nginx/conf/server.{crt,key}` | **Ours**, generated into `certs/`, image default path | Certificate and key |
-| Environment | **Ours**, `proxy.env` | Rule engine mode, OCSP stapling off, default HTTPS port for the redirect |
+| Environment | **Ours**, `proxy.env` | WAF settings (rule engine `On`, paranoia level 2, anomaly thresholds, allowed methods and content types, audit log parts), OCSP stapling off, default HTTPS port for the redirect |
+| `/opt/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf` | **Ours**, mounted read-only from `modsecurity/before-crs.conf` | WAF exclusions, each scoped to one path, method, rule ids and field (INF-11) |
+| `/opt/owasp-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf` | **Ours**, mounted read-only from `modsecurity/after-crs.conf` | Empty on purpose (comment only). The image ships only `.example` copies of these two files, so no CRS rule file is replaced |
 | `templates/nginx.conf.template` | Image | Loads the ModSecurity module, sets `resolver` from `/etc/resolv.conf` (`127.0.0.11` in Docker) |
 | `templates/conf.d/modsecurity.conf.template` | Image | `modsecurity on` + `modsecurity_rules_file`, at `http` level, so it covers every location |
 | `templates/modsecurity.d/*`, `/opt/owasp-crs` | Image | ModSecurity settings and the CRS rules |
@@ -102,25 +104,16 @@ docker compose logs --no-log-prefix proxy 2>&1 | grep 'verify-email'   # GET /ve
 
 ## WAF logs
 
-Each match goes to the container's stdout as one JSON audit line: `transaction.messages[].details.ruleId`. In DetectionOnly the request still goes through. A SQL injection probe logs rule 942100 and the anomaly total 949110.
+Each match goes to the container's stdout as one JSON audit line: `transaction.messages[].details.ruleId`. With the engine `On` (since INF-11) a request whose score reaches 5 gets nginx's HTML 403 and never reaches its upstream. A SQL injection probe logs rule 942100 and the anomaly total 949110. How to read a line: [waf.md](../../docs/infra/waf.md), "Reading an audit line".
 
 ```
 docker compose logs --no-log-prefix proxy 2>&1 | grep '"transaction"'
 ```
 
-The audit line has parts `AHZ` only (`MODSEC_AUDIT_LOG_PARTS` in `proxy.env`, PO decision, byul-byul, 2026-11-17): A is the client IP and port, the time, the unique ID and the request line (method, host, URI with query string); H is the matched rules with their scores and the response status; Z ends the entry. It holds no request or response header and no body. `Authorization` and `Cookie` carry passwords, Bearer tokens and session cookies, and the image default `ABIJDEFHZ` wrote them into the log for every audited request. INF-11 may add parts for tuning, never `B` (request headers), `I` or `J` (request bodies) or `E` (response body).
+The audit line has parts `AHZ` only (`MODSEC_AUDIT_LOG_PARTS` in `proxy.env`, PO decision, byul-byul, 2026-11-17): A is the client IP and port, the time, the unique ID and the request line (method, host, URI with query string); H is the matched rules with their scores and the response status; Z ends the entry. It holds no request or response header and no body. `Authorization` and `Cookie` carry passwords, Bearer tokens and session cookies, and the image default `ABIJDEFHZ` wrote them into the log for every audited request. INF-11 tuned with these parts alone (the rule ids and fields are in H) and added none; never `B` (request headers), `I` or `J` (request bodies) or `E` (response body).
 
-## For INF-11
+## WAF tuning
 
-Setting `MODSEC_RULE_ENGINE=On` in `proxy.env` makes SQLi and XSS probes return 403, but as it stands it also blocks normal traffic. Both of these were seen with the engine on:
-
-- `PATCH`, `DELETE` and `PUT` score on rule 911100, and video uploads also on 920420. These two settings cleared them in a test; the exact lists need tuning against the real app:
-
-  ```
-  ALLOWED_METHODS=GET HEAD POST OPTIONS PUT PATCH DELETE
-  ALLOWED_REQUEST_CONTENT_TYPE=|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/json| |video/mp4| |video/webm| |image/jpeg| |image/png|
-  ```
-
-- M13 asks for paranoia level 2 (`BLOCKING_PARANOIA=2`); the image default is 1. Expect more false positives once that changes.
+Mode, paranoia level, thresholds, allowed methods and content types, every exclusion with its evidence, what the WAF does not inspect (WebSocket frames) and the demo: [waf.md](../../docs/infra/waf.md). Check: `make waf-check` (`waf-check.sh`).
 
 `/files` uses `SecRequestBodyLimitAction ProcessPartial` so a video over the 13 MB `SecRequestBodyLimit` is not rejected. Do not replace it with `SecRequestBodyAccess Off`: that also stops the phase 2 rules on the route, which include SQLi rule 942100.

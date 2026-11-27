@@ -1,6 +1,6 @@
 {
   "sourceLanguage": "en",
-  "translatedOn": "2026-11-26",
+  "translatedOn": "2026-11-27",
   "reviewStatus": {
     "ar": "pending-content-and-fluent-speaker-review",
     "az": "pending-content-and-fluent-speaker-review",
@@ -8,7 +8,7 @@
     "ru": "pending-content-and-fluent-speaker-review"
   },
   "sources": {
-    "privacy-policy.md": "8ab15063f0e25e82e350e13ab2d56e7e6f29dd1e41e2ae71f3b80b6c4cb5e53e",
+    "privacy-policy.md": "33e6ee286e0cf6be0bc4c77511608ab845aaa0ce3fe5c7aba0b875d4d28ffd48",
     "terms-of-service.md": "9aaf08143f4bdc51d3a3e4bfe7f4950717227e833e87a2050d1dc9669a50d8f4"
   }
 }

@@ -3,7 +3,11 @@
 # - a presigned PUT and GET at https://<host>/files work; a tampered signature does not;
 # - the bucket policy: anonymous download under avatars/ only, no anonymous list or upload;
 # - downloads carry Content-Security-Policy: sandbox and X-Content-Type-Options: nosniff,
-#   also for an uploaded HTML page, so it cannot run as a page of our origin;
+#   also for an HTML page uploaded under an image type, so it cannot run as a page of our
+#   origin;
+# - the WAF (INF-11) refuses an upload typed text/html: only the types the app sends are
+#   allowed (ALLOWED_REQUEST_CONTENT_TYPE in infra/proxy/proxy.env). Every upload here
+#   therefore carries one of them, as the app's own uploads do;
 # - then prints a snippet for the Chrome console with fresh presigned URLs.
 # Needs the stack up (`make`). Run it with `make files-check`. Exits 1 when a check fails.
 # Needs network access once per run (pip installs the MinIO SDK). Works with bash 3.2 (macOS).
@@ -83,6 +87,22 @@ has_header() {
         fail "$1: $2 sent $count times, expected once"
     fi
 }
+# from_minio NAME: the last response is MinIO's XML error, not the WAF's HTML 403 page.
+from_minio() {
+    if grep -q '<Error>' "$work/body"; then
+        pass "$1: answered by MinIO"
+    else
+        fail "$1: not answered by MinIO (WAF page?)"
+    fi
+}
+# from_waf NAME: the last response is the WAF's HTML 403 page (nginx), not MinIO's XML.
+from_waf() {
+    if grep -q '<title>403 Forbidden</title>' "$work/body"; then
+        pass "$1: refused by the WAF"
+    else
+        fail "$1: not refused by the WAF"
+    fi
+}
 # The proxy adds both to every /files response (infra/proxy, location /files/).
 has_security_headers() {
     has_header "$1" 'Content-Security-Policy: sandbox'
@@ -96,7 +116,7 @@ get_url="${urls#*$'\n'}"
 printf 'inf04 smoke test %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$work/upload.txt"
 
 echo "Presigned URLs:"
-check "PUT $PRIVATE_KEY" 200 -X PUT --upload-file "$work/upload.txt" "$put_url"
+check "PUT $PRIVATE_KEY" 200 -X PUT -H 'Content-Type: video/mp4' --upload-file "$work/upload.txt" "$put_url"
 check "GET $PRIVATE_KEY" 200 "$get_url"
 has_security_headers "GET $PRIVATE_KEY"
 if cmp -s "$work/upload.txt" "$work/body"; then
@@ -120,17 +140,24 @@ has_security_headers "GET $PUBLIC_KEY"
 check "GET $PRIVATE_KEY (private)" 403 "$files/$PRIVATE_KEY"
 check "list the bucket" 403 "$files/"
 check "list the avatars/ prefix" 403 "$files/?prefix=avatars/"
-check "PUT avatars/inf04-anonymous.txt" 403 -X PUT --data-binary x "$files/avatars/inf04-anonymous.txt"
+check "PUT avatars/inf04-anonymous.txt" 403 -X PUT -H 'Content-Type: image/png' --data-binary x \
+    "$files/avatars/inf04-anonymous.txt"
+from_minio "PUT avatars/inf04-anonymous.txt"
 
 # What a user can do with their own upload link: the type is the one the uploader sends.
-echo "Uploaded HTML page (served, but sandboxed):"
+# text/html is refused by the WAF; the same page sent as image/png is stored and served
+# as image/png, sandboxed and with nosniff, so a browser never runs it as a page.
+echo "Uploaded HTML page (refused as text/html; sandboxed under an image type):"
 urls="$(py urls "$HTML_KEY")"
 put_url="${urls%%$'\n'*}"
 printf '<!doctype html><script>alert(document.domain)</script>\n' > "$work/page.html"
-check "PUT $HTML_KEY as text/html" 200 -X PUT -H 'Content-Type: text/html' \
+check "PUT $HTML_KEY as text/html" 403 -X PUT -H 'Content-Type: text/html' \
+    --upload-file "$work/page.html" "$put_url"
+from_waf "PUT $HTML_KEY as text/html"
+check "PUT $HTML_KEY as image/png" 200 -X PUT -H 'Content-Type: image/png' \
     --upload-file "$work/page.html" "$put_url"
 check "GET $HTML_KEY (public prefix)" 200 "$files/$HTML_KEY"
-has_header "GET $HTML_KEY" 'Content-Type: text/html'
+has_header "GET $HTML_KEY" 'Content-Type: image/png'
 has_security_headers "GET $HTML_KEY"
 
 if [ "$failed" -ne 0 ]; then
@@ -145,7 +172,8 @@ get_url="${urls#*$'\n'}"
 cat <<EOF
 
 Browser check: open $MINIO_EXTERNAL_ENDPOINT/ in Chrome and paste this into the DevTools
-console within 5 minutes. Expected: "PUT 200", then "GET 200 hello", nothing else.
+console within 5 minutes. Expected: "PUT 200", then "GET 200 hello", nothing else. The PUT
+names video/mp4 as the app's video upload does; the WAF refuses types the app never sends.
 
-(async () => { const put = await fetch('$put_url', {method: 'PUT', body: 'hello'}); console.log('PUT', put.status); const get = await fetch('$get_url'); console.log('GET', get.status, await get.text()); })();
+(async () => { const put = await fetch('$put_url', {method: 'PUT', headers: {'Content-Type': 'video/mp4'}, body: 'hello'}); console.log('PUT', put.status); const get = await fetch('$get_url'); console.log('GET', get.status, await get.text()); })();
 EOF

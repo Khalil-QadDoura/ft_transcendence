@@ -288,6 +288,9 @@ jobs:
       # bucket's object count and checksum, retention 7 on a test directory, the backups
       # volume neither published nor served by the proxy (INF-14).
       - run: make backup-check
+      # WAF: engine On at paranoia level 2, attack probes refused with the WAF's 403, a corpus
+      # of normal use (API, uploads, game WebSockets, Grafana) never refused (INF-11).
+      - run: make waf-check
       - name: Service logs
         if: failure()
         run: |

@@ -3,9 +3,10 @@
 # start_interval, which Engine 24 refuses) with compose v2, make, bash, openssl and python3
 # 3.9+ (scripts/vault-init.sh reads Vault's JSON answers with it; macOS command line tools,
 # the ubuntu runner). The checks against the running stack (https-check, files-check,
-# mail-check, metrics-check, grafana-check, vault-check, backup-check): all but vault-check
-# also use curl; metrics-check, grafana-check and vault-check use python3 too. images-check
-# and secrets-check need no running stack (secrets-check only Docker and git).
+# mail-check, metrics-check, grafana-check, vault-check, backup-check, waf-check): all but
+# vault-check and waf-check also use curl; metrics-check, grafana-check, vault-check and
+# waf-check use python3 too. images-check and secrets-check need no running stack
+# (secrets-check only Docker and git).
 
 COMPOSE := docker compose
 # Every profile, so down and fclean also reach services with profiles (api-test, redis-test).
@@ -24,7 +25,7 @@ RESTORE_YES ?=
 
 .PHONY: all env ports certs up down logs logs-reset test https-check images-check secrets-check files-check \
 	mail-check metrics-check grafana-check schema-diagram anonymise-deleted seed reset-demo \
-	alert-demo vault-init vault-check backup backup-list backup-check restore fclean re
+	alert-demo vault-init vault-check backup backup-list backup-check restore waf-check fclean re
 
 all: env ports up
 
@@ -250,6 +251,17 @@ restore:
 	@BACKUP="$(BACKUP)" RESTORE_YES="$(RESTORE_YES)" ./infra/backup/restore.sh
 	@$(MAKE) --no-print-directory all
 	@./infra/backup/restore.sh --next-checks
+
+# The WAF (INF-11, docs/infra/waf.md), over HTTPS through the proxy: the rule engine On, CRS
+# paranoia level 2 and audit parts AHZ in the running proxy, the mounted exclusion files equal
+# to the repository's; attack probes (SQL injection and XSS in a query and a JSON body, path
+# traversal, a scanner User-Agent, a level 2 only match) each refused with the WAF's 403 and
+# an audit line; and a corpus of normal use (sign-up and login, profile, company and job,
+# messages with edit and delete, avatar and video upload, a game round with both WebSocket
+# handshakes, Grafana's dashboards) never refused by the WAF. Names the request and the rule
+# ids on a miss. Uses two fresh accounts, deleted at the end; needs python3 3.9+.
+waf-check:
+	@./infra/proxy/waf-check.sh
 
 # Removes containers, volumes (database, files, Vault, backups), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.

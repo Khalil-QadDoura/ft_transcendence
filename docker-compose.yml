@@ -91,6 +91,10 @@ services:
       - ./infra/proxy/templates/conf.d/logging.conf.template:/etc/nginx/templates/conf.d/logging.conf.template:ro
       # Created by infra/proxy/scripts/gen-cert.sh (`make up` runs it first).
       - ./infra/proxy/certs:/etc/nginx/conf:ro
+      # WAF exclusions (INF-11, docs/infra/waf.md). The image ships only .example copies of
+      # these two files, so no CRS rule file is replaced.
+      - ./infra/proxy/modsecurity/before-crs.conf:/opt/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:ro
+      - ./infra/proxy/modsecurity/after-crs.conf:/opt/owasp-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf:ro
     depends_on:
       frontend:
         condition: service_healthy

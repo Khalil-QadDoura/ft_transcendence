@@ -10,7 +10,11 @@ import {
   setStoredRefreshToken,
   createQueryClientConfig,
   queryKeys,
+  WAF_BLOCKED_CODE,
 } from "./client";
+import i18next from "../i18n";
+import en from "../i18n/en/common.json";
+import ru from "../i18n/ru/common.json";
 
 describe("FE-20 API Client & Token Management", () => {
   const originalFetch = globalThis.fetch;
@@ -255,6 +259,55 @@ describe("FE-20 API Client & Token Management", () => {
           next_step: "video",
         });
       }
+    });
+
+    // INF-11: the WAF answers with nginx's HTML page, the API with JSON.
+    it("turns the WAF's HTML 403 into a translated message", async () => {
+      const wafPage =
+        "<html><head><title>403 Forbidden</title></head><body></body></html>";
+      globalThis.fetch = vi.fn().mockImplementation(
+        async () =>
+          new Response(wafPage, {
+            status: 403,
+            statusText: "Forbidden",
+            headers: { "Content-Type": "text/html" },
+          }),
+      );
+      try {
+        await i18next.changeLanguage("ru");
+        const err = await apiClient("/conversations/1/messages", {
+          method: "POST",
+          body: { content: "I'm free at 10 or 11" },
+        }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(ApiError);
+        expect(err).toMatchObject({
+          status: 403,
+          code: WAF_BLOCKED_CODE,
+          message: ru.wafBlocked,
+        });
+        await i18next.changeLanguage("en");
+        await expect(apiClient("/users/me")).rejects.toThrowError(
+          en.wafBlocked,
+        );
+      } finally {
+        await i18next.changeLanguage("en");
+      }
+    });
+
+    it("keeps the API's own JSON 403", async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ error: { code: "403", detail: "Not your job" } }),
+            { status: 403, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      await expect(apiClient("/jobs/1")).rejects.toMatchObject({
+        status: 403,
+        code: "403",
+        message: "Not your job",
+      });
     });
   });
 
