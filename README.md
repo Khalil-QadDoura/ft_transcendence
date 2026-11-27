@@ -89,7 +89,7 @@ To wipe all app rows/media and re-seed from scratch at any time, run `make reset
 
 ### Tests and checks
 
-- `make test`: runs the backend `ruff check`, `ruff format --check` and `pytest` in a throwaway container, against a separate test database and its own Redis, then the frontend lint, format check, type check and unit tests. It fails if any backend test is skipped. It needs `.env` (it creates it) and the Docker images, not a running site.
+- `make test`: runs the backend `ruff check`, `ruff format --check` and `pytest` in a throwaway container, against a separate test database and its own Redis, then the frontend lint, format check, type check and unit tests. It fails if any backend test is skipped. It needs `.env` (it creates it) and the Docker images, but not the whole site: since INF-13 the tests read their database URL and MinIO keys from Vault, so it first starts and unseals Vault (as `make` does), then starts `vault-agent-api`, `db`, `minio` (with `vault-agent-infra`) and `redis-test`.
 - `make https-check`: the routes of the one HTTPS origin: frontend, `/api`, the `/ws` handshake, the redirects, and the internal routes returning 404. Needs the running stack.
 - `make files-check`: file upload and download through `/files` with presigned URLs. Needs the running stack and `curl`.
 - `make mail-check`: register, find the email in Mailpit, follow its link, verify, log in; deletes the message afterwards. Needs the running stack.
@@ -120,6 +120,8 @@ To wipe all app rows/media and re-seed from scratch at any time, run `make reset
 ### Backups and restore
 
 The `backup` service copies the app database (`pg_dump`) and the file bucket into the `backups` volume every day at 03:00 Asia/Dubai, and once at start when the newest copy is 24 hours old or more. Each copy is verified before it is kept; copies older than 7 days are deleted, and at most 7 are kept. `make backup` takes one now, `make backup-list` lists them, and `make restore BACKUP=latest` (or a timestamp from the list) puts one back after asking. The copies are on the same machine as the data, so they do not survive losing the machine. What is copied, the restore steps and the tested runbook: [docs/disaster-recovery.md](docs/disaster-recovery.md).
+
+After `make fclean` (or `make re`), type `OPENAI_API_KEY` and the 42 client secret `FT_CLIENT_SECRET` into `.env` again before `make`: `make` moved them into Vault and emptied their lines, and `make fclean` deletes the Vault volume. `FT_CLIENT_ID` is not a secret and stays in `.env`.
 
 ## Resources
 
