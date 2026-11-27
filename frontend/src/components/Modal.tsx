@@ -26,6 +26,8 @@ export function Modal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   // Close on Escape & trap focus
   useEffect(() => {
@@ -34,7 +36,7 @@ export function Modal({
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -85,7 +87,7 @@ export function Modal({
         previousActiveElement.focus();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
