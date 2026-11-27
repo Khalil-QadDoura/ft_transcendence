@@ -56,7 +56,7 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
 
 `OPENAI_API_KEY` is the only value added by hand, and only for video moderation. The site starts without it. Put it in its empty line in `.env` and run `make`: it moves the key into Vault and empties the line again.
 
-After a restart of Docker or of the machine, Vault is sealed and the services wait for their secrets; run `make` once and everything comes back.
+After a restart of Docker or of the machine, Vault is sealed and the agents and the services that wait for their secrets are unhealthy; run `make` once: it unseals Vault and restarts the agents (and then the services) that are not healthy yet.
 
 ### Addresses
 
@@ -97,7 +97,7 @@ To wipe all app rows/media and re-seed from scratch at any time, run `make reset
 - `make secrets-check`: no secret in any commit of any branch, with gitleaks on a fresh mirror clone, so it never reads `.env`; prints `REDACTED` instead of a value. Needs no running stack, only Docker and git.
 - `make metrics-check`: every Prometheus target is up and returns data; the five alert rules pass `promtool check rules` and `promtool test rules` and are loaded. Needs the running stack, `curl` and python3 3.9 or newer.
 - `make grafana-check`: Grafana login, security settings, data source, both dashboards and the Firing alerts panel. Needs the running stack, `curl` and python3 3.9 or newer.
-- `make vault-check`: Vault is initialized, unsealed and configured; each AppRole role (`api`, `worker`) reads only its own path; the audit log holds no credential in clear; no host port. Needs the running stack.
+- `make vault-check`: Vault is initialized, unsealed and configured; each AppRole role (`api`, `worker`, `infra`) reads only its own path; the three agents are healthy and each service has only its own secret files, on tmpfs; no secret is left in `.env`; the audit log holds no credential in clear; no host port. Needs the running stack.
 - `make backup-check`: runs `make backup`, then checks the newest database dump (every app table) and files copy (object count, one checksum), the catch-up at start, retention (none older than 7 days, at most 7) and that the backups are neither published nor reachable through the proxy. Needs the running stack.
 - `make alert-demo`: not a check, a manual demo (not in CI). It stops Redis, prints the seconds until the RedisDown alert fires, keeps Redis down 25 s more so the Grafana "Firing alerts" panel shows it (`ALERT_HOLD_SEC=0 make alert-demo` skips that), starts Redis again and prints when the alert is resolved. Redis is started again however it ends. Needs the running stack.
 - `make anonymise-deleted`: not a check. It runs the second stage of account deletion now instead of at the worker's nightly run: accounts deleted more than 30 days ago are anonymised; `days=0` takes every deleted account (for a demo). Needs the running stack.
@@ -117,11 +117,11 @@ To wipe all app rows/media and re-seed from scratch at any time, run `make reset
 
 `make fclean` and `make re` cannot be undone: every account, video and message is lost, and so is every backup. The next `make` generates new secrets in the new Vault.
 
+After `make fclean` (or `make re`), type `OPENAI_API_KEY` and the 42 client secret `FT_CLIENT_SECRET` into `.env` again before `make`: `make` moved them into Vault and emptied their lines, and `make fclean` deletes the Vault volume. `FT_CLIENT_ID` is not a secret and stays in `.env`.
+
 ### Backups and restore
 
 The `backup` service copies the app database (`pg_dump`) and the file bucket into the `backups` volume every day at 03:00 Asia/Dubai, and once at start when the newest copy is 24 hours old or more. Each copy is verified before it is kept; copies older than 7 days are deleted, and at most 7 are kept. `make backup` takes one now, `make backup-list` lists them, and `make restore BACKUP=latest` (or a timestamp from the list) puts one back after asking. The copies are on the same machine as the data, so they do not survive losing the machine. What is copied, the restore steps and the tested runbook: [docs/disaster-recovery.md](docs/disaster-recovery.md).
-
-After `make fclean` (or `make re`), type `OPENAI_API_KEY` and the 42 client secret `FT_CLIENT_SECRET` into `.env` again before `make`: `make` moved them into Vault and emptied their lines, and `make fclean` deletes the Vault volume. `FT_CLIENT_ID` is not a secret and stays in `.env`.
 
 ## Resources
 
@@ -204,7 +204,8 @@ flowchart LR
         db[("postgres<br/>PostGIS")]
         redis[("redis")]
         worker["worker<br/>Celery + beat"]
-        vault["vault<br/>secrets (not read by api or worker yet)"]
+        vault["vault<br/>secrets store"]
+        agents["vault-agent-api, -worker, -infra<br/>secrets into in-memory files"]
         backup["backup<br/>daily pg_dump + mc"]
 
         prometheus["prometheus"]
@@ -230,12 +231,15 @@ flowchart LR
     backup --> db
     backup --> minio
 
+    agents --> vault
+    agents -.-> api & worker & db & minio & grafana & backup
+
     prometheus -->|"scrape /metrics"| api
     prometheus --> exporters
     grafana --> prometheus
 ```
 
-The browser talks to one origin, `https://localhost`, and only the proxy publishes host ports. The proxy terminates TLS, runs ModSecurity on every request and sends each path prefix to one service: `/` to the frontend, `/api` and `/ws*` (WebSockets) to the API, `/files` to MinIO, `/grafana/` to Grafana and `/mail/` to Mailpit. Because the frontend, the API and the file URLs share one origin, there is no CORS. Presigned upload and download URLs point at `/files` on the same origin, so file bytes go from the browser through the proxy to MinIO without passing through the API. The proxy answers 404 for `/_internal*` and `/metrics*` (also under `/api`), so those routes stay inside the Docker network; Prometheus reads the API's metrics there. The API uses PostgreSQL for data, Redis for pub/sub, presence and tickets, MinIO for files and Mailpit for email; the worker uses Redis as its broker and the same database and storage. The backup service reads the database and the bucket and writes its copies into its own volume, `backups`. Vault runs in the network with no port and no proxy route; `make` unseals it, and the API and the worker do not read it yet (INF-13).
+The browser talks to one origin, `https://localhost`, and only the proxy publishes host ports. The proxy terminates TLS, runs ModSecurity on every request and sends each path prefix to one service: `/` to the frontend, `/api` and `/ws*` (WebSockets) to the API, `/files` to MinIO, `/grafana/` to Grafana and `/mail/` to Mailpit. Because the frontend, the API and the file URLs share one origin, there is no CORS. Presigned upload and download URLs point at `/files` on the same origin, so file bytes go from the browser through the proxy to MinIO without passing through the API. The proxy answers 404 for `/_internal*` and `/metrics*` (also under `/api`), so those routes stay inside the Docker network; Prometheus reads the API's metrics there. The API uses PostgreSQL for data, Redis for pub/sub, presence and tickets, MinIO for files and Mailpit for email; the worker uses Redis as its broker and the same database and storage. The backup service reads the database and the bucket and writes its copies into its own volume, `backups`. Vault runs in the network with no port and no proxy route; `make` unseals it. Three Vault Agent sidecars log in to it with their own AppRole and render each service's secrets into an in-memory volume mounted into that service only (`vault-agent-api` for the API, `vault-agent-worker` for the worker, `vault-agent-infra` for the database, MinIO, Grafana, postgres-exporter and the backup service); `.env` keeps settings only (INF-13).
 
 ## Database Schema
 
