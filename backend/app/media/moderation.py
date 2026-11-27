@@ -37,6 +37,7 @@ from app.media.constants import (
 )
 from app.media.models import IntroVideo
 from app.realtime import service as realtime_service
+from app.users.models import User
 
 log = structlog.get_logger(__name__)
 
@@ -265,8 +266,13 @@ async def apply_moderation_result(
     if video is None or video.lifecycle_status == "deleted":
         return None
 
-    # Serialize against concurrent post/unpost/delete/confirm requests for the same user (BE-07).
+    # Serialize against concurrent post/unpost/delete/confirm requests for the same user (BE-07),
+    # and never approve/publish a deleted user's waiting video (BE-34 / BE-13 follow-up).
     await media_repo.lock_user(session, video.user_id)
+    user_status = await session.scalar(select(User.status).where(User.id == video.user_id))
+    if user_status != "active":
+        await session.rollback()
+        return None
     video = await session.scalar(
         select(IntroVideo)
         .where(IntroVideo.id == video_id)
@@ -345,6 +351,20 @@ async def run_moderation(
 
     log.info("moderation started", video_id=video_id, object_key=object_key)
     try:
+        async with session_factory() as session:
+            owner_status = await session.scalar(
+                select(User.status)
+                .join(IntroVideo, IntroVideo.user_id == User.id)
+                .where(IntroVideo.id == video_id)
+            )
+        if owner_status is not None and owner_status != "active":
+            log.info(
+                "moderation skipped: account not active",
+                video_id=video_id,
+                user_status=owner_status,
+            )
+            return "skipped"
+
         with tempfile.TemporaryDirectory(prefix="wozu-mod-") as tmp:
             video_path = os.path.join(tmp, "video.mp4")
 
