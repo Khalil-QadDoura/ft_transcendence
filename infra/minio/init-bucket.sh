@@ -15,7 +15,8 @@ PUBLIC_PREFIXES="avatars logos"
 WAIT_SECONDS=60
 
 # mc reads the alias from the environment: the credentials stay out of argv, config files
-# and output. They must be URL-safe; init-env.sh generates hex.
+# and output. They must be URL-safe; scripts/vault-init.sh generates hex. Since INF-13 they
+# come from Vault: with-secrets exports the env file vault-agent-infra renders.
 export MC_HOST_wozu="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000"
 target="wozu/$MINIO_BUCKET"
 

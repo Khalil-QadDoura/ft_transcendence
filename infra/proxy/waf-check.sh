@@ -543,8 +543,9 @@ else:
     normal("delete account b", "DELETE", mark("/api/users/me"), (204,), auth=b["auth"])
 
 # Grafana as the browser uses it, with the admin password read from the running container
-# (kept in memory, never printed). This covers the Grafana exclusions of before-crs.conf.
-code, out = compose("exec", "-T", "grafana", "printenv", "GF_SECURITY_ADMIN_PASSWORD")
+# (kept in memory, never printed): the file vault-agent-infra renders into the grafana
+# container's tmpfs (INF-13). This covers the Grafana exclusions of before-crs.conf.
+code, out = compose("exec", "-T", "grafana", "cat", "/run/vault/admin-password")
 password = out.strip() if code == 0 else ""
 if password:
     secrets.append(("the Grafana admin password", password))

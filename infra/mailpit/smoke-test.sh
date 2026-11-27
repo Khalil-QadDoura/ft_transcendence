@@ -65,7 +65,7 @@ echo "mail-check: $base, inbox $base/mail/, test user $EMAIL"
 
 echo "Settings (as the API reads them):"
 # Through the app's own Settings class, so a renamed variable shows up as a default value.
-settings="$(docker compose exec -T api python -c 'from app.core.config import get_settings
+settings="$(docker compose exec -T api with-secrets python -c 'from app.core.config import get_settings
 s = get_settings()
 print(s.smtp_host, s.smtp_port, s.mail_from, s.frontend_base_url, "set" if s.brevo_api_key else "unset")')"
 read -r smtp_host smtp_port mail_from frontend_base_url brevo <<EOF

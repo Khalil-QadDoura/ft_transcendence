@@ -29,8 +29,9 @@ RESTORE_YES ?=
 
 all: env ports up
 
-# Creates .env with random secrets when it is missing. An existing one keeps every line and
-# gets only the keys .env.example has and it lacks (INF-09); the names are printed, not values.
+# Creates .env from .env.example when it is missing: settings only, no secret (INF-13: the
+# secrets live in Vault, see vault-init). An existing one keeps every line and gets only the
+# keys .env.example has and it lacks (INF-09); the names are printed, not values.
 env:
 	@./scripts/init-env.sh
 
@@ -46,6 +47,12 @@ certs:
 # the first run, unseals it after every start and applies its configuration; one line when
 # there is nothing to do. The key shares and the root token stay in scripts/vault-keys.local
 # (Git-ignored, mode 600); nothing secret is printed. See docs/infra/vault.md.
+# Then the service secrets (INF-13): a secret still in .env is moved into Vault and its line
+# removed, a missing one is generated in Vault (one line per key, names only); and each Vault
+# Agent's AppRole credentials. After a Docker or host restart Vault is sealed and the agents
+# and the services behind them wait: `make` unseals it, then restarts the agents and services
+# already marked unhealthy, so that the `up --wait` below does not stop on them (see
+# docs/infra/vault.md, After a Docker or host restart).
 vault-init: env
 	@$(COMPOSE) up -d --wait --wait-timeout 120 vault
 	@./scripts/vault-init.sh
@@ -74,18 +81,24 @@ logs:
 # runs again as the api's). Mailpit keeps its inbox inside its container, so the inbox is
 # emptied too. Logs are kept at most 30 days (Privacy Policy, PO decision 2026-11-13); the
 # operator runs this at least weekly, see "Logs and retention" in docs/infra/infrastructure.md.
-# Vault's audit log is its container log too. A new vault container starts sealed, so
-# scripts/vault-init.sh unseals it again (INF-12).
+# Vault's audit log is its container log too. A new vault container starts sealed, so it is
+# recreated first and scripts/vault-init.sh unseals it (INF-12) before the rest: the Vault
+# Agents (INF-13) and the services behind them only get healthy with Vault unsealed. Their
+# rendered secrets are on tmpfs volumes; the agents render them again at start.
 logs-reset:
 	@running="$$($(COMPOSE_ALL) ps --services --status running | sort | tr '\n' ' ')"; \
 	stopped="$$($(COMPOSE_ALL) ps --services --status exited --status created --status dead \
 		| sort | tr '\n' ' ')"; \
 	if [ -z "$$running$$stopped" ]; then echo "logs-reset: no container, nothing to reset"; exit 0; fi; \
 	if [ -n "$$stopped" ]; then $(COMPOSE_ALL) rm --force $$stopped || exit 1; fi; \
-	if [ -n "$$running" ]; then \
-		$(COMPOSE_ALL) up -d --force-recreate --wait --wait-timeout 300 $$running || exit 1; \
+	case " $$running" in *" vault "*) \
+		$(COMPOSE_ALL) up -d --force-recreate --no-deps --wait --wait-timeout 120 vault || exit 1; \
+		./scripts/vault-init.sh || exit 1 ;; \
+	esac; \
+	rest="$$(echo " $$running" | sed 's/ vault / /' | xargs)"; \
+	if [ -n "$$rest" ]; then \
+		$(COMPOSE_ALL) up -d --force-recreate --wait --wait-timeout 300 $$rest || exit 1; \
 	fi; \
-	case " $$running" in *" vault "*) ./scripts/vault-init.sh || exit 1 ;; esac; \
 	echo "logs-reset: stopped containers removed: $${stopped:-none}"; \
 	echo "logs-reset: recreated with empty logs: $${running:-none}"
 
@@ -104,11 +117,14 @@ logs-reset:
 # Frontend: the checks of its CI job, in the build stage of its image.
 # The MinIO tests use their own buckets (media-test, pictures-test) on the dev MinIO, with
 # the api container's own keys: they never appear on a command line or in this output.
+# Secrets (INF-13): api-test reads its own env file from vault-agent-api (DATABASE_URL,
+# TEST_DATABASE_URL, the MinIO keys...), so Vault is unsealed first (vault-init) and the agent
+# started; db and minio wait for vault-agent-infra.
 # As in CI, a skipped backend test fails make test (-rs prints why it was skipped), and a test
 # that runs longer than 300 s prints the stack of every thread (faulthandler_timeout) instead
 # of hanging silently; the test keeps running.
-test: env
-	$(COMPOSE) --profile test up -d --wait db redis-test minio
+test: vault-init
+	$(COMPOSE) --profile test up -d --wait db redis-test minio vault-agent-api
 	$(COMPOSE) exec -T db /docker-entrypoint-initdb.d/20-create-test-db.sh
 	$(COMPOSE) --profile test run --rm --no-deps --build -v $(CURDIR)/backend:/src:ro -w /src \
 		-e TEST_REDIS_URL=redis://redis-test:6379/0 -e REDIS_URL=redis://redis-test:6379/0 \
@@ -191,18 +207,18 @@ grafana-check:
 # By default those deleted more than 30 days ago, as the nightly run; `days=0` takes every
 # deleted account at once (the demo). Accounts on retention hold are always skipped.
 anonymise-deleted:
-	$(COMPOSE) exec -T worker python -m app.worker.tasks.anonymise $(if $(days),--older-than-days $(days))
+	$(COMPOSE) exec -T worker with-secrets python -m app.worker.tasks.anonymise $(if $(days),--older-than-days $(days))
 
 # Idempotently fills the running stack with demo accounts, companies, logos, avatars,
 # 20 open jobs across Abu Dhabi and Baku, applications, friendships, chats and approved
 # intro videos (BE-32). Safe to run repeatedly; never runs automatically on startup.
 seed:
-	$(COMPOSE) exec -T api python -m app.seed $(if $(moderate),--moderate)
+	$(COMPOSE) exec -T api with-secrets python -m app.seed $(if $(moderate),--moderate)
 
 # Drops all app rows, clears seeded/uploaded media objects and transient Redis keys, then
 # re-runs `make seed` from scratch (BE-32).
 reset-demo:
-	$(COMPOSE) exec -T api python -m app.seed --reset $(if $(moderate),--moderate)
+	$(COMPOSE) exec -T api with-secrets python -m app.seed --reset $(if $(moderate),--moderate)
 
 # Live alert demo, manual only (not in CI): stops Redis, waits until the RedisDown alert
 # fires (prints the seconds; fails after 120 s), keeps Redis down 25 s more so the Firing
@@ -247,7 +263,7 @@ backup-check:
 # and the bucket (mc mirror) of one run, then starts the stack with `make`. The restore
 # runs before the api starts, so its migrations never meet an empty database. Asks first,
 # unless RESTORE_YES=1. See docs/disaster-recovery.md.
-restore:
+restore: vault-init
 	@BACKUP="$(BACKUP)" RESTORE_YES="$(RESTORE_YES)" ./infra/backup/restore.sh
 	@$(MAKE) --no-print-directory all
 	@./infra/backup/restore.sh --next-checks
@@ -264,7 +280,9 @@ waf-check:
 	@./infra/proxy/waf-check.sh
 
 # Removes containers, volumes (database, files, Vault, backups), images built here and the certificate.
-# Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
+# Keeps .env (settings only since INF-13). The secrets go with the Vault volume: the next
+# `make` generates new ones for the new volumes; OPENAI_API_KEY and FT_CLIENT_SECRET, typed by
+# hand, must be put in .env again before it (make moves them into Vault).
 # The Vault keys file belongs to the Vault just removed: it is moved aside to
 # scripts/vault-keys.local.stale-<UTC time>, as `make` does with a keys file whose Vault is gone.
 fclean:

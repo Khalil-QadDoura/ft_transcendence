@@ -31,12 +31,14 @@ if [ -z "$api" ] || [ -z "$minio" ]; then
     exit 1
 fi
 
-# The storage settings exactly as compose gives them to the API. Exported, and passed to
-# the helper container by name only, so no value appears on a command line or in output.
+# The storage settings exactly as the API process gets them: compose's environment plus the
+# keys from Vault (INF-13), which with-secrets exports from the api's rendered env file.
+# Exported, and passed to the helper container by name only, so no value appears on a
+# command line or in output.
 while IFS= read -r line; do
     # shellcheck disable=SC2163 # $line is NAME=value, so this exports NAME
     case "$line" in MINIO_*=*) export "$line" ;; esac
-done < <(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$api")
+done < <(docker exec "$api" with-secrets env)
 network="$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' "$minio")"
 files="$MINIO_EXTERNAL_ENDPOINT/$MINIO_BUCKET"
 

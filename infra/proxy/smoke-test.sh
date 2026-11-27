@@ -158,8 +158,9 @@ else
 fi
 
 echo "Internal routes (404 from outside, even with the key):"
-# The key goes to curl as a header file: never on a command line or in the output.
-(umask 077 && docker compose exec -T api printenv INTERNAL_API_KEY \
+# The key goes to curl as a header file: never on a command line or in the output. It comes
+# from Vault (INF-13): with-secrets exports the api's rendered env file first.
+(umask 077 && docker compose exec -T api with-secrets printenv INTERNAL_API_KEY \
     | sed 's/^/X-Internal-Key: /' > "$work/key-header") || true
 blocked "GET /_internal/health/db with the key" "$base/_internal/health/db" -H "@$work/key-header"
 blocked "GET /api/_internal/health/db with the key" "$base/api/_internal/health/db" -H "@$work/key-header"
@@ -173,7 +174,7 @@ blocked "GET /%5Finternal/health/db" "$base/%5Finternal/health/db" -H "@$work/ke
 blocked "GET /_internal%2Fhealth/db" "$base/_internal%2Fhealth/db" -H "@$work/key-header"
 if grep -q '^X-Internal-Key: .' "$work/key-header"; then
     # Inside the network the same route answers: the 404s above are the proxy's doing.
-    inside="$(docker compose exec -T api python -c 'import os, urllib.request
+    inside="$(docker compose exec -T api with-secrets python -c 'import os, urllib.request
 r = urllib.request.Request("http://127.0.0.1:8000/_internal/health/db",
                            headers={"X-Internal-Key": os.environ["INTERNAL_API_KEY"]})
 print(urllib.request.urlopen(r, timeout=5).status)' 2>&1)" || true

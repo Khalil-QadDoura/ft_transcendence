@@ -27,8 +27,9 @@
 #   source-managed rules) lists exactly the five alert rules of infra/prometheus/alerts.yml;
 # - Grafana Live (WebSocket) answers 101 through the proxy at /grafana/api/live/ws;
 # - a login with a wrong password is refused (401).
-# Logs in as admin with Basic auth. The password is read from the running container
-# (`docker compose exec -T grafana printenv GF_SECURITY_ADMIN_PASSWORD`) into a file only
+# Logs in as admin with Basic auth. The password is read from the running container (the
+# file Vault Agent renders, INF-13: `docker compose exec -T grafana cat
+# /run/vault/admin-password`) into a file only
 # this user can read, deleted at the end; it is never printed or put on a command line.
 # Brute-force protection: Grafana counts failed logins per username and locks that name
 # for 5 minutes after 5 failures within 5 minutes; a later good login does not reset the
@@ -67,7 +68,7 @@ chmod 700 "$work"
 
 root_url="$(docker compose exec -T grafana printenv GF_SERVER_ROOT_URL)" || root_url=""
 # The password goes straight from the container into a file; only python reads it.
-(umask 077; docker compose exec -T grafana printenv GF_SECURITY_ADMIN_PASSWORD >"$work/password") || true
+(umask 077; docker compose exec -T grafana cat /run/vault/admin-password >"$work/password") || true
 if [ ! -s "$work/password" ]; then
     echo "grafana-check: GF_SECURITY_ADMIN_PASSWORD is empty in the grafana container" >&2
     exit 1

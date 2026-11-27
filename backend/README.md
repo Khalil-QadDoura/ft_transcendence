@@ -44,8 +44,9 @@ app/
                  scoring.py (the points, win / draw / loss and deception rate rules, no database)
                  chat.py: the room socket /ws/game, room chat and its history, the snapshot
                  sent on every (re)connect (BE-09)
-  seed/          idempotent demo seed & reset runner (`python -m app.seed`, BE-32) with checked-in
-                 demo video pitches and PNG avatar/logo generator
+  seed/          idempotent demo seed & reset runner (BE-32), run by `make seed` / `make reset-demo`
+                 as `with-secrets python -m app.seed` in the api container (INF-13), with
+                 checked-in demo video pitches and PNG avatar/logo generator
   applications/  only models.py so far (BE-02); each feature card adds its other four files
   <domain>/      every domain package has the same five files:
     models.py      SQLAlchemy tables
@@ -170,7 +171,7 @@ again. A second run changes nothing. The log lines carry the account's id only.
 make anonymise-deleted days=0   # every deleted account, at once
 make anonymise-deleted          # only those deleted more than 30 days ago, as the nightly run
 # the same, by hand:
-docker compose exec worker python -m app.worker.tasks.anonymise --older-than-days 0
+docker compose exec worker with-secrets python -m app.worker.tasks.anonymise --older-than-days 0
 ```
 
 It always skips the accounts on hold, and exits with 1 if an account could not be done.
