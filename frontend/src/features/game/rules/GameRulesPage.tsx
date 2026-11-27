@@ -168,7 +168,7 @@ function ExampleA() {
           })}
         </p>
         <div
-          className="overflow-x-auto"
+          className="relative overflow-x-auto"
           role="region"
           aria-labelledby="rules-example-a-caption"
           tabIndex={0}
@@ -282,7 +282,7 @@ function ExampleB() {
           })}
         </p>
         <div
-          className="overflow-x-auto"
+          className="relative overflow-x-auto"
           role="region"
           aria-labelledby="rules-example-b-caption"
           tabIndex={0}
