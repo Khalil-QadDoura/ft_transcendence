@@ -1,0 +1,237 @@
+# Unit tests of infra/prometheus/alerts.yml (INF-10): `promtool test rules alerts.test.yml`,
+# run by `make metrics-check` inside the prometheus container (both files are mounted
+# read-only in /etc/prometheus). One case where each rule fires and one where it does not.
+# promtool replays the input series, evaluates the rules every evaluation_interval and
+# compares, at each eval_time, the alerts that are firing (pending ones do not count) with
+# exp_alerts, labels and annotations included; `exp_alerts: []` means none firing.
+# The tests evaluate every 5 s, so "down for 20 s" is exact; Prometheus itself evaluates
+# every 15 s, which adds up to 15 s (plus one 15 s scrape) before an alert turns pending.
+
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 5s
+
+tests:
+  # RedisDown (for: 30s). redis_up is 1 at 0 s and 0 from 5 s on.
+  - name: RedisDown fires after 30 s, not after 20 s
+    interval: 5s
+    input_series:
+      - series: 'redis_up{job="redis", instance="redis-exporter:9121"}'
+        values: '1 0x20'
+    alert_rule_test:
+      # Down for 20 s (since 5 s): still pending.
+      - eval_time: 25s
+        alertname: RedisDown
+        exp_alerts: []
+      # Down for 45 s: firing.
+      - eval_time: 50s
+        alertname: RedisDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: redis
+              instance: redis-exporter:9121
+            exp_annotations:
+              summary: "Redis is down"
+              description: "redis-exporter (redis-exporter:9121) cannot reach Redis: redis_up has been 0 for more than 30 seconds. Sessions, rate limits, WebSocket events and the worker queue need Redis."
+
+  - name: RedisDown does not fire while Redis is up
+    interval: 5s
+    input_series:
+      - series: 'redis_up{job="redis", instance="redis-exporter:9121"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 100s
+        alertname: RedisDown
+        exp_alerts: []
+
+  # TargetDown (for: 1m). The api target fails from 15 s on; the redis target stays up.
+  - name: TargetDown fires for the failing target only, after 1 minute
+    interval: 15s
+    input_series:
+      - series: 'up{job="api", instance="api:8000"}'
+        values: '1 0x10'
+      - series: 'up{job="redis", instance="redis-exporter:9121"}'
+        values: '1x10'
+    alert_rule_test:
+      # Down for 45 s: still pending.
+      - eval_time: 60s
+        alertname: TargetDown
+        exp_alerts: []
+      # Down for 75 s: firing, for api only.
+      - eval_time: 90s
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: api
+              instance: api:8000
+            exp_annotations:
+              summary: "Scrape target api is down"
+              description: "Prometheus has not been able to scrape api:8000 (job api) for more than 1 minute."
+
+  - name: TargetDown does not fire while every target is up
+    interval: 15s
+    input_series:
+      - series: 'up{job="api", instance="api:8000"}'
+        values: '1x20'
+      - series: 'up{job="redis", instance="redis-exporter:9121"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: TargetDown
+        exp_alerts: []
+
+  # ApiHighErrorRate (> 5 % for 5m). 100 requests a minute, 10 of them 500: 10 %.
+  - name: ApiHighErrorRate fires at 10 % 5xx
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="api", handler="/api/jobs", method="GET", status="200"}'
+        values: '0+90x20'
+      - series: 'http_requests_total{job="api", handler="/api/jobs", method="GET", status="500"}'
+        values: '0+10x20'
+    alert_rule_test:
+      # Above 5 % from 1 m on, so not yet 5 minutes at 4 m.
+      - eval_time: 4m
+        alertname: ApiHighErrorRate
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ApiHighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "API 5xx error rate above 5 %"
+              description: "10% of API responses over the last 5 minutes had a 5xx status, above the 5 % threshold, for more than 5 minutes."
+
+  # 2 % 5xx, and no traffic at all (counters that do not move): neither fires.
+  - name: ApiHighErrorRate does not fire at 2 % 5xx or with no traffic
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="api", handler="/api/jobs", method="GET", status="200"}'
+        values: '0+98x20 1960x20'
+      - series: 'http_requests_total{job="api", handler="/api/jobs", method="GET", status="500"}'
+        values: '0+2x20 40x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ApiHighErrorRate
+        exp_alerts: []
+      # 0 / 0 from 25 m on (no request in the last 5 minutes).
+      - eval_time: 40m
+        alertname: ApiHighErrorRate
+        exp_alerts: []
+
+  # Only health-check traffic, as on an idle stack after two `make alert-demo` runs: 13
+  # calls per 5 minutes, 4 of them 503 (about 31 %). The rule leaves out /api/health, so
+  # the division has no result and nothing fires.
+  - name: ApiHighErrorRate ignores 503 answers of the health check
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="api", handler="/api/health", method="GET", status="200"}'
+        values: '0+1.8x20'
+      - series: 'http_requests_total{job="api", handler="/api/health", method="GET", status="503"}'
+        values: '0+0.8x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ApiHighErrorRate
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ApiHighErrorRate
+        exp_alerts: []
+
+  # ApiHighLatencyP95 (> 0.5 s for 5m), on the highr histogram (le without a route
+  # label). 100 requests a minute: 10 under 100 ms, 10 more under 500 ms, the other 80
+  # between 0.5 and 1 s. The 95th request is in the 0.5-1 s bucket: p95 =
+  # 0.5 + 0.5 * (95 - 20) / 80 = 0.96875 s.
+  - name: ApiHighLatencyP95 fires when p95 is about 969 ms
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_highr_seconds_bucket{job="api", le="0.1"}'
+        values: '0+10x20'
+      - series: 'http_request_duration_highr_seconds_bucket{job="api", le="0.5"}'
+        values: '0+20x20'
+      - series: 'http_request_duration_highr_seconds_bucket{job="api", le="1.0"}'
+        values: '0+100x20'
+      - series: 'http_request_duration_highr_seconds_bucket{job="api", le="+Inf"}'
+        values: '0+100x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ApiHighLatencyP95
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ApiHighLatencyP95
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "API p95 latency above 500 ms"
+              description: "95 % of API requests over the last 5 minutes took up to 968.8ms, above the 500 ms threshold, for more than 5 minutes."
+
+  # Every request under 100 ms: p95 = 95 ms. Also no traffic from 25 m on (NaN).
+  - name: ApiHighLatencyP95 does not fire when requests are fast or there are none
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_highr_seconds_bucket{job="api", le="0.1"}'
+        values: '0+100x20 2000x20'
+      - series: 'http_request_duration_highr_seconds_bucket{job="api", le="0.5"}'
+        values: '0+100x20 2000x20'
+      - series: 'http_request_duration_highr_seconds_bucket{job="api", le="1.0"}'
+        values: '0+100x20 2000x20'
+      - series: 'http_request_duration_highr_seconds_bucket{job="api", le="+Inf"}'
+        values: '0+100x20 2000x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ApiHighLatencyP95
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: ApiHighLatencyP95
+        exp_alerts: []
+
+  # MonitoringDiskAlmostFull (> 80 % of the 1 GiB cap for 10m). 900 MB blocks + 30 MB WAL
+  # + 10 MB head chunks = 940,000,000 bytes of 1,073,741,824: 87.5 %.
+  - name: MonitoringDiskAlmostFull fires at 87.5 % of the cap
+    interval: 1m
+    input_series:
+      - series: 'prometheus_tsdb_storage_blocks_bytes{job="prometheus", instance="localhost:9090"}'
+        values: '900000000x20'
+      - series: 'prometheus_tsdb_wal_storage_size_bytes{job="prometheus", instance="localhost:9090"}'
+        values: '30000000x20'
+      - series: 'prometheus_tsdb_head_chunks_storage_size_bytes{job="prometheus", instance="localhost:9090"}'
+        values: '10000000x20'
+      - series: 'prometheus_tsdb_retention_limit_bytes{job="prometheus", instance="localhost:9090"}'
+        values: '1073741824x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MonitoringDiskAlmostFull
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: MonitoringDiskAlmostFull
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: prometheus
+              instance: localhost:9090
+            exp_annotations:
+              summary: "Prometheus storage above 80 % of its 1 GB cap"
+              description: "Prometheus storage (blocks, WAL and head chunks) uses 87.54% of its retention size cap (--storage.tsdb.retention.size, 1 GB), above the 80 % threshold, for more than 10 minutes."
+
+  # 600 MB of 1 GiB (about 56 %), and no size cap at all (limit 0): neither fires.
+  - name: MonitoringDiskAlmostFull does not fire at 56 % or without a size cap
+    interval: 1m
+    input_series:
+      - series: 'prometheus_tsdb_storage_blocks_bytes{job="prometheus", instance="localhost:9090"}'
+        values: '560000000x40'
+      - series: 'prometheus_tsdb_wal_storage_size_bytes{job="prometheus", instance="localhost:9090"}'
+        values: '30000000x40'
+      - series: 'prometheus_tsdb_head_chunks_storage_size_bytes{job="prometheus", instance="localhost:9090"}'
+        values: '10000000x40'
+      - series: 'prometheus_tsdb_retention_limit_bytes{job="prometheus", instance="localhost:9090"}'
+        values: '1073741824x20 0x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: MonitoringDiskAlmostFull
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: MonitoringDiskAlmostFull
+        exp_alerts: []

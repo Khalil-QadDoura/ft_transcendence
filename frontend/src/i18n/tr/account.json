@@ -38,6 +38,6 @@
   "thisDeactivatesYourAccountAndEndsYourSessionsYouWont": "Bu işlem hesabınızı devre dışı bırakır ve oturumlarınızı sonlandırır. Tekrar giriş yapamazsınız.",
   "keepMyAccount": "Hesabımı koru",
   "yesDeleteMyAccount": "Evet, hesabımı sil",
-  "wrongCurrentPassword": "Mevcut parola yanlış",
+  "wrongCurrentPassword": "Mevcut şifre yanlış",
   "invalidOrExpiredLink": "Bağlantı geçersiz veya süresi dolmuş"
 }

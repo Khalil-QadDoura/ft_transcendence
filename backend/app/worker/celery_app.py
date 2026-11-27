@@ -7,9 +7,10 @@ the beat also anonymises the accounts deleted more than 30 days ago (BE-34).
 """
 
 from celery.schedules import crontab
-from celery.signals import worker_ready
+from celery.signals import setup_logging, worker_ready
 
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.core.queue import make_celery
 from app.users.constants import ANONYMISE_HOUR_UTC
 
@@ -24,6 +25,7 @@ celery_app.conf.update(
     enable_utc=True,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    worker_hijack_root_logger=False,
     # Non-root container user (uid 10001) cannot write into /app; store beat state in /tmp.
     beat_schedule_filename="/tmp/celerybeat-schedule",
     beat_schedule={
@@ -43,6 +45,12 @@ celery_app.conf.update(
         },
     },
 )
+
+
+@setup_logging.connect
+def _on_setup_logging(**_kwargs) -> None:
+    """Use the API's structured JSON log format in the Celery worker/beat process."""
+    configure_logging(get_settings().log_level)
 
 
 @worker_ready.connect

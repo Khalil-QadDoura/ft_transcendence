@@ -80,7 +80,7 @@
     "pageOf": "Страница {{current}} из {{total}}",
     "online": "в сети",
     "offline": "не в сети",
-    "away": "отошёл",
+    "away": "нет на месте",
     "status": "Статус: {{status}}"
   },
   "applications": {

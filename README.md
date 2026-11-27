@@ -26,8 +26,8 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
 ### Prerequisites
 
 - **Docker Engine 25 or newer** (the health checks use `start_interval`, which Engine 24 refuses) with **Docker Compose v2** (`docker compose`). Docker Desktop for Mac or Windows includes both.
-- **make**, **bash** and **openssl** (`make` uses openssl to generate the secrets and the certificate).
-- Free host ports **443** (HTTPS) and **80** (redirect to HTTPS). Only the proxy publishes ports. If one is taken, set `HTTPS_PORT` or `HTTP_PORT` in `.env` (for example `HTTPS_PORT=8443`), and every URL below then needs `:8443`.
+- **make**, **bash**, **openssl** (`make` uses openssl to generate the secrets and the certificate) and **python3 3.9 or newer** (`make` reads Vault's answers with it while it initializes and unseals Vault).
+- Free host ports **443** (HTTPS) and **80** (redirect to HTTPS). Only the proxy publishes ports. If one is taken, start with `HTTPS_PORT=8443 make` (or set `HTTPS_PORT` / `HTTP_PORT` in `.env` and run `make`): `make` writes the port into the public URLs in `.env` (`FRONTEND_BASE_URL`, `MINIO_EXTERNAL_ENDPOINT`), and every URL below then needs `:8443`, the redirect URI registered for login with 42 too (`https://localhost:8443/api/auth/oauth/42/callback`).
 - Resources: about 1 GB of memory for the running stack (13 containers, measured at about 0.9 GB idle); give Docker at least 4 GB, because building the images needs more than running them. Allow several GB of disk for images and volumes. The first `make` downloads the images and builds the frontend and backend, so it needs internet access and takes a few minutes.
 
 ### Run it
@@ -68,9 +68,20 @@ Everything runs in containers; the host needs no Node.js, Python or PostgreSQL. 
 
 ### Demo accounts
 
-<!-- TODO BE-32 (Nader): demo accounts -->
+Once `make` finishes, run `make seed` to load demo data (2 employers with companies and logos, 4 candidates with avatars, 20 open jobs across Abu Dhabi and Baku, applications across every status, friendships, direct conversations, and approved intro videos). It never runs automatically on startup and is safe to re-run (idempotent). Add `moderate=1` (`make seed moderate=1`) if `OPENAI_API_KEY` is set and you also want one pending sample video queued to the worker.
 
-Until demo accounts exist, create one as in step 4 above: sign up, read the verification email in Mailpit, follow the link, log in.
+All demo accounts share the same demo-only password: `WozuDemo2026!`
+
+| Role | Email | Notes |
+| --- | --- | --- |
+| Employer (Abu Dhabi) | `employer1@wozu.demo` | Owns **Falcon Robotics AE** (10 open jobs + 1 draft, applicant chats) |
+| Employer (Baku) | `employer2@wozu.demo` | Owns **Caspian Cloud Systems** (10 open jobs + 1 draft, hired candidate) |
+| Candidate | `candidate1@wozu.demo` | Full-Stack Engineer; Grade A posted pitch + rejected sample video, unread chats |
+| Candidate | `candidate2@wozu.demo` | DevOps & SRE Specialist; Grade A posted pitch, hired & incoming friend request |
+| Candidate | `candidate3@wozu.demo` | Product Designer; Grade B posted pitch, shortlisted application |
+| Candidate | `candidate4@wozu.demo` | Junior Backend Developer; Grade B posted pitch, submitted & rejected applications |
+
+To wipe all app rows/media and re-seed from scratch at any time, run `make reset-demo`.
 
 ### Tests and checks
 
@@ -90,6 +101,8 @@ Until demo accounts exist, create one as in step 4 above: sign up, read the veri
 | `make down` | Stops the stack. | Containers and the network. **Keeps** the data volumes, `.env` and the certificate. The Mailpit inbox is lost (it lives in its container). |
 | `make logs` | Follows the last 100 log lines of every service; `make logs s=api` follows one. Ctrl-C stops following, the stack keeps running. | Nothing. |
 | `make logs-reset` | Empties the logs by removing stopped containers and recreating the running ones. | Logs and the Mailpit inbox. **Keeps** the data volumes. Meant to be run at least weekly, so logs stay at most 30 days. |
+| `make seed` | Loads demo users, companies, 20 open jobs, applications, friendships, chats and approved pitch videos (idempotent). | Nothing (keeps existing data). |
+| `make reset-demo` | Truncates app tables, deletes uploaded/seeded objects and re-runs `make seed`. | All database rows and bucket files in MinIO. **Keeps** `.env`, secrets and metrics. |
 | `make fclean` | Full clean-up. | **All data**: containers, the volumes (database, Redis, files and videos in MinIO, Prometheus metrics, Grafana), the images built here (and the frontend test image) and the certificate in `infra/proxy/certs/`. **Keeps** `.env`, because the next database volume is created with the secrets in it, and downloaded base images. |
 | `make re` | `make fclean`, then `make`. | The same as `make fclean`, then a fresh start from scratch. |
 

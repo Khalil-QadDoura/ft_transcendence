@@ -23,7 +23,7 @@
   "aFreshStart": "YENİ BAŞLANĞIC",
   "chooseANewPassword": "Yeni şifrə seçin.",
   "yourResetLinkWorksOnceAfterResettingSignInAgain": "Sıfırlama keçidi bir dəfə işləyir. Sonra cihazlarınızda yenidən daxil olun.",
-  "thisResetLinkIsMissingItsTokenRequestANew": "Keçiddə sıfırlama nişanı yoxdur. Aşağıdan yeni keçid istəyin.",
+  "thisResetLinkIsMissingItsTokenRequestANew": "Keçiddə sıfırlama kodu yoxdur. Aşağıdan yeni keçid istəyin.",
   "requestANewResetLink": "Yeni sıfırlama keçidi istə",
   "yourAccountYourChoice": "HESABINIZ, SEÇİMİNİZ",
   "accountSettings": "Hesab ayarları.",

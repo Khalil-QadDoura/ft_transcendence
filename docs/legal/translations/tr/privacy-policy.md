@@ -1,6 +1,6 @@
 # Gizlilik Politikası
 
-Last updated: 2026-11-17
+Last updated: 2026-11-19
 
 Bu politika WOZU Web'in hangi kişisel verileri topladığını, neden topladığını, kimlerin görebildiğini, ne kadar sakladığımızı ve bunlarla ilgili neler yapabileceğinizi açıklar. Bu hizmet için sade bir dille yazılmıştır. Anlaşılmayan bir konu varsa yazın: burhan.hajili@gmail.com.
 
@@ -59,7 +59,7 @@ Bu politikaya Kişisel Verilerin Korunması Kanunu (2021 tarihli 45 sayılı Fed
 
 ### Teknik veriler
 
-- Hizmetin teknik kayıtları: isteğin zamanı, çağrılan sayfa veya API, sonuç, istek kimliği ve IP adresiniz. IP adresleri ön vekilin erişim kayıtlarında görünür. Kayıtlar en fazla 30 gün tutulur.
+- Hizmetin teknik kayıtları: isteğin zamanı, çağrılan sayfa veya API, sonuç, istek kimliği ve IP adresiniz. IP adresleri ön proxy sunucusuin erişim kayıtlarında görünür. Kayıtlar en fazla 30 gün tutulur.
 - Hizmetin çalışmasına ilişkin ölçümler (örneğin istek ve hata sayıları). Bunlar içeriğinizi içermez.
 - IP adresiniz, tekrarlanan giriş denemeleri gibi yinelenen istekleri sınırlamak için de kullanılır. Bu sayaçlar yalnızca kısa süreliğine sunucu belleğinde tutulur.
 
@@ -118,7 +118,7 @@ Verilerinizi satmayız ve reklam amacıyla paylaşmayız. Yukarıdaki hizmetler 
 - Hesap, profil, video, başvuru ve sohbetlerinizi siz bunları veya hesabınızı silene kadar tutarız.
 - Hesap silme iki aşamada gerçekleşir. Önce hemen: hesabınız devre dışı kalır, giriş yapamazsınız, tüm oturumlarınız kapanır, profiliniz, videolarınız ve iş ilanlarınız herkesten gizlenir; avatarınız ve şirket logonuz artık herkese açık olmaz (avatar veya logo değiştirildiğinde eski dosya hemen silinir). İkinci olarak 30 gün sonra otomatik bir görev hesabı anonimleştirir. E-posta, ad, doğum tarihi ve biyografi silinir veya değiştirilir; avatar, logo ve video dosyaları depolamadan silinir. Başvurular ve oyun kayıtları yalnızca anonim biçimde kalır. Önceden gönderdiğiniz sohbet mesajları alıcılarında «Silinmiş kullanıcı» adıyla görünmeye devam eder.
 - Bu 30 gün boyunca verileri yalnızca uyuşmazlıklar, kötüye kullanım bildirimleri ve hukuki talepler için tutarız; yalnızca ekip erişebilir. Hesabınıza ilişkin açık şikâyet veya uyuşmazlık varsa gereken verileri sonuçlanana kadar saklarız. Silinen veriler daha sonra yedekte en fazla 7 gün daha kalabilir. Hesabınızı silmeden önce tek bir videoyu kendiniz de silebilirsiniz.
-- Yedekler 7 gün tutulur, sonra üzerlerine yazılır.
+- Yedekler en fazla 7 gün tutulur, sonra silinir.
 - IP adreslerini içeren sunucu kayıtları ve hizmet ölçümleri en fazla 30 gün tutulur.
 
 Tarayıcınız ile WOZU Web arasındaki bağlantılar HTTPS kullanır. Videolar kısa ömürlü bağlantılarla açılır. Parolalar özet olarak saklanır. Aynı adresten tekrarlanan istekler sonrasında hizmet bir süre yeni istekleri reddeder.

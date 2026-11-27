@@ -65,17 +65,33 @@ Main `ea2c031` (including approved #90, #91 and #92) is integrated. The catalog 
 ## Acceptance still pending
 
 1. Fluent speakers/content owner must review the new translations. The legal texts are now implemented, but approval is not implied by structural tests. Record actual reviewers below. Hide incomplete languages at code freeze as the card requires.
-2. Account persistence remains local until the backend contract is agreed and implemented. See [the proposal sent to Khalil](language-preference-contract.md). No unsupported PATCH calls were added.
+2. Khalil confirmed browser-only persistence is sufficient for the defense in his review of 0c34871. Account persistence is deferred until after defense; see [the follow-up proposal](language-preference-contract.md). No unsupported PATCH calls were added.
 3. No current namespace is exempt from translation checks. Incoming game-room and employer-applications changes must add their new keys and receive a layout pass when they land; their pending PRs are not covered by the current catalogs.
 4. The fresh public-page and authenticated-page render-fixture checks above do not replace real authenticated backend walkthroughs or fluent/content review. Older November 22 screenshots remain dated historical evidence.
 5. Khalil's fresh review and current-head green CI are merge gates. These cards are not Done.
 
-| Language    | Fluent reviewer | Status  |
-| ----------- | --------------- | ------- |
-| Arabic      | Unassigned      | Pending |
-| Azerbaijani | Unassigned      | Pending |
-| Turkish     | Unassigned      | Pending |
-| Russian     | Unassigned      | Pending |
+| Language    | Fluent reviewer | Status                                                                                       |
+| ----------- | --------------- | -------------------------------------------------------------------------------------------- |
+| Arabic      | Unassigned      | Pending                                                                                      |
+| Azerbaijani | byul-byul       | UI reviewed at 0c34871; requested corrections applied November 26; legal full review pending |
+| Turkish     | byul-byul       | UI reviewed at 0c34871; requested corrections applied November 26; legal full review pending |
+| Russian     | byul-byul       | UI reviewed at 0c34871; requested corrections applied November 26; legal full review pending |
+
+## November 26 review corrections
+
+Integrated main e2af257, including the canonical November 19 privacy update. All
+four privacy translations now state a maximum seven-day backup retention followed
+by deletion. Source hashes and packaged copies match. Legal content remains
+explicitly review-pending; structural validation is not legal approval.
+
+Applied Burhan's requested AZ/RU/TR corrections, including number-independent
+Azerbaijani pagination, matching game-start labels, Russian Discover wording,
+password/token terminology and recorder labels. His UI review does not claim a
+line-by-line legal translation review. Arabic fluent review is still pending.
+
+Validation on the integrated source: 336 frontend tests, legal and catalog checks,
+lint, typecheck and production build passed. The existing bundle-size warning
+remains. No new cross-browser or live-backend walkthrough is claimed here.
 
 ## Adding or changing copy
 

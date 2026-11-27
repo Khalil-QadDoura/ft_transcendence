@@ -1,6 +1,6 @@
 # Məxfilik siyasəti
 
-Last updated: 2026-11-17
+Last updated: 2026-11-19
 
 Bu siyasət WOZU Web-in hansı şəxsi məlumatları topladığını, nə üçün topladığını, onları kimin görə bildiyini, nə qədər saxladığımızı və bununla bağlı nə edə biləcəyinizi izah edir. Onu bu xidmət üçün sadə dillə yazmışıq. Aydın olmayan məqam varsa, yazın: burhan.hajili@gmail.com.
 
@@ -118,7 +118,7 @@ Məlumatlarınızı satmırıq, reklam üçün paylaşmırıq. Yuxarıdakı xidm
 - Hesab, profil, video, müraciət və söhbətləri onları və ya hesabı silənə qədər saxlayırıq.
 - Hesab iki mərhələdə silinir. Əvvəlcə dərhal: hesab deaktiv edilir, giriş mümkün olmur, bütün sessiyalar bitir, profil, video və vakansiyalar hamıdan gizlədilir, profil şəkliniz və şirkət loqosu artıq açıq olmur (şəkil və ya loqo dəyişdiriləndə köhnə fayl dərhal silinir). Sonra, 30 gün keçdikdə avtomatik tapşırıq hesabı anonimləşdirir. E-poçt, ad, doğum tarixi və bioqrafiya silinir və ya əvəzlənir, profil şəkli, loqo və video faylları saxlama sistemindən silinir. Müraciətlər və oyun qeydləri yalnız anonim formada qalır. Əvvəl göndərdiyiniz söhbət mesajları alıcılara «Silinmiş istifadəçi» adı ilə görünməyə davam edir.
 - Bu 30 gün ərzində məlumatlar yalnız mübahisələr, sui-istifadə bildirişləri və hüquqi iddialar üçün saxlanılır və yalnız komanda çıxış əldə edir. Hesab haqqında açıq şikayət və ya mübahisə varsa, ona lazım olan məlumatlar həll edilənədək saxlanılır. Silinmiş məlumatlar sonra ehtiyat nüsxədə ən çox daha 7 gün qala bilər. Hesabı silənədək ayrıca videonu özünüz də silə bilərsiniz.
-- Ehtiyat nüsxələr 7 gün saxlanılır, sonra üzərinə yenisi yazılır.
+- Ehtiyat nüsxələr ən çoxu 7 gün saxlanılır, sonra silinir.
 - IP ünvanları olan server jurnalları və xidmət göstəriciləri ən çox 30 gün saxlanılır.
 
 Brauzer ilə WOZU Web arasındakı bağlantılar HTTPS istifadə edir. Videolar qısamüddətli keçidlərlə açılır. Şifrələr heş şəklində saxlanılır. Bir ünvandan təkrar sorğular olduqda xidmət bir müddət sonrakı sorğuları rədd edir.

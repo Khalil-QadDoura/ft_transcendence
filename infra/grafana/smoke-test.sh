@@ -20,6 +20,11 @@
 #   variable such as $project replaced by its current value from the dashboard JSON, the
 #   value the browser opens with; that value must be one the variable's own query offers,
 #   or the browser would show another), and Grafana refuses to delete them;
+# - alerts (INF-10): the "Firing alerts" panel of wozu-infra returns exactly one series
+#   (count(ALERTS{alertstate="firing"}) or vector(0); its last value is printed), and
+#   Grafana's rules API for the datasource uid prometheus
+#   (/api/prometheus/prometheus/api/v1/rules, what Alerting > Alert rules lists as data
+#   source-managed rules) lists exactly the five alert rules of infra/prometheus/alerts.yml;
 # - Grafana Live (WebSocket) answers 101 through the proxy at /grafana/api/live/ws;
 # - a login with a wrong password is refused (401).
 # Logs in as admin with Basic auth. The password is read from the running container
@@ -116,6 +121,10 @@ SETTINGS = [
 ]
 # Grafana's own JSON answers when snapshots and public dashboards are off (Grafana 13.3.1).
 SNAPSHOTS_REFUSAL = "Dashboard Snapshots are disabled"
+# Alerts (INF-10): the panel on the infrastructure dashboard and the rules Prometheus
+# evaluates (infra/prometheus/alerts.yml), as Grafana lists them for the datasource.
+ALERTS_PANEL = ("wozu-infra", "Firing alerts")
+ALERT_RULES = ["RedisDown", "TargetDown", "ApiHighErrorRate", "ApiHighLatencyP95", "MonitoringDiskAlmostFull"]
 PUBLIC_DASHBOARDS_REFUSAL = "Not found"
 TLS =ssl.create_default_context(cafile=ca)
 
@@ -394,6 +403,48 @@ def check_dashboards():
     return results
 
 
+def check_alerts():
+    """The Firing alerts panel returns one series; Grafana lists the Prometheus alert rules."""
+    results = []
+    uid, title = ALERTS_PANEL
+    status, _, text = http("GET", f"/api/dashboards/uid/{uid}", auth=ADMIN)
+    dashboard = (as_json(text) or {}).get("dashboard", {}) if status == 200 else {}
+    panels = [p for p in dashboard.get("panels", []) if p.get("title") == title]
+    targets = panels[0].get("targets", []) if panels else []
+    if not panels or len(targets) != 1:
+        results.append((False, f"{uid} / {title}: " + ("no such panel" if not panels else
+                                                       f"{len(targets)} queries, expected 1")))
+    else:
+        target = targets[0]
+        ref = target.get("refId", "A")
+        query = {"refId": ref, "datasource": {"type": "prometheus", "uid": DATASOURCE["uid"]},
+                 "expr": target.get("expr", ""), "range": True, "instant": False,
+                 "intervalMs": 15000, "maxDataPoints": 100}
+        status, _, text = http("POST", "/api/ds/query", auth=ADMIN,
+                               body={"queries": [query], "from": "now-15m", "to": "now"})
+        answer = as_json(text) or {}
+        frames = answer.get("results", {}).get(ref, {}).get("frames", []) if status == 200 else []
+        count = series_count(answer, ref) if status == 200 else 0
+        last = None
+        if count == 1:
+            values = [f for f in frames if len(f.get("data", {}).get("values", [])) >= 2][0]["data"]["values"]
+            last = values[1][-1] if values[1] else None
+        error = answer.get("results", {}).get(ref, {}).get("error") or answer.get("message")
+        results.append((count == 1 and last is not None,
+                        f"{uid} / {title}: {count} series (expected exactly 1)"
+                        + (f", firing now: {last:g}" if last is not None else "")
+                        + (f" ({status} {error})" if count != 1 and error else "")))
+    status, _, text = http("GET", f"/api/prometheus/{DATASOURCE['uid']}/api/v1/rules", auth=ADMIN)
+    answer = as_json(text) or {}
+    groups = (answer.get("data") or {}).get("groups", []) if status == 200 else []
+    listed = sorted(r.get("name") for g in groups for r in g.get("rules", []) if r.get("type") == "alerting")
+    results.append((listed == sorted(ALERT_RULES),
+                    f"GET /grafana/api/prometheus/{DATASOURCE['uid']}/api/v1/rules: {status}, "
+                    f"{len(listed)} alert rules ({', '.join(listed) or 'none'})"
+                    + ("" if listed == sorted(ALERT_RULES) else f"; expected {', '.join(sorted(ALERT_RULES))}")))
+    return results
+
+
 def check_delete_refused():
     results = []
     for uid in DASHBOARDS:
@@ -441,7 +492,7 @@ def check_live():
 def run_all():
     results = []
     for check in (check_entry, check_health, check_access, check_datasource, check_dashboards,
-                  check_delete_refused, check_live):
+                  check_alerts, check_delete_refused, check_live):
         results.extend(check())
     return results
 

@@ -87,6 +87,8 @@ services:
       - "${HTTPS_PORT:-443}:8443"
     volumes:
       - ./infra/proxy/templates/conf.d/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
+      # The access log without tokens (QA-01): replaces the image's own logging template.
+      - ./infra/proxy/templates/conf.d/logging.conf.template:/etc/nginx/templates/conf.d/logging.conf.template:ro
       # Created by infra/proxy/scripts/gen-cert.sh (`make up` runs it first).
       - ./infra/proxy/certs:/etc/nginx/conf:ro
     depends_on:
@@ -160,7 +162,8 @@ services:
     build:
       context: ./backend
       target: worker
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "-B", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO"]
+    # Celery starts one process per CPU by default (10 on a 10-core Mac, about 580 MiB); two are enough for video moderation here and save memory (177 MiB).
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--concurrency=2", "-B", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO"]
     environment:
       <<: *backend-env
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -279,6 +282,51 @@ services:
     restart: "no"
     logging: *logging
 
+  # Daily backups (INF-14, module M14): a pg_dump of POSTGRES_DB and a full mc mirror of
+  # the bucket, once a day at BACKUP_TIME in Asia/Dubai, plus one at start when the newest
+  # database copy is 24 h old or more, or missing (a restart within 24 h adds none). After
+  # each run, copies older than BACKUP_MAX_AGE_DAYS are deleted, then at most the newest
+  # BACKUP_KEEP of each kind stay on the `backups` volume. Starts once the api is healthy,
+  # so the migrations have run before a dump. `make backup` runs one now, `make restore BACKUP=<timestamp|latest>` puts one back (INF-15); see
+  # infra/backup/backup.sh and docs/disaster-recovery.md. A loop, not cron: no daemon,
+  # non-root (uid 10002). Credentials from .env as for the other services until INF-13.
+  # The image derives from the db image, which declares VOLUME /var/lib/postgresql/data; a
+  # tmpfs takes that place, so no anonymous volume is left behind (as for redis-test).
+  # No port and no proxy route: the copies are reachable only from inside this container.
+  # Health: the loop touches /tmp/heartbeat every minute; healthy while it is younger than
+  # 3 minutes (a hung loop turns unhealthy).
+  backup:
+    build:
+      context: ./infra/backup
+    environment:
+      TZ: Asia/Dubai
+      BACKUP_TIME: ${BACKUP_TIME:-03:00}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      BACKUP_MAX_AGE_DAYS: ${BACKUP_MAX_AGE_DAYS:-7}
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    volumes:
+      - backups:/backups
+    tmpfs:
+      - /var/lib/postgresql/data
+    depends_on:
+      db:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/heartbeat) )) -lt 180"]
+    restart: unless-stopped
+    logging: *logging
+
   # Catches every outgoing email. SMTP on mailpit:1025, web inbox at /mail via the proxy.
   # Health: the binary's own `readyz` subcommand (also the image's built-in check).
   mailpit:
@@ -294,7 +342,8 @@ services:
   # Monitoring (INF-08, module M12). Prometheus pulls /metrics from the api and the exporters
   # every 15 s (infra/prometheus/prometheus.yml). No host port, no proxy route: only the
   # Docker network reaches it (Grafana, INF-09). It needs no other service to start; a
-  # target that is not up yet shows as down until the next scrape.
+  # target that is not up yet shows as down until the next scrape. Alert rules (INF-10):
+  # infra/prometheus/alerts.yml, evaluated by Prometheus itself; no Alertmanager.
   # Retention (PO decision 2026-11-12): metrics are kept at most 30 days and the TSDB is
   # capped at 1 GB, whichever comes first, as the Privacy Policy says (logs and metrics
   # kept at most 30 days, since #38). The command replaces the image's default
@@ -309,6 +358,10 @@ services:
       - --storage.tsdb.retention.size=1GB
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Alert rules (INF-10) and their unit tests, which `make metrics-check` runs with the
+      # image's promtool.
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./infra/prometheus/alerts.test.yml:/etc/prometheus/alerts.test.yml:ro
       - prometheus-data:/prometheus
     healthcheck:
       <<: *healthcheck
@@ -448,9 +501,48 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # Secrets store (INF-12, module M13): HashiCorp Vault in server mode, never dev mode, with
+  # file storage on the volume vault-data; configuration in infra/vault/vault.hcl. No host
+  # port, no proxy route: only the Docker network reaches it, and nothing reads it before
+  # INF-13. Vault starts sealed every time this container starts. `make` starts this service
+  # first and runs scripts/vault-init.sh before the rest of the stack: it initializes Vault
+  # once (key shares and root token in the Git-ignored scripts/vault-keys.local), unseals it
+  # and applies the audit device, KV v2, AppRole and the policies (docs/infra/vault.md).
+  # The image runs Vault as its own user (uid 100), not root. mlock stays on, so keys and
+  # secrets in memory never go to swap: Vault locks all its memory at start and stops if it
+  # cannot. Since Vault 2.0.2 the binary carries no file capability, so IPC_LOCK (kept, as
+  # decided) never reaches the non-root process; the memlock limit, raised to unlimited
+  # here, is what lets it lock its memory (with 8 MB, a common Linux default, it fails to
+  # start). Rootless Docker cannot raise it; see docs/infra/vault.md.
+  # The command is the full `vault server -config=...`: the image's entrypoint turns a bare
+  # `server` into one with -dev-* flags that reads the whole /vault/config directory.
+  # Health: `vault status` exits 0 when unsealed, 2 when sealed and 1 when Vault does not
+  # answer. Sealed counts as healthy (the server runs; vault-init.sh unseals it), so that
+  # `make` can wait for it before unsealing.
+  vault:
+    image: hashicorp/vault:2.2.2@sha256:dfa48c2fa2b0099ccb47681ec5c4804bf5aec9d6879ecfee07ad4b92a5427ad6
+    command: ["vault", "server", "-config=/vault/config/vault.hcl"]
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+    ulimits:
+      memlock: -1
+    volumes:
+      - ./infra/vault/vault.hcl:/vault/config/vault.hcl:ro
+      - vault-data:/vault/file
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "vault status >/dev/null 2>&1; s=$$?; [ $$s -eq 0 ] || [ $$s -eq 2 ]"]
+    restart: unless-stopped
+    logging: *logging
+
 volumes:
   db-data:
   redis-data:
   minio-data:
   prometheus-data:
   grafana-data:
+  vault-data:
+  # Backup copies (INF-14); only the backup service mounts it. `make fclean` removes it too.
+  backups:

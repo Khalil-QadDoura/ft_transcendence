@@ -1,35 +1,56 @@
 # One command from a fresh clone to a running site: `make`.
 # Everything runs in containers; the host needs Docker Engine 25+ (health checks use
-# start_interval, which Engine 24 refuses) with compose v2, make, bash and openssl.
-# The checks against the running stack (https-check, files-check, mail-check, metrics-check,
-# grafana-check) also use curl, and metrics-check and grafana-check python3 3.9+ (macOS
-# command line tools; the ubuntu runner).
+# start_interval, which Engine 24 refuses) with compose v2, make, bash, openssl and python3
+# 3.9+ (scripts/vault-init.sh reads Vault's JSON answers with it; macOS command line tools,
+# the ubuntu runner). The checks against the running stack (https-check, files-check,
+# mail-check, metrics-check, grafana-check) also use curl; metrics-check, grafana-check and
+# vault-check use python3 too.
 
 COMPOSE := docker compose
 # Every profile, so down and fclean also reach services with profiles (api-test, redis-test).
 COMPOSE_ALL := $(COMPOSE) --profile '*'
+# Named after the compose project (wozu, or COMPOSE_PROJECT_NAME), so projects never share it (QA-01).
+FRONTEND_TEST_IMAGE = $(or $(shell $(COMPOSE) config --no-interpolate 2>/dev/null | sed -n '1s/^name: //p'),wozu)-frontend-test
 # Optional: `make logs s=api` follows one service.
 s ?=
 # Optional: `make anonymise-deleted days=0` anonymises every deleted account at once.
 days ?=
+# Optional: `make seed moderate=1` also uploads one pending sample video for live worker moderation.
+moderate ?=
+# `make restore BACKUP=<timestamp|latest>`; RESTORE_YES=1 skips the question (INF-15).
+BACKUP ?=
+RESTORE_YES ?=
 
-.PHONY: all env certs up down logs logs-reset test https-check images-check secrets-check files-check \
-	mail-check metrics-check grafana-check schema-diagram anonymise-deleted fclean re
+.PHONY: all env ports certs up down logs logs-reset test https-check images-check secrets-check files-check \
+	mail-check metrics-check grafana-check schema-diagram anonymise-deleted seed reset-demo \
+	alert-demo vault-init vault-check backup backup-list backup-check restore fclean re
 
-all: env up
+all: env ports up
 
 # Creates .env with random secrets when it is missing. An existing one keeps every line and
 # gets only the keys .env.example has and it lacks (INF-09); the names are printed, not values.
 env:
 	@./scripts/init-env.sh
 
+# HTTPS_PORT / HTTP_PORT given in the shell go into .env, the port into the public URLs (QA-01).
+ports: env
+	@./scripts/ports.sh
+
 # Self-signed certificate for the proxy; keeps an existing pair.
 certs:
 	@./infra/proxy/scripts/gen-cert.sh
 
+# Vault first (INF-12): the vault service alone, then scripts/vault-init.sh initializes it on
+# the first run, unseals it after every start and applies its configuration; one line when
+# there is nothing to do. The key shares and the root token stay in scripts/vault-keys.local
+# (Git-ignored, mode 600); nothing secret is printed. See docs/infra/vault.md.
+vault-init: env
+	@$(COMPOSE) up -d --wait --wait-timeout 120 vault
+	@./scripts/vault-init.sh
+
 # --wait returns once every service is running (healthy where it has a health check),
 # and fails if one of them exits.
-up: env certs
+up: env certs vault-init
 	$(COMPOSE) up -d --build --wait --wait-timeout 300
 	@port=$$(sed -n 's/^HTTPS_PORT=//p' .env); \
 	if [ -z "$$port" ] || [ "$$port" = 443 ]; then url=https://localhost/; else url=https://localhost:$$port/; fi; \
@@ -51,6 +72,8 @@ logs:
 # runs again as the api's). Mailpit keeps its inbox inside its container, so the inbox is
 # emptied too. Logs are kept at most 30 days (Privacy Policy, PO decision 2026-11-13); the
 # operator runs this at least weekly, see "Logs and retention" in docs/infra/infrastructure.md.
+# Vault's audit log is its container log too. A new vault container starts sealed, so
+# scripts/vault-init.sh unseals it again (INF-12).
 logs-reset:
 	@running="$$($(COMPOSE_ALL) ps --services --status running | sort | tr '\n' ' ')"; \
 	stopped="$$($(COMPOSE_ALL) ps --services --status exited --status created --status dead \
@@ -60,6 +83,7 @@ logs-reset:
 	if [ -n "$$running" ]; then \
 		$(COMPOSE_ALL) up -d --force-recreate --wait --wait-timeout 300 $$running || exit 1; \
 	fi; \
+	case " $$running" in *" vault "*) ./scripts/vault-init.sh || exit 1 ;; esac; \
 	echo "logs-reset: stopped containers removed: $${stopped:-none}"; \
 	echo "logs-reset: recreated with empty logs: $${running:-none}"
 
@@ -97,8 +121,8 @@ test: env
 		skipped = sum(int(suite.get(\"skipped\", \"0\")) for suite in suites); \
 		sys.exit(f\"{skipped} tests skipped; make test must run every backend test, as CI\" \
 		if skipped else 0)"'
-	docker build -q --target build -t wozu-frontend-test ./frontend
-	docker run --rm wozu-frontend-test \
+	docker build -q --target build -t $(FRONTEND_TEST_IMAGE) ./frontend
+	docker run --rm $(FRONTEND_TEST_IMAGE) \
 		sh -c 'npm run lint && npm run format:check && npm run typecheck && npm test'
 
 # Routes of the one HTTPS origin against the running stack: frontend with SPA fallback,
@@ -140,8 +164,10 @@ mail-check:
 # Monitoring against the running stack: every Prometheus target up (prometheus, api,
 # postgres, redis, cadvisor), one real series per source (pg_up, redis_up, the api
 # container's CPU and memory, the API's request counter) and the retention decided for
-# metrics (30d, 1GB). Queries Prometheus inside its container, which has no host port;
-# retries for up to 60 s (INF-08).
+# metrics (30d, 1GB) (INF-08); the alert rules: promtool check rules and promtool test rules
+# (infra/prometheus/alerts.yml, alerts.test.yml), and the five rules loaded, healthy,
+# evaluated every 15 s (INF-10). Queries Prometheus inside its container, which has no host
+# port; retries for up to 60 s.
 metrics-check:
 	@./infra/prometheus/smoke-test.sh
 
@@ -149,7 +175,9 @@ metrics-check:
 # the login on the public origin, health 200, no anonymous access or sign-up, the security
 # settings as decided (public dashboards and snapshots off among them), the
 # Prometheus datasource healthy, both dashboards in the folder WOZU with every panel query
-# returning data (dashboard variables at their saved value), deletion refused, Grafana Live (WebSocket) 101 and a
+# returning data (dashboard variables at their saved value), the Firing alerts panel with
+# one series and the five Prometheus alert rules listed by Grafana (INF-10), deletion
+# refused, Grafana Live (WebSocket) 101 and a
 # wrong password 401 (for the non-existent user grafana-check-nobody, so admin is never
 # locked, however often it runs). Logs in as admin with the password from the grafana
 # container, never printed; retries for up to 60 s (INF-09).
@@ -163,11 +191,73 @@ grafana-check:
 anonymise-deleted:
 	$(COMPOSE) exec -T worker python -m app.worker.tasks.anonymise $(if $(days),--older-than-days $(days))
 
-# Removes containers, volumes (database, files), images built here and the certificate.
+# Idempotently fills the running stack with demo accounts, companies, logos, avatars,
+# 20 open jobs across Abu Dhabi and Baku, applications, friendships, chats and approved
+# intro videos (BE-32). Safe to run repeatedly; never runs automatically on startup.
+seed:
+	$(COMPOSE) exec -T api python -m app.seed $(if $(moderate),--moderate)
+
+# Drops all app rows, clears seeded/uploaded media objects and transient Redis keys, then
+# re-runs `make seed` from scratch (BE-32).
+reset-demo:
+	$(COMPOSE) exec -T api python -m app.seed --reset $(if $(moderate),--moderate)
+
+# Live alert demo, manual only (not in CI): stops Redis, waits until the RedisDown alert
+# fires (prints the seconds; fails after 120 s), keeps Redis down 25 s more so the Firing
+# alerts panel shows it (`ALERT_HOLD_SEC=0 make alert-demo` skips that), starts Redis again
+# and waits until the alert is resolved (fails after 120 s). Redis is started again however
+# it ends (INF-10).
+alert-demo:
+	@./infra/prometheus/alert-demo.sh
+
+# Vault against the running stack (INF-12): initialized and unsealed (3 key shares,
+# threshold 2), server mode with file storage, non-root with its memory locked, KV v2 at
+# secret/, AppRole with the roles api and worker, the policies as in infra/vault/policies/,
+# the audit device; then isolation with throwaway values and one-use AppRole logins (each
+# role reads its own path and gets 403 on the other role's path and on writing its own),
+# the audit log without these credentials in clear, everything removed again; the keys file
+# Git-ignored and untracked; no host port. Uses the root token from scripts/vault-keys.local,
+# never printed (docs/infra/vault.md).
+vault-check:
+	@./infra/vault/smoke-test.sh
+
+# One backup now, inside the running backup service (INF-14): a pg_dump of the app database
+# and a copy of the bucket, verified, then retention; prints what was written (status).
+backup:
+	@if [ -z "$$($(COMPOSE) ps -q --status running backup)" ]; then \
+		echo "backup: the backup service is not running; start the stack with make" >&2; exit 1; fi
+	$(COMPOSE) exec -T backup backup.sh run
+
+# The complete copies (database and files of the same run), newest first, with the
+# timestamps `make restore BACKUP=...` takes.
+backup-list:
+	$(COMPOSE) exec -T backup backup.sh list
+
+# Runs `make backup`, then: the newest dump valid with every app table, the newest files
+# copy with the bucket's object count and the same sha256 for one object, the catch-up
+# decision at start, retention as decided (none older than 7 days, at most 7 copies) on
+# test directories, the backups volume neither published nor reachable through the proxy
+# (INF-14).
+backup-check:
+	@./infra/backup/smoke-test.sh
+
+# Puts a backup back (INF-15): stops api and worker, restores the database (pg_restore)
+# and the bucket (mc mirror) of one run, then starts the stack with `make`. The restore
+# runs before the api starts, so its migrations never meet an empty database. Asks first,
+# unless RESTORE_YES=1. See docs/disaster-recovery.md.
+restore:
+	@BACKUP="$(BACKUP)" RESTORE_YES="$(RESTORE_YES)" ./infra/backup/restore.sh
+	@$(MAKE) --no-print-directory all
+	@./infra/backup/restore.sh --next-checks
+
+# Removes containers, volumes (database, files, Vault, backups), images built here and the certificate.
 # Keeps .env: it holds the hand-added OPENAI_API_KEY and matches the next database volume.
+# The Vault keys file belongs to the Vault just removed: it is moved aside to
+# scripts/vault-keys.local.stale-<UTC time>, as `make` does with a keys file whose Vault is gone.
 fclean:
 	$(COMPOSE_ALL) down -v --rmi local --remove-orphans
-	@docker image rm wozu-frontend-test >/dev/null 2>&1 || true
+	@./scripts/vault-init.sh --retire-keys
+	@docker image rm $(FRONTEND_TEST_IMAGE) >/dev/null 2>&1 || true
 	rm -rf infra/proxy/certs
 
 re: fclean

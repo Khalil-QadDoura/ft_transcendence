@@ -23,7 +23,7 @@
   "startHint": "2–4 katılımcı olduğunda kullanılabilir. İlk basış maçı odadaki herkes için başlatır.",
   "waitingForSecond": "Maçın başlaması için en az bir katılımcı daha bekleniyor.",
   "leaveRoom": "Bekleme odasından ayrıl",
-  "leavingRoom": "Ayrılınıyor…",
+  "leavingRoom": "Odadan çıkılıyor…",
   "leaveError": "Şu anda odadan ayrılamadık. Lütfen tekrar deneyin.",
   "startError": "Şu anda maçı başlatamadık. Lütfen tekrar deneyin."
 }

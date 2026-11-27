@@ -1,10 +1,12 @@
-# FE-07 account language — proposal awaiting backend agreement
+# FE-07 account language — deferred until after defense
 
 Owner: Zayid Elkahir, frontend. Backend owner/reviewer: Khalil.
 Proposed on November 23 in [PR #93](https://github.com/Khalil-QadDoura/ft_transcendence/pull/93#issuecomment-7100391111).
 
 Current behavior remains local storage plus `Accept-Language`. Khalil's review
-accepted that boundary temporarily. `UserOut` has no language field and
+confirmed that browser persistence is sufficient for the defense in his review of
+PR #93 at 0c34871. Account persistence is a follow-up, not a current merge blocker.
+`UserOut` has no language field and
 `UserUpdate` rejects extra fields; the frontend must not send a speculative PATCH.
 
 ## Proposed API
