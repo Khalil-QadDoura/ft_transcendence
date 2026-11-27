@@ -1,3 +1,5 @@
+import { localizeMessage } from "../../i18n/copy";
+import { activeLanguage } from "../../i18n";
 import React, { useState } from "react";
 import { useText } from "../../i18n/useText";
 import type { MessageItem } from "./types";
@@ -48,7 +50,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const formatTime = (dateStr: string) => {
     try {
       const d = new Date(dateStr);
-      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      return d.toLocaleTimeString(activeLanguage(), {
+        hour: "numeric",
+        minute: "2-digit",
+      });
     } catch {
       return "";
     }
@@ -99,10 +104,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         </span>
       )}
 
-      <div className="relative flex max-w-[85%] items-end space-x-2 sm:max-w-[70%]">
+      <div className="relative flex max-w-[85%] items-end gap-2 sm:max-w-[70%]">
         {/* Action toolbar for own message (hover) */}
         {isOwn && !isDeleted && !isEditing && (
-          <div className="mb-1 hidden items-center space-x-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 sm:flex">
+          <div className="mb-1 hidden items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 sm:flex">
             {canEdit && (
               <button
                 type="button"
@@ -168,7 +173,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           }`}
         >
           {isDeleted ? (
-            <div className="flex items-center space-x-1.5 py-0.5">
+            <div className="flex items-center gap-1.5 py-0.5">
               <svg
                 className="h-4 w-4 shrink-0 text-gray-400"
                 fill="none"
@@ -196,9 +201,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 autoFocus
               />
               {editError && (
-                <span className="text-xs text-danger">{editError}</span>
+                <span className="text-xs text-danger">
+                  {localizeMessage(
+                    "screens",
+                    editError ?? undefined,
+                    "chat.failedToEdit",
+                  )}
+                </span>
               )}
-              <div className="flex justify-end space-x-2">
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsEditing(false)}
@@ -231,7 +242,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
               {/* Message Meta Info: Timestamp, Edited badge, Status ticks */}
               <div
-                className={`mt-1 flex items-center justify-end space-x-1.5 text-[11px] ${
+                className={`mt-1 flex items-center justify-end gap-1.5 text-[11px] ${
                   isOwn ? "text-paper/70" : "text-ink-muted"
                 }`}
               >
@@ -256,7 +267,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                   <span
                     className="inline-flex items-center"
                     data-testid={`msg-status-${message.id}`}
-                    title={t("chat.statusTitle", { status: message.status })}
+                    title={t("chat.statusTitle", {
+                      status: t(
+                        {
+                          sent: "chat.statusSent",
+                          sending: "chat.statusSending",
+                          failed: "chat.statusFailed",
+                          delivered: "chat.statusDelivered",
+                          read: "chat.statusRead",
+                        }[message.status] ?? "chat.statusSent",
+                      ),
+                    })}
                   >
                     {message.status === "sending" && (
                       <svg
@@ -307,7 +328,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                       <button
                         type="button"
                         onClick={() => onRetry?.(message)}
-                        className="inline-flex items-center space-x-1 text-red-200 hover:text-white"
+                        className="inline-flex items-center gap-1 text-red-200 hover:text-white"
                         title={t("chat.retrySendTitle")}
                         aria-label={t("chat.retrySendAria")}
                         data-testid={`retry-send-btn-${message.id}`}
@@ -338,7 +359,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       {/* Delete confirmation modal / prompt */}
       {confirmDelete && (
         <div
-          className="mt-1 flex items-center space-x-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/60 dark:text-red-300"
+          className="mt-1 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/60 dark:text-red-300"
           data-testid={`delete-confirm-prompt-${message.id}`}
         >
           <span>{t("chat.deleteMessageConfirm")}</span>

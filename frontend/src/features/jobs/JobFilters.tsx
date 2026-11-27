@@ -1,3 +1,4 @@
+import { localizeMessage } from "../../i18n/copy";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
@@ -298,7 +299,11 @@ export function JobFilters({
 
             {locationError && (
               <span className="text-danger text-xs font-medium" role="alert">
-                {locationError}
+                {localizeMessage(
+                  "screens",
+                  locationError ?? undefined,
+                  "jobs.locationUnavailable",
+                )}
               </span>
             )}
           </div>

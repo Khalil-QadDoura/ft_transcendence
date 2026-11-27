@@ -179,7 +179,9 @@
     "locationPermissionDenied": "Location permission was denied",
     "locationUnavailable": "Unable to retrieve your current location",
     "failedToLoadJobs": "Failed to load open jobs. Please try again.",
-    "failedToLoadMore": "Failed to load more jobs."
+    "failedToLoadMore": "Failed to load more jobs.",
+    "showingRoles_one": "Showing {{count, number}} open role",
+    "showingRoles_other": "Showing {{count, number}} open roles"
   },
   "media": {
     "recorderTitle": "Video Resume Recorder",
@@ -217,7 +219,7 @@
     "postToFeed": "Post to Feed",
     "delete": "Delete",
     "noVideoYet": "No video résumé yet",
-    "noVideoDesc": "Companies receive dozens of identical text CVs. A short 30-second video introduction dramatically increases your interview callback rate.",
+    "noVideoDesc": "Companies receive many similar CVs. A short video introduction can help you stand out and get an interview.",
     "recordVideoNow": "Record Your Video Now",
     "tip1Title": "1. Good Lighting & Sound",
     "tip1Desc": "Face a window or lamp, position your camera at eye level, and ensure minimal background noise.",
@@ -227,15 +229,16 @@
     "tip3Desc": "Speak naturally like you're talking to a future colleague. You can retake as many times as you like before submitting!",
     "approved": "Approved",
     "inReview": "In Review",
-    "needsAttention": "Needs Attention"
+    "needsAttention": "Needs Attention",
+    "deleteConfirm": "Are you sure you want to delete this video résumé?"
   },
   "chat": {
     "appliedFor": "Applied for: {{job}}",
     "conversationFallback": "Conversation #{{id}}",
     "conversationThreadTitle": "Conversation Thread",
-    "conversationThreadDesc": "Connected via WebSocket. Live message history and interactive messaging thread ready.",
+    "conversationThreadDesc": "Live message history and messaging are ready.",
     "selectConversation": "Select a conversation",
-    "selectConversationDesc": "Choose a chat from the left sidebar to view messages and reply in real time.",
+    "selectConversationDesc": "Choose a chat from the conversation list to view messages and reply in real time.",
     "messages": "Messages",
     "unreadCount": "{{count}} unread",
     "searchPlaceholder": "Search conversations...",
@@ -282,6 +285,12 @@
     "sendMessageAria": "Send message",
     "charsRemaining": "{{count}} chars remaining",
     "failedToEdit": "Failed to edit message",
-    "failedToLoadMessages": "Failed to load messages."
+    "failedToLoadMessages": "Failed to load messages.",
+    "unreadCount_one": "{{count, number}} unread",
+    "unreadCount_other": "{{count, number}} unread",
+    "charsRemaining_one": "{{count, number}} character remaining",
+    "charsRemaining_other": "{{count, number}} characters remaining",
+    "statusSending": "Sending",
+    "statusFailed": "Failed"
   }
 }

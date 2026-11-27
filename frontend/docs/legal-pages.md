@@ -1,5 +1,12 @@
 # FE-13: public legal pages
 
+> November 23 FE-07 follow-up: complete AR/AZ/TR/RU reading translations now render
+> with the selected locale, Arabic document direction and an English-original
+> toggle. Content-owner/fluent-speaker review remains pending. See
+> `docs/legal/translations/README.md` at repository root for source-hash validation
+> and the canonical/packaged update process. The earlier English-only behavior
+> described below is historical.
+
 Owner: Zayid. [Card](https://trello.com/c/aOmFEclw).
 
 `/privacy` and `/terms` are public routes inside the common layout. They render the approved DOC-01/DOC-02 Markdown with react-markdown, preserving the source update date. A section index links to stable document-line anchors. Raw HTML is skipped and the renderer's safe URL handling is retained. No user text is injected as HTML.

@@ -1,3 +1,4 @@
+import { localizeMessage } from "../../i18n/copy";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { Spinner } from "../../components/Spinner";
@@ -275,7 +276,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
           </p>
         </div>
         {state === "recording" && (
-          <div className="flex items-center space-x-2 text-red-600 dark:text-red-400">
+          <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
             <span className="relative flex h-3 w-3">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
               <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500"></span>
@@ -378,7 +379,11 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
               className="mb-4 max-w-sm text-sm text-red-200"
               data-testid="error-message"
             >
-              {errorMessage || t("media.errorDefault")}
+              {localizeMessage(
+                "screens",
+                errorMessage ?? undefined,
+                recordedBlob ? "media.uploadFailed" : "media.errorDefault",
+              ) || t("media.errorDefault")}
             </p>
             <Button
               onClick={startCamera}
@@ -444,13 +449,17 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
       {/* Error alert when in error state while video is visible */}
       {state === "error" && errorMessage && mediaStream && (
         <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300">
-          {errorMessage}
+          {localizeMessage(
+            "screens",
+            errorMessage ?? undefined,
+            "media.uploadFailed",
+          )}
         </div>
       )}
 
       {/* Control Buttons Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           {onCancel && state !== "uploading" && (
             <Button
               onClick={onCancel}
@@ -462,7 +471,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({
           )}
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           {state === "ready" && (
             <Button
               onClick={startRecording}

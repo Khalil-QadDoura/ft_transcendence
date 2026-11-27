@@ -1,4 +1,7 @@
-import copy from "./copy.en.json";
+import { useTranslation } from "react-i18next";
+import sourceCopy from "../../i18n/en/auth.json";
+import { translatedCopy } from "../../i18n/copy";
+const copy = translatedCopy("auth", sourceCopy);
 import {
   createContext,
   useCallback,
@@ -18,6 +21,7 @@ export function AuthProvider({
   children,
   client = gateway,
 }: PropsWithChildren<{ client?: AuthGateway }>) {
+  useTranslation("auth");
   const queries = useQueryClient();
   const [retry, setRetry] = useState(0);
   const [restoreFailed, setRestoreFailed] = useState(false);

@@ -1,26 +1,6 @@
-import employer from "./en/employer.json";
-import company from "./en/company.json";
-import game from "./en/game.json";
-import people from "./en/people.json";
-import i18next from "i18next";
+import i18next, { type Resource } from "i18next";
 import { initReactI18next } from "react-i18next";
-import profile from "./en/profile.json";
-import screens from "./en/screens.json";
-import en from "./en/common.json";
-import ar from "./ar/common.json";
-import az from "./az/common.json";
-import tr from "./tr/common.json";
-import ru from "./ru/common.json";
-import statusEn from "./en/status.json";
-import statusAr from "./ar/status.json";
-import statusAz from "./az/status.json";
-import statusTr from "./tr/status.json";
-import statusRu from "./ru/status.json";
-import gameRulesEn from "./en/gameRules.json";
-import gameRulesAr from "./ar/gameRules.json";
-import gameRulesAz from "./az/gameRules.json";
-import gameRulesTr from "./tr/gameRules.json";
-import gameRulesRu from "./ru/gameRules.json";
+import { calendarDate } from "./date-format";
 
 export const languages = ["en", "ar", "az", "tr", "ru"] as const;
 export type Language = (typeof languages)[number];
@@ -57,40 +37,26 @@ function syncDocument(language: string) {
     /* Tab-only preference. */
   }
 }
+// Every namespace is checked by i18n:check and eagerly registered for instant switching.
+const resources: Resource = {};
+for (const [path, messages] of Object.entries(
+  import.meta.glob<Record<string, unknown>>("./*/*.json", {
+    eager: true,
+    import: "default",
+  }),
+)) {
+  const [, language, file] = path.split("/");
+  (resources[language] ??= {})[file.replace(".json", "")] = messages;
+}
+
 i18next.use(initReactI18next);
 void i18next.init({
   lng: initialLanguage(),
   fallbackLng: "en",
   supportedLngs: [...languages],
-  resources: {
-    en: {
-      common: en,
-      employer,
-      screens,
-      profile,
-      people,
-      company,
-      status: statusEn,
-      gameRules: gameRulesEn,
-      game,
-    },
-    ar: { common: ar, status: statusAr, gameRules: gameRulesAr },
-    az: { common: az, status: statusAz, gameRules: gameRulesAz },
-    tr: { common: tr, status: statusTr, gameRules: gameRulesTr },
-    ru: { common: ru, status: statusRu, gameRules: gameRulesRu },
-  },
+  resources,
   defaultNS: "common",
-  ns: [
-    "employer",
-    "common",
-    "screens",
-    "profile",
-    "people",
-    "company",
-    "status",
-    "gameRules",
-    "game",
-  ],
+  ns: Object.keys(resources.en),
   initAsync: false,
   interpolation: { escapeValue: false },
 });
@@ -101,5 +67,6 @@ export const formatNumber = (
   options?: Intl.NumberFormatOptions,
 ) => new Intl.NumberFormat(activeLanguage(), options).format(value);
 export const formatDate = (value: Date, options?: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat(activeLanguage(), options).format(value);
+  calendarDate(value, activeLanguage(), options);
 export default i18next;
+import "./rtl.css";

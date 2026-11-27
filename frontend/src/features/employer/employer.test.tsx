@@ -6,6 +6,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { employerApi, jobForm, type OwnedJob } from "./api";
 import { EmployerJobs } from "./EmployerJobs";
 import { ApiError } from "../../api/client";
+import i18n from "../../i18n";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 afterEach(() => vi.restoreAllMocks());
 const values = {
@@ -124,6 +125,32 @@ test("does not open another employer's job editor", async () => {
     expect(div.querySelector("form")).toBeNull();
   } finally {
     await close();
+  }
+});
+test("retranslates a failed deletion without closing the dialog or retrying it", async () => {
+  vi.spyOn(employerApi, "list").mockResolvedValue([job]);
+  const remove = vi
+    .spyOn(employerApi, "remove")
+    .mockRejectedValue(new Error("offline"));
+  const { div, close } = await mount();
+  try {
+    await click(div, "Delete");
+    await click(div.querySelector('[role="dialog"]')!, "Delete job");
+    expect(
+      div.querySelector('[role="dialog"] [role="alert"]')?.textContent,
+    ).toContain("try again");
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    expect(
+      div.querySelector('[role="dialog"] [role="alert"]')?.textContent,
+    ).toBe("لم يكتمل الإجراء. حاول مجددًا.");
+    expect(div.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(remove.mock.calls).toEqual([[19]]);
+    expect(div.textContent).toContain("Engineer");
+  } finally {
+    await close();
+    await i18n.changeLanguage("en");
   }
 });
 test("explains the active-company requirement", async () => {

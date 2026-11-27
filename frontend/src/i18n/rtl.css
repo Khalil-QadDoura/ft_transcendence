@@ -1,0 +1,55 @@
+/* Mirror directional cues, not photographs, video, logos or user content. */
+.directional-icon {
+  display: inline-block;
+}
+[dir="rtl"] .directional-icon {
+  transform: scaleX(-1);
+}
+:lang(ar) {
+  letter-spacing: normal;
+}
+html:lang(ar) body {
+  font-family: Tahoma, Arial, sans-serif;
+}
+html:lang(ar) :is(h1, h2, h3, .auth-manifesto, .poster-word) {
+  line-height: 1.5;
+  letter-spacing: normal;
+}
+html:lang(ar)
+  :is(
+    .eyebrow,
+    .hero-note,
+    .poster-heading,
+    .poster-footer,
+    .auth-story-footer
+  ) {
+  letter-spacing: normal;
+}
+html:lang(ar) .poster-word {
+  font-size: clamp(3.5rem, 7vw, 7rem);
+}
+/* Logical grid placement follows direction; allow translated labels to wrap. */
+.site-header,
+.header-tools,
+.site-footer nav {
+  flex-wrap: wrap;
+}
+.hero > *,
+.auth-page > *,
+.profile-grid > *,
+.legal-grid > * {
+  min-inline-size: 0;
+}
+[dir="auto"] {
+  unicode-bidi: plaintext;
+}
+@media (max-width: 600px) {
+  html:lang(ar) .hero h1 {
+    font-size: clamp(2rem, 9vw, 3.5rem);
+  }
+}
+
+/* Empty auto-directed controls inherit Arabic; entered Latin text stays LTR. */
+[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown {
+  direction: rtl;
+}

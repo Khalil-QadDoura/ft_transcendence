@@ -82,7 +82,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       className="border-t border-border bg-surface p-3"
       data-testid="message-input-container"
     >
-      <div className="relative flex items-end space-x-2">
+      <div className="relative flex items-end gap-2">
         <div className="relative flex-1">
           <textarea
             ref={textareaRef}
@@ -101,7 +101,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
           {isNearLimit && (
             <span
-              className={`absolute right-3 -top-5 text-[11px] font-medium ${
+              className={`absolute end-3 -top-5 text-[11px] font-medium ${
                 remainingChars < 0
                   ? "text-danger"
                   : remainingChars < 50
@@ -145,7 +145,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             </svg>
           ) : (
             <svg
-              className="h-4 w-4 translate-x-0.5"
+              className="h-4 w-4 directional-icon"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"

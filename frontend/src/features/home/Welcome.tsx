@@ -26,11 +26,15 @@ export function Welcome() {
           <div className="hero-actions">
             <Link className="button light" to="/jobs">
               {t("home.findYourNextChapter")}
-              <span aria-hidden="true">↗</span>
+              <span className="directional-icon" aria-hidden="true">
+                ↗
+              </span>
             </Link>
             <Link className="text-link" to="/register">
               {t("home.introduceYourself")}
-              <span aria-hidden="true">→</span>
+              <span className="directional-icon" aria-hidden="true">
+                →
+              </span>
             </Link>
           </div>
           <div className="hero-note">
@@ -92,7 +96,7 @@ export function Welcome() {
               <br />
               {t("home.aWholeWorldOfPossibility")}
             </span>
-            <span className="poster-arrow">↗</span>
+            <span className="poster-arrow directional-icon">↗</span>
           </div>
           <div className="poster-stamp">
             {t("home.aLittle")}
@@ -152,7 +156,9 @@ export function Welcome() {
               <p>{description}</p>
               <span className="card-bottom">
                 {t("home.explore")}
-                <span aria-hidden="true">↗</span>
+                <span className="directional-icon" aria-hidden="true">
+                  ↗
+                </span>
               </span>
             </Link>
           ))}

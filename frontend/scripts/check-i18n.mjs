@@ -5,12 +5,7 @@ import { fileURLToPath, URL } from "node:url";
 import console from "node:console";
 import process from "node:process";
 const root = fileURLToPath(new URL("../", import.meta.url));
-const keys = (value, prefix = "") =>
-  Object.entries(value).flatMap(([key, child]) =>
-    typeof child === "object" && child !== null
-      ? keys(child, `${prefix}${key}.`)
-      : [`${prefix}${key}`],
-  );
+import { validateMessages } from "./i18n-validation.mjs";
 const plan = JSON.parse(
   readFileSync(join(root, "src/i18n/translation-plan.json"), "utf8"),
 );
@@ -32,24 +27,24 @@ for (const language of ["en", "ar", "az", "tr", "ru"]) {
 for (const namespace of readdirSync(join(root, "src/i18n/en")).filter((name) =>
   name.endsWith(".json"),
 )) {
-  const source = keys(
-    JSON.parse(readFileSync(join(root, "src/i18n/en", namespace), "utf8")),
+  const source = JSON.parse(
+    readFileSync(join(root, "src/i18n/en", namespace), "utf8"),
   );
   for (const language of ["ar", "az", "tr", "ru"]) {
     if (
       plan.englishFallbackNamespaces[namespace.replace(".json", "")]?.includes(
         language,
       )
-    )
+    ) {
+      console.warn(`Temporary English fallback: ${language}/${namespace}`);
       continue;
+    }
     const target = join(root, "src/i18n", language, namespace);
     try {
-      const translated = keys(JSON.parse(readFileSync(target, "utf8")));
-      const missing = source.filter((key) => !translated.includes(key));
-      if (missing.length) {
-        console.error(
-          `${language}/${namespace}: missing ${missing.join(", ")}`,
-        );
+      const translated = JSON.parse(readFileSync(target, "utf8"));
+      const errors = validateMessages(source, translated, language);
+      if (errors.length) {
+        console.error(`${language}/${namespace}: ${errors.join(", ")}`);
         failed = true;
       }
     } catch {
@@ -59,7 +54,7 @@ for (const namespace of readdirSync(join(root, "src/i18n/en")).filter((name) =>
   }
 }
 // Gate production JSX text. Dev-only component fixtures and fixed brand names are excluded.
-// Approved legal Markdown and its English copy resource stay unchanged until PO review.
+// Approved legal Markdown stays unchanged until reviewed translations exist.
 let literals = 0;
 function scan(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

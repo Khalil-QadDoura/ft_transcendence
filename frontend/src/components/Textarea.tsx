@@ -64,6 +64,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         </div>
 
         <textarea
+          dir="auto"
           ref={ref}
           id={textareaId}
           rows={rows}

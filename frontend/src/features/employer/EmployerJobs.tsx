@@ -1,3 +1,4 @@
+import { localizeMessage } from "../../i18n/copy";
 import "../../i18n";
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -66,7 +67,12 @@ export function EmployerJobs() {
               : "loadError",
           )}
         </p>
-        <Button onClick={() => void jobs.refetch()}>{t("retry")}</Button>
+        <div className="employer-actions">
+          <Button onClick={() => void jobs.refetch()}>{t("retry")}</Button>
+          {jobs.error instanceof ApiError && jobs.error.status === 404 && (
+            <Link to="/company">{t("company:createCta")}</Link>
+          )}
+        </div>
       </section>
     );
   if (editing && !selected)
@@ -98,7 +104,10 @@ export function EmployerJobs() {
           <p>{t("intro")}</p>
         </div>
         <Link className="button" to="/employer/jobs/new">
-          {t("create")} <span aria-hidden="true">↗</span>
+          {t("create")}{" "}
+          <span className="directional-icon" aria-hidden="true">
+            ↗
+          </span>
         </Link>
       </header>
       <div className="employer-stats">
@@ -119,7 +128,9 @@ export function EmployerJobs() {
           </div>
         ))}
       </div>
-      {error && !target && <p role="alert">{error}</p>}
+      {error && !target && (
+        <p role="alert">{localizeMessage("employer", error)}</p>
+      )}
       {items.length === 0 ? (
         <div className="employer-empty">
           <span aria-hidden="true">✳</span>
@@ -134,8 +145,10 @@ export function EmployerJobs() {
                 <span className={`employer-status ${job.status}`}>
                   {t(job.status)}
                 </span>
-                <h2>{job.title}</h2>
-                <p>{job.location || t("noLocation")}</p>
+                <h2>
+                  <bdi>{job.title}</bdi>
+                </h2>
+                <p dir="auto">{job.location || t("noLocation")}</p>
               </div>
               <dl>
                 {[
@@ -180,7 +193,7 @@ export function EmployerJobs() {
         title={t("deleteTitle")}
         description={t("deleteHint", { title: target?.title })}
       >
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{localizeMessage("employer", error)}</p>}
         <div className="employer-actions">
           <Button
             variant="danger"
@@ -277,21 +290,21 @@ function JobEditor({
       <form className="employer-form" onSubmit={(e) => void submit(e)}>
         <fieldset disabled={busy}>
           <legend>{t("details")}</legend>
-          {error && <p role="alert">{error}</p>}
+          {error && <p role="alert">{localizeMessage("employer", error)}</p>}
           <Input
             name="title"
             label={t("jobTitle")}
             defaultValue={job?.title ?? ""}
             required
             maxLength={200}
-            error={errors.title}
+            error={localizeMessage("employer", errors.title)}
           />
           <Textarea
             name="description"
             label={t("description")}
             defaultValue={job?.description ?? ""}
             rows={7}
-            error={errors.description}
+            error={localizeMessage("employer", errors.description)}
           />
           <div className="employer-fields">
             <Input
@@ -299,7 +312,7 @@ function JobEditor({
               label={t("location")}
               defaultValue={job?.location ?? ""}
               maxLength={150}
-              error={errors.location}
+              error={localizeMessage("employer", errors.location)}
             />
             {select(
               "schedule",
@@ -315,7 +328,7 @@ function JobEditor({
               max={90}
               required
               defaultValue={job?.latitude ?? ""}
-              error={errors.latitude}
+              error={localizeMessage("employer", errors.latitude)}
             />
             <Input
               name="longitude"
@@ -326,7 +339,7 @@ function JobEditor({
               max={180}
               required
               defaultValue={job?.longitude ?? ""}
-              error={errors.longitude}
+              error={localizeMessage("employer", errors.longitude)}
             />
           </div>
           <p className="employer-hint">{t("coordinatesHint")}</p>
@@ -336,14 +349,14 @@ function JobEditor({
               label={t("salary")}
               inputMode="decimal"
               defaultValue={job?.salary_amount ?? ""}
-              error={errors.salary_amount}
+              error={localizeMessage("employer", errors.salary_amount)}
             />
             <Input
               name="salary_currency"
               label={t("currency")}
               maxLength={3}
               defaultValue={job?.salary_currency ?? ""}
-              error={errors.salary_currency}
+              error={localizeMessage("employer", errors.salary_currency)}
             />
             {select(
               "salary_type",

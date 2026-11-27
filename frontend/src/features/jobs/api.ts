@@ -1,3 +1,4 @@
+import i18n, { activeLanguage } from "../../i18n";
 /**
  * API fetching functions for Jobs
  * Card FE-23: Build the jobs search page with filters, sorting and load more
@@ -92,12 +93,15 @@ export function formatSalary(
   const num = typeof amount === "number" ? amount : parseFloat(amount);
   if (isNaN(num)) return null;
 
-  const formattedNum = new Intl.NumberFormat("en-US", {
+  const formattedNum = new Intl.NumberFormat(activeLanguage(), {
     maximumFractionDigits: 0,
   }).format(num);
 
   const curr = currency ? currency.toUpperCase() : "$";
-  const period = type ? ` / ${type}` : "";
+  const period =
+    type && ["hourly", "daily", "weekly", "monthly"].includes(type)
+      ? ` / ${i18n.t(type, { ns: "employer" })}`
+      : "";
 
   return `${curr} ${formattedNum}${period}`;
 }

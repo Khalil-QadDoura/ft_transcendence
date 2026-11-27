@@ -1,4 +1,7 @@
-import copy from "./copy.en.json";
+import { useTranslation } from "react-i18next";
+import sourceCopy from "../../i18n/en/auth.json";
+import { translatedCopy, localizeMessage } from "../../i18n/copy";
+const copy = translatedCopy("auth", sourceCopy);
 import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { useEffect, useRef, useState, type PropsWithChildren } from "react";
@@ -22,7 +25,7 @@ const signupSchema = registerSchema
   .extend({ confirm: z.string() })
   .refine((data) => data.password === data.confirm, {
     path: ["confirm"],
-    message: copy.passwordsMustMatch,
+    message: "validation.passwordsMatch",
   });
 type Fields = { email: string; password: string; confirm?: string };
 function fieldMessage(
@@ -31,6 +34,8 @@ function fieldMessage(
   signup = true,
 ) {
   if (!error) return "";
+  if (error.message === "validation.passwordsMatch")
+    return copy.passwordsMustMatch;
   if (error.message === "validation.server")
     return typeof error.types?.detail === "string"
       ? error.types.detail
@@ -46,7 +51,7 @@ function fieldMessage(
     return copy.enterYourPassword;
   if (error.message?.startsWith("validation."))
     return copy.use8128CharactersForYourPassword;
-  return error.message;
+  return localizeMessage("auth", error.message);
 }
 function requestMessage(error: unknown) {
   if (error instanceof AuthError) {
@@ -66,6 +71,7 @@ function AuthFrame({
   intro,
   children,
 }: PropsWithChildren<{ title: string; intro: string }>) {
+  useTranslation("auth");
   useEffect(() => {
     document.title = `${title} · WOZU`;
   }, [title]);
@@ -91,7 +97,9 @@ function AuthFrame({
         </div>
         <div className="auth-story-footer">
           <span>{copy.showUpAsYou}</span>
-          <span aria-hidden="true">↗</span>
+          <span className="directional-icon" aria-hidden="true">
+            ↗
+          </span>
         </div>
       </aside>
       <div className="auth-panel">
@@ -106,6 +114,7 @@ function AuthFrame({
   );
 }
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
+  useTranslation("auth");
   const signup = mode === "register";
   const auth = useAuth();
   const [params] = useSearchParams();
@@ -179,7 +188,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         )}
         <Link className="button auth-submit" to={`/login${suffix}`}>
           {copy.continueToSignIn}
-          <span aria-hidden="true">↗</span>
+          <span className="directional-icon" aria-hidden="true">
+            ↗
+          </span>
         </Link>
         <button className="auth-text-button" onClick={() => setSent(false)}>
           {copy.useADifferentEmail}
@@ -288,7 +299,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             : signup
               ? copy.createYourAccount
               : copy.signIn}
-          <span aria-hidden="true">↗</span>
+          <span className="directional-icon" aria-hidden="true">
+            ↗
+          </span>
         </Button>
       </form>
       {!signup && (
@@ -296,7 +309,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         // it on to 42's login page (BE-11). It comes back at /oauth/callback.
         <a className="button light auth-submit" href="/api/auth/oauth/42/start">
           {copy.logInWith42}
-          <span aria-hidden="true">↗</span>
+          <span className="directional-icon" aria-hidden="true">
+            ↗
+          </span>
         </a>
       )}
       <p className="auth-switch">
@@ -314,6 +329,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   );
 }
 export function VerifyEmail() {
+  useTranslation("auth");
   const auth = useAuth();
   const [params] = useSearchParams();
   const token = params.get("token") || "";
@@ -397,7 +413,9 @@ export function VerifyEmail() {
           to={current?.ok ? "/login" : "/register"}
         >
           {current?.ok ? copy.continueToSignIn : copy.backToRegistration}
-          <span aria-hidden="true">↗</span>
+          <span className="directional-icon" aria-hidden="true">
+            ↗
+          </span>
         </Link>
       )}
     </AuthFrame>
@@ -462,12 +480,15 @@ export function OAuthCallback() {
       </div>
       <Link className="button auth-submit" to="/login">
         {copy.backToSignIn}
-        <span aria-hidden="true">↗</span>
+        <span className="directional-icon" aria-hidden="true">
+          ↗
+        </span>
       </Link>
     </AuthFrame>
   );
 }
 export function LogoutButton() {
+  useTranslation("auth");
   const auth = useAuth();
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);

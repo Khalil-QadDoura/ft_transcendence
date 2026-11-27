@@ -522,7 +522,9 @@ export function GameRulesPage() {
       <p>
         <Link className="button" to="/game">
           {t("lobby")}
-          <span aria-hidden="true">↗</span>
+          <span className="directional-icon" aria-hidden="true">
+            ↗
+          </span>
         </Link>
       </p>
     </article>

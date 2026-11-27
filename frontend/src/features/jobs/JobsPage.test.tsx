@@ -104,7 +104,7 @@ describe("JobsPage (FE-23)", () => {
 
     expect(container.textContent).toContain("Senior Frontend Engineer");
     expect(container.textContent).toContain("Acme Robotics");
-    expect(container.textContent).toContain("AED 25,000 / monthly");
+    expect(container.textContent).toContain("AED 25,000 / Monthly");
     expect(container.textContent).toContain("Hot 🔥");
     expect(container.textContent).toContain("Full time");
 
@@ -319,7 +319,9 @@ describe("JobsPage (FE-23)", () => {
       root.render(<RouterProvider router={router} />);
     });
 
-    expect(container.textContent).toContain("Network connection lost");
+    expect(container.textContent).toContain(
+      "Failed to load open jobs. Please try again.",
+    );
     const retryButton = Array.from(container.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("Retry"),
     );

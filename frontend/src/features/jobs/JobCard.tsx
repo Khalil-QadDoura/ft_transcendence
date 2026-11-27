@@ -1,3 +1,4 @@
+import { formatNumber } from "../../i18n";
 import { Link } from "react-router-dom";
 import { Avatar } from "../../components/Avatar";
 import { Badge } from "../../components/Badge";
@@ -64,11 +65,11 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
                 to={`/jobs/${job.id}`}
                 className="text-base sm:text-lg font-semibold text-ink hover:underline focus:outline-none focus:ring-2 focus:ring-lime rounded-xs block truncate"
               >
-                {job.title}
+                <bdi>{job.title}</bdi>
               </Link>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted mt-0.5">
                 <span className="font-medium text-ink-base truncate max-w-[200px]">
-                  {companyName}
+                  <bdi>{companyName}</bdi>
                 </span>
                 {job.location && (
                   <>
@@ -85,14 +86,19 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
             aria-label={t("jobs.viewDetails", { title: job.title })}
             className="text-xs font-semibold text-ink-muted group-hover:text-ink shrink-0 p-1 rounded-sm focus:outline-none focus:ring-2 focus:ring-lime"
           >
-            <span aria-hidden="true">↗</span>
+            <span className="directional-icon" aria-hidden="true">
+              ↗
+            </span>
           </Link>
         </div>
       </CardHeader>
 
       <CardContent className="p-4 sm:p-5 pt-1 space-y-3">
         {job.description && (
-          <p className="text-xs sm:text-sm text-ink-muted line-clamp-2 leading-relaxed">
+          <p
+            dir="auto"
+            className="text-xs sm:text-sm text-ink-muted line-clamp-2 leading-relaxed"
+          >
             {job.description}
           </p>
         )}
@@ -108,13 +114,13 @@ export function JobCard({ job, userLocation, className = "" }: JobCardProps) {
 
           {salaryText && (
             <Badge variant="lime" size="sm">
-              {salaryText}
+              <bdi>{salaryText}</bdi>
             </Badge>
           )}
 
           {distance !== null && distance !== undefined && (
             <Badge variant="outline" size="sm" className="font-mono">
-              📍 {distance} {t("jobs.kmAway")}
+              📍 {formatNumber(distance)} {t("jobs.kmAway")}
             </Badge>
           )}
         </div>

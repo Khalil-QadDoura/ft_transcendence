@@ -1,11 +1,4 @@
 {
-  "englishFallbackNamespaces": {
-    "screens": ["ar", "az", "tr", "ru"],
-    "profile": ["ar", "az", "tr", "ru"],
-    "people": ["ar", "az", "tr", "ru"],
-    "company": ["ar", "az", "tr", "ru"],
-    "game": ["ar", "az", "tr", "ru"],
-    "employer": ["ar", "az", "tr", "ru"]
-  },
-  "reason": "FE-06 extracts all production interface copy; FE-07 supplies the complete reviewed translations. Common navigation is translated now."
+  "englishFallbackNamespaces": {},
+  "reason": "All namespaces on main as of 2026-11-24 have complete catalogs, including company and the game lobby. The explicit fallback mechanism remains available for reviewed incoming screens until code freeze on 2026-11-26. Legal translations are reading translations pending content-owner and fluent-speaker review."
 }

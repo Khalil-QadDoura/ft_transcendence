@@ -1,3 +1,4 @@
+import { localizeMessage } from "../../i18n/copy";
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useWsEvent } from "../../api/ws";
@@ -107,7 +108,7 @@ export const MyApplicationsPage: React.FC = () => {
       </div>
 
       {/* Status filter tabs */}
-      <div className="mb-6 flex space-x-2 overflow-x-auto border-b border-border pb-2">
+      <div className="mb-6 flex gap-2 overflow-x-auto border-b border-border pb-2">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -130,7 +131,11 @@ export const MyApplicationsPage: React.FC = () => {
           role="alert"
           className="mb-6 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300"
         >
-          {error}
+          {localizeMessage(
+            "screens",
+            error ?? undefined,
+            "applications.failedToLoad",
+          )}
         </div>
       )}
 

@@ -26,7 +26,7 @@ export const ConversationsPage: React.FC = () => {
       <div className="grid h-full grid-cols-1 md:grid-cols-12">
         {/* Conversations Sidebar List */}
         <div
-          className={`h-full border-r border-gray-200 dark:border-gray-800 md:col-span-5 lg:col-span-4 ${
+          className={`h-full border-e border-gray-200 dark:border-gray-800 md:col-span-5 lg:col-span-4 ${
             selectedConvId ? "hidden md:block" : "block"
           }`}
         >

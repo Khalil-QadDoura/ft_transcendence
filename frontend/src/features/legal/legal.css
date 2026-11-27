@@ -16,9 +16,18 @@
     line-height: 1.04;
     letter-spacing: -0.055em;
     margin-block: 1rem 1.5rem;
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
   .legal-hero > p {
     max-width: 60ch;
+  }
+  .legal-source-link {
+    display: inline-block;
+    margin-block-start: 1rem;
+    color: var(--color-lime);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
   }
   .legal-hero .eyebrow {
     color: var(--color-lime);

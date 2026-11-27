@@ -37,5 +37,7 @@
   "deleteYourAccount": "Delete your account?",
   "thisDeactivatesYourAccountAndEndsYourSessionsYouWont": "This deactivates your account and ends your sessions. You won’t be able to sign in again.",
   "keepMyAccount": "Keep my account",
-  "yesDeleteMyAccount": "Yes, delete my account"
+  "yesDeleteMyAccount": "Yes, delete my account",
+  "wrongCurrentPassword": "Wrong current password",
+  "invalidOrExpiredLink": "Invalid or expired link"
 }

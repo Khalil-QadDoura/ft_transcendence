@@ -37,7 +37,9 @@ function ComingSoon({ title }: { title: string }) {
       <p>{t("routes.thisSpaceIsTakingShapePleaseCheckBackSoon")}</p>
       <Link className="button" to="/">
         {t("routes.backToWozu")}
-        <span aria-hidden="true">↗</span>
+        <span className="directional-icon" aria-hidden="true">
+          ↗
+        </span>
       </Link>
     </section>
   );
@@ -55,7 +57,9 @@ function Missing() {
       <p>{t("routes.weCouldntFindThatPageYourNextChapterIs")}</p>
       <Link className="button" to="/">
         {t("routes.takeMeHome")}
-        <span aria-hidden="true">↗</span>
+        <span className="directional-icon" aria-hidden="true">
+          ↗
+        </span>
       </Link>
     </section>
   );

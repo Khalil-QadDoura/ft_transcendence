@@ -92,7 +92,7 @@ test("requests use the active language and respect explicit overrides", async ()
   ).toBe("en");
 });
 
-test("domain copy falls back to English and component labels react to translations", async () => {
+test("domain copy and component labels switch to Arabic without English fallback", async () => {
   const { Pagination } = await import("../components/Pagination");
   const container = document.createElement("div");
   document.body.append(container);
@@ -104,14 +104,12 @@ test("domain copy falls back to English and component labels react to translatio
       ),
     );
     expect(container.textContent).toContain("Page 2 of 5");
-    i18n.addResource("ar", "screens", "controls.previous", "السابق");
     await act(() => i18n.changeLanguage("ar"));
     expect(container.textContent).toContain("السابق");
-    expect(container.textContent).toContain("Page 2 of 5");
-    expect(i18n.t("routes.profile", { ns: "screens" })).toBe("Your story.");
+    expect(container.textContent).toContain("الصفحة 2 من 5");
+    expect(i18n.t("routes.profile", { ns: "screens" })).toBe("قصتك.");
   } finally {
     await act(() => root.unmount());
-    i18n.removeResourceBundle("ar", "screens");
     container.remove();
   }
 });
