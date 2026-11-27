@@ -527,6 +527,50 @@ restart_agents() {
     done
 }
 
+# The health of a service's container: healthy, starting, unhealthy, or nothing.
+health_of() {
+    docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+        "$(docker compose ps -q "$1")" 2>/dev/null || true
+}
+
+# After a Docker or host restart (every container started at once, Vault sealed) or with
+# Vault stopped for a while, the agents and the services waiting on them are already marked
+# unhealthy when Vault gets unsealed. Docker checks them again only every 30 s, and
+# `up --wait` gives up at once on an unhealthy dependency, so the first `make` would fail.
+# So: every running agent that is not healthy restarts (its health starts again from
+# "starting") and every running agent must turn healthy; then every other running service
+# that is not healthy (it waited on its secrets) is stopped and started again in dependency
+# order, each waiting for the health of what it depends on. Nothing happens when every
+# running agent is healthy (a normal `make`), nor before the agents exist (a first `make`).
+wake_waiting() {
+    local r a agents="" services
+    for r in $ROLES; do
+        a="$(agent_of "$r")"
+        [ -n "$(docker compose ps -q --status running --status restarting "$a" 2>/dev/null)" ] || continue
+        [ "$(health_of "$a")" = healthy ] || agents="$agents $a"
+    done
+    [ -n "$agents" ] || return 0
+    echo "vault-init: restarting$agents, not healthy yet after the unseal"
+    # shellcheck disable=SC2086 # one word per service
+    docker compose restart $agents >/dev/null
+    for r in $ROLES; do
+        a="$(agent_of "$r")"
+        running "$a" || continue
+        docker compose up -d --no-deps --no-recreate --wait --wait-timeout 120 "$a" >/dev/null 2>"$work/wake.err" ||
+            die "$(docker compose ps -a --format '{{.Name}}' "$a") did not get healthy within 120 s ($(tail -n 1 "$work/wake.err")); see docker compose logs $a"
+    done
+    services="$(docker compose ps --status running --format '{{.Service}} {{.Health}}' |
+        awk '$1 != "vault" && $1 !~ /^vault-agent-/ && ($2 == "unhealthy" || $2 == "starting") { print $1 }' |
+        sort | xargs)"
+    [ -n "$services" ] || return 0
+    echo "vault-init: restarting $services, they waited on their secrets"
+    # shellcheck disable=SC2086 # one word per service
+    docker compose stop $services >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    docker compose up -d --no-recreate --wait --wait-timeout 300 $services >/dev/null 2>"$work/wake.err" ||
+        die "not healthy after the restart: $(tail -n 1 "$work/wake.err"); see docker compose ps"
+}
+
 read_status
 unsealed_now=no
 if [ "$initialized" = no ]; then
@@ -555,6 +599,7 @@ configure
 sync_secrets
 sync_approle
 restart_agents
+wake_waiting
 if [ -n "$changed" ]; then
     echo "vault-init: configuration written: ${changed#, }"
 elif [ "$unsealed_now" = no ]; then

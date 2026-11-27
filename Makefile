@@ -50,7 +50,9 @@ certs:
 # Then the service secrets (INF-13): a secret still in .env is moved into Vault and its line
 # removed, a missing one is generated in Vault (one line per key, names only); and each Vault
 # Agent's AppRole credentials. After a Docker or host restart Vault is sealed and the agents
-# and the services behind them wait: `make` unseals it and they come back by themselves.
+# and the services behind them wait: `make` unseals it, then restarts the agents and services
+# already marked unhealthy, so that the `up --wait` below does not stop on them (see
+# docs/infra/vault.md, After a Docker or host restart).
 vault-init: env
 	@$(COMPOSE) up -d --wait --wait-timeout 120 vault
 	@./scripts/vault-init.sh
