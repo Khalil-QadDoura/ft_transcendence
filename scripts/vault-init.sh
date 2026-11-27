@@ -552,7 +552,8 @@ wake_waiting() {
     [ -n "$agents" ] || return 0
     echo "vault-init: restarting$agents, not healthy yet after the unseal"
     # shellcheck disable=SC2086 # one word per service
-    docker compose restart $agents >/dev/null
+    docker compose restart $agents >/dev/null 2>"$work/wake.err" ||
+        die "could not restart$agents: $(tail -n 1 "$work/wake.err")"
     for r in $ROLES; do
         a="$(agent_of "$r")"
         running "$a" || continue
