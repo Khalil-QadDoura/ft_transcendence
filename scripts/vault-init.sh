@@ -550,7 +550,7 @@ wake_waiting() {
         [ "$(health_of "$a")" = healthy ] || agents="$agents $a"
     done
     [ -n "$agents" ] || return 0
-    echo "vault-init: restarting$agents, not healthy yet after the unseal"
+    echo "vault-init: restarting$agents, not healthy yet"
     # shellcheck disable=SC2086 # one word per service
     docker compose restart $agents >/dev/null 2>"$work/wake.err" ||
         die "could not restart$agents: $(tail -n 1 "$work/wake.err")"
